@@ -1,5 +1,7 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.targets import router as targets_router
 from app.core.config import settings
 from app.core.contracts import CONTRACTS
 from app.db.session import check_database_ready
@@ -9,6 +11,16 @@ app = FastAPI(
     version="0.1.0",
     description="Local-first defensive web application security audit platform.",
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3001"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
+app.include_router(targets_router)
 
 
 @app.get("/health")

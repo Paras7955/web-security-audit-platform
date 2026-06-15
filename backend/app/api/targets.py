@@ -1,0 +1,112 @@
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_db, get_scan_allowlist
+from app.api.schemas import TargetCreate, TargetRead, TargetValidationRead
+from app.models import Target
+from app.security.allowlist import ScanAllowlist
+from app.security.ssrf import SsrfGuardError, validate_destination
+from app.security.target_url import TargetUrlError, match_allowlisted_target
+
+router = APIRouter(prefix="/targets", tags=["targets"])
+
+
+@router.get("/validate", response_model=TargetValidationRead)
+def validate_target(
+    target_url: str,
+    allowlist: ScanAllowlist = Depends(get_scan_allowlist),
+) -> TargetValidationRead:
+    match = validate_allowed_target_url(target_url, allowlist)
+    target = match.allowlist_target
+    return TargetValidationRead(
+        allowlist_id=target.id,
+        name=target.name,
+        base_url=target.base_url,
+        allowed_modes=[mode.value for mode in target.allowed_modes],
+        max_redirects=target.max_redirects,
+        local_demo=target.local_demo,
+    )
+
+
+@router.post("", response_model=TargetRead, status_code=status.HTTP_201_CREATED)
+def create_target(
+    payload: TargetCreate,
+    db: Session = Depends(get_db),
+    allowlist: ScanAllowlist = Depends(get_scan_allowlist),
+) -> TargetRead:
+    if not payload.permission_confirmed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Permission confirmation is required before creating a scan target.",
+        )
+    if payload.auth_profile_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Authenticated scanning is not available in v1 target creation.",
+        )
+
+    match = validate_allowed_target_url(payload.target_url, allowlist)
+    allowlist_target = match.allowlist_target
+
+    target = Target(
+        id=str(uuid4()),
+        allowlist_id=allowlist_target.id,
+        name=allowlist_target.name,
+        base_url=match.url.normalized_url,
+        permission_confirmed=True,
+        repo_path=payload.repo_path,
+        auth_profile_id=payload.auth_profile_id,
+    )
+    db.add(target)
+    db.commit()
+    db.refresh(target)
+    return target_to_read(target, allowlist)
+
+
+@router.get("", response_model=list[TargetRead])
+def list_targets(
+    db: Session = Depends(get_db),
+    allowlist: ScanAllowlist = Depends(get_scan_allowlist),
+) -> list[TargetRead]:
+    targets = db.scalars(select(Target).order_by(Target.created_at.desc())).all()
+    return [target_to_read(target, allowlist) for target in targets]
+
+
+@router.get("/{target_id}", response_model=TargetRead)
+def get_target(
+    target_id: str,
+    db: Session = Depends(get_db),
+    allowlist: ScanAllowlist = Depends(get_scan_allowlist),
+) -> TargetRead:
+    target = db.get(Target, target_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
+    return target_to_read(target, allowlist)
+
+
+def validate_allowed_target_url(target_url: str, allowlist: ScanAllowlist):
+    try:
+        match = match_allowlisted_target(target_url, allowlist)
+        validate_destination(match.url, match.allowlist_target)
+        return match
+    except (TargetUrlError, SsrfGuardError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+def target_to_read(target: Target, allowlist: ScanAllowlist) -> TargetRead:
+    allowlist_target = allowlist.get_target(target.allowlist_id)
+    allowed_modes = [mode.value for mode in allowlist_target.allowed_modes] if allowlist_target else []
+    return TargetRead(
+        id=target.id,
+        allowlist_id=target.allowlist_id,
+        name=target.name,
+        base_url=target.base_url,
+        permission_confirmed=target.permission_confirmed,
+        repo_path=target.repo_path,
+        auth_profile_id=target.auth_profile_id,
+        allowed_modes=allowed_modes,
+        created_at=target.created_at,
+    )
