@@ -99,6 +99,24 @@ Implementation stops after each phase. The next phase starts only after explicit
 
 Within an approved phase, work is split into commit-sized subdivisions. The agent may commit each subdivision, continue through the phase, and then stop at the phase boundary for review and user approval.
 
+Each future phase is developed on its own branch using the `codex/phase-*` naming pattern. The user merges the completed phase branch back into the base branch after phase review.
+
+Planned phase branches:
+
+- Phase 2: `codex/phase-2-target-validation`
+- Phase 3: `codex/phase-3-scan-worker`
+- Phase 4: `codex/phase-4-findings`
+- Phase 5: `codex/phase-5-passive-scanner`
+- Phase 6: `codex/phase-6-dashboard`
+- Phase 7: `codex/phase-7-reports`
+- Phase 8: `codex/phase-8-ai-explanations`
+- Phase 9A: `codex/phase-9a-zap-passive`
+- Phase 9B: `codex/phase-9b-active-demo`
+- Phase 9C: `codex/phase-9c-ajax-short`
+- Phase 10: `codex/phase-10-repo-scanning`
+
+Before a phase starts, the agent verifies a clean worktree, creates or switches to the phase branch from the current base branch, and confirms the active branch. Do not begin the next phase until the user confirms the previous phase branch has been merged back into the base branch.
+
 ## Database Migrations
 
 Docker Compose includes a one-shot `migrate` service that runs:

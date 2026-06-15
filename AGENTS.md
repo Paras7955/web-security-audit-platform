@@ -16,6 +16,22 @@ Stop after each phase and wait for explicit user approval before beginning the n
 
 This gate does not apply between commit-sized subdivisions inside a phase. Once a phase is approved, continue through that phase's subdivisions until the phase is complete or a blocker appears.
 
+Each future phase must be developed on a dedicated phase branch. Do not begin the next phase until the user confirms the completed phase branch has been merged back into the base branch.
+
+Phase branch names use the `codex/` prefix:
+
+- Phase 2: `codex/phase-2-target-validation`
+- Phase 3: `codex/phase-3-scan-worker`
+- Phase 4: `codex/phase-4-findings`
+- Phase 5: `codex/phase-5-passive-scanner`
+- Phase 6: `codex/phase-6-dashboard`
+- Phase 7: `codex/phase-7-reports`
+- Phase 8: `codex/phase-8-ai-explanations`
+- Phase 9A: `codex/phase-9a-zap-passive`
+- Phase 9B: `codex/phase-9b-active-demo`
+- Phase 9C: `codex/phase-9c-ajax-short`
+- Phase 10: `codex/phase-10-repo-scanning`
+
 ## Scope Boundaries
 
 V1 includes:
@@ -81,13 +97,16 @@ The agent has permission to create commits at each commit-sized subdivision insi
 
 Rules:
 
+- Before starting a phase, verify the worktree is clean and create/switch to that phase's `codex/phase-*` branch from the current base branch.
+- Verify the active branch name before making phase edits.
 - Do not stop between subdivisions unless blocked or a major safety/design issue appears.
 - Stop only at full phase boundaries.
 - Use multiple commits per phase so the Git history looks full and intentional.
 - After each subdivision commit, report the commit hash, commit message, what changed, what verification ran, and what subdivision comes next.
-- The user will push commits after the phase is complete and reviewed.
+- The user will push and merge commits after the phase is complete and reviewed.
 - Do not push unless the user explicitly asks.
 - If review-agent changes are accepted, commit those changes separately after the review.
+- Include the final phase branch name, commits, verification results, and merge reminder in the phase summary.
 
 ## Decision Log Format
 
