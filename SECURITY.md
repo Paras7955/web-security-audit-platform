@@ -1,0 +1,62 @@
+# Security Policy And Responsible Use
+
+This project is a defensive web application security learning and portfolio tool. It is not an unauthorized hacking tool and does not replace a professional penetration test, code review, compliance audit, or legal authorization process.
+
+## Authorized Use Only
+
+Use this platform only against applications that you own, run locally, or are explicitly authorized to test.
+
+V1 active scans are local/demo allowlist only. Arbitrary public targets must be blocked by code, not only by warnings.
+
+Do not use this platform for:
+
+- Credential attacks.
+- Password spraying or brute force.
+- Destructive testing.
+- Stealth scanning.
+- Mass scanning.
+- Scanning systems you do not own or lack permission to test.
+- Testing the project itself outside authorized environments.
+
+## Scan Safety Rules
+
+- Scanner targets must match `config/scan-allowlist.yml`.
+- Docker service names are canonical scanner targets inside containers.
+- HTTP clients must disable automatic redirects and manually revalidate redirect destinations.
+- Every outbound scanner request must pass SSRF and allowlist validation.
+- ZAP must be scoped to the exact allowlisted target/context.
+- Active Demo scans require explicit user acknowledgement.
+- Cloud demos must use sample data only and must not allow arbitrary active scans.
+
+## Evidence And Secret Handling
+
+- Do not store full HTTP response bodies by default.
+- Store minimal evidence snippets only.
+- Redact sensitive values before database writes, reports, or AI processing.
+- Secret scan results must be redacted.
+- Never send raw response bodies, raw ZAP output, raw secret scanner output, or unredacted evidence to AI providers.
+
+## Vulnerability Reporting For This Project
+
+Do not open public issues with exploitable details.
+
+Preferred reporting path before public release: GitHub private vulnerability reporting/security advisory.
+
+Before publishing this project, replace this placeholder with a maintainer contact:
+
+```text
+security-contact@example.com
+```
+
+When reporting a vulnerability, include:
+
+- Affected version or commit.
+- Clear reproduction steps.
+- Expected and actual behavior.
+- Impact.
+- Any relevant logs or screenshots with secrets removed.
+
+## Disclosure Boundary
+
+This project is for local defensive learning and authorized testing. Report vulnerabilities found in third-party software only through that software owner's approved disclosure process.
+

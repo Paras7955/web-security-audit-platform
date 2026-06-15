@@ -1,0 +1,110 @@
+# Defensive Web App Security Audit Platform
+
+Local-first defensive AppSec audit platform for intentionally vulnerable or explicitly authorized web applications.
+
+The project is designed as a cybersecurity resume project. Tools collect evidence; the platform normalizes findings; reports and AI-assisted explanations help developers understand and fix issues. The scanner is not intended for unauthorized testing.
+
+## V1 Architecture
+
+- Frontend: Next.js.
+- Backend: FastAPI.
+- Worker: Python worker skeleton; Postgres-backed scan jobs are planned for Phase 3.
+- Database: Postgres.
+- Security tooling: OWASP ZAP daemon/API integration in later phases.
+- Demo target: OWASP Juice Shop.
+- Deployment: local Docker Compose.
+
+Inside Docker, scanner targets use service names. The canonical Juice Shop scanner URL is:
+
+```text
+http://juice-shop:3000
+```
+
+From the host browser, Juice Shop is exposed as:
+
+```text
+http://localhost:3000
+```
+
+## Phase 1 Status
+
+Phase 1 scaffolds the application contracts and safety docs. Target creation, scanning, findings, reports, AI, and ZAP workflows are implemented in later phases and must not be implied as production-ready by Phase 1 UI.
+
+## Responsible Use
+
+Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.
+
+## Local Services
+
+Planned Docker Compose services:
+
+- `frontend`: Next.js UI on host port `3001`.
+- `backend`: FastAPI API on host port `8000`.
+- `worker`: background scan worker.
+- `postgres`: database on host port `5432`.
+- `zap`: OWASP ZAP daemon/API reachable inside Compose only, not published to the host.
+- `juice-shop`: OWASP Juice Shop on host port `3000`.
+
+## Shared Contracts
+
+Scan modes:
+
+- `passive`
+- `active_demo`
+- `ajax_short`
+
+Scan statuses:
+
+- `queued`
+- `validating`
+- `running`
+- `normalizing`
+- `completed`
+- `completed_with_warnings`
+- `failed`
+- `cancelled`
+
+Detailed scan steps:
+
+- `target_validation`
+- `custom_crawl`
+- `custom_checks`
+- `zap_spider`
+- `zap_passive`
+- `zap_active`
+- `zap_ajax`
+- `repo_secrets_scan`
+- `repo_dependency_scan`
+- `normalizing_findings`
+- `generating_reports`
+- `generating_ai_explanations`
+
+## Roadmap Scope Control
+
+Post-v1 unless explicitly approved:
+
+- Playwright login/session workflows.
+- User A/User B IDOR checks.
+- Business-logic rule testing.
+- MockBank custom demo app.
+- Nuclei templates.
+- Semgrep/full SAST.
+- PDF export.
+- Multi-user production auth.
+- Public cloud scanning.
+
+## Phase Approval Gate
+
+Implementation stops after each phase. The next phase starts only after explicit user approval.
+
+Within an approved phase, work is split into commit-sized subdivisions. The agent may commit each subdivision, continue through the phase, and then stop at the phase boundary for review and user approval.
+
+## Database Migrations
+
+Docker Compose includes a one-shot `migrate` service that runs:
+
+```text
+alembic upgrade head
+```
+
+The backend readiness endpoint verifies that the initial schema exists before reporting ready.
