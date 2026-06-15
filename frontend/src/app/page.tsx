@@ -1,4 +1,5 @@
 import { DEFAULT_LIMITS, SCAN_MODES, SCAN_STATUSES, SCAN_STEPS } from "@/lib/contracts";
+import { TargetSetup } from "@/components/TargetSetup";
 
 const safetyRules = [
   "Only scan apps you own, run locally, or are explicitly authorized to test.",
@@ -71,7 +72,8 @@ export default function Home() {
           ))}
         </ul>
       </section>
+
+      <TargetSetup />
     </main>
   );
 }
-
