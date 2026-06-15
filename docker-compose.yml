@@ -1,0 +1,128 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: security_audit
+      POSTGRES_USER: security_audit
+      POSTGRES_PASSWORD: security_audit
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U security_audit -d security_audit"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  zap:
+    image: ghcr.io/zaproxy/zaproxy:2.16.1
+    command:
+      - zap.sh
+      - -daemon
+      - -host
+      - 0.0.0.0
+      - -port
+      - "8080"
+      - -config
+      - api.disablekey=true
+      - -config
+      - api.addrs.addr.name=.*
+      - -config
+      - api.addrs.addr.regex=true
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/JSON/core/view/version/ >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
+  juice-shop:
+    image: bkimminich/juice-shop:v17.3.0
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    env_file:
+      - .env.example
+    environment:
+      DATABASE_URL: postgresql+psycopg://security_audit:security_audit@postgres:5432/security_audit
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env.example
+    environment:
+      DATABASE_URL: postgresql+psycopg://security_audit:security_audit@postgres:5432/security_audit
+      ALLOWLIST_PATH: /app/config/scan-allowlist.yml
+      ARTIFACT_ROOT: /app/artifacts
+      ZAP_BASE_URL: http://zap:8080
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config:ro
+      - app-artifacts:/app/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["python", "-m", "worker.main"]
+    env_file:
+      - .env.example
+    environment:
+      DATABASE_URL: postgresql+psycopg://security_audit:security_audit@postgres:5432/security_audit
+      ALLOWLIST_PATH: /app/config/scan-allowlist.yml
+      ARTIFACT_ROOT: /app/artifacts
+      ZAP_BASE_URL: http://zap:8080
+    volumes:
+      - ./config:/app/config:ro
+      - app-artifacts:/app/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      zap:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3001:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  app-artifacts:
