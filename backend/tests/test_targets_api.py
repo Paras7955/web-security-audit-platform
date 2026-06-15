@@ -6,17 +6,20 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
 from app.main import app
-from app.models import Target
 from app.db.session import SessionLocal
+from app.models import Target
 
 
 class TargetApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = TestClient(app)
+        self.created_target_ids: list[str] = []
 
     def tearDown(self) -> None:
+        if not self.created_target_ids:
+            return
         with SessionLocal() as db:
-            db.execute(delete(Target).where(Target.name == "OWASP Juice Shop"))
+            db.execute(delete(Target).where(Target.id.in_(self.created_target_ids)))
             db.commit()
 
     def test_validate_allowed_target(self) -> None:
@@ -46,6 +49,7 @@ class TargetApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 201)
         body = response.json()
+        self.created_target_ids.append(body["id"])
         self.assertEqual(body["allowlist_id"], "juice-shop")
         self.assertEqual(body["repo_path"], "/repos/example")
         self.assertIsNone(body["auth_profile_id"])

@@ -67,6 +67,33 @@ class AllowlistTests(unittest.TestCase):
         with self.assertRaises(AllowlistError):
             load_allowlist(self.write_config(config))
 
+    def test_multiple_schemes_hosts_or_ports_are_rejected(self) -> None:
+        cases = [
+            {"schemes": ["http", "https"]},
+            {"hosts": ["juice-shop", "localhost"]},
+            {"ports": [3000, 3001]},
+        ]
+
+        for override in cases:
+            with self.subTest(override=override):
+                config = dict(VALID_CONFIG)
+                config["targets"] = [dict(VALID_CONFIG["targets"][0], **override)]
+
+                with self.assertRaises(AllowlistError):
+                    load_allowlist(self.write_config(config))
+
+    def test_duplicate_endpoint_is_rejected(self) -> None:
+        second_target = dict(
+            VALID_CONFIG["targets"][0],
+            id="juice-shop-copy",
+            allowed_modes=["passive"],
+            max_redirects=1,
+        )
+        config = {"targets": [VALID_CONFIG["targets"][0], second_target]}
+
+        with self.assertRaises(AllowlistError):
+            load_allowlist(self.write_config(config))
+
 
 if __name__ == "__main__":
     unittest.main()

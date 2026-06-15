@@ -50,6 +50,18 @@ class SsrfGuardTests(unittest.TestCase):
 
         self.assertEqual(result.resolved_ips, ("172.20.0.10",))
 
+    def test_local_demo_loopback_resolution_is_blocked(self) -> None:
+        match = match_allowlisted_target("http://juice-shop:3000", ALLOWLIST)
+
+        with self.assertRaises(SsrfGuardError):
+            validate_destination(match.url, match.allowlist_target, resolver_for(["127.0.0.1"]))
+
+    def test_local_demo_link_local_resolution_is_blocked(self) -> None:
+        match = match_allowlisted_target("http://juice-shop:3000", ALLOWLIST)
+
+        with self.assertRaises(SsrfGuardError):
+            validate_destination(match.url, match.allowlist_target, resolver_for(["169.254.10.5"]))
+
     def test_metadata_ip_is_always_blocked(self) -> None:
         match = match_allowlisted_target("http://juice-shop:3000", ALLOWLIST)
 

@@ -32,6 +32,8 @@ class AllowlistTarget(BaseModel):
     @classmethod
     def validate_schemes(cls, schemes: list[str]) -> list[str]:
         normalized = [scheme.lower() for scheme in schemes]
+        if len(normalized) != 1:
+            raise ValueError("each allowlist target must define exactly one scheme")
         invalid = [scheme for scheme in normalized if scheme not in {"http", "https"}]
         if invalid:
             raise ValueError(f"unsupported schemes: {invalid}")
@@ -41,6 +43,8 @@ class AllowlistTarget(BaseModel):
     @classmethod
     def validate_hosts(cls, hosts: list[str]) -> list[str]:
         normalized = [host.lower().strip() for host in hosts]
+        if len(normalized) != 1:
+            raise ValueError("each allowlist target must define exactly one host")
         if any(not host for host in normalized):
             raise ValueError("hosts cannot be empty")
         if any("*" in host for host in normalized):
@@ -50,6 +54,8 @@ class AllowlistTarget(BaseModel):
     @field_validator("ports")
     @classmethod
     def validate_ports(cls, ports: list[int]) -> list[int]:
+        if len(ports) != 1:
+            raise ValueError("each allowlist target must define exactly one port")
         for port in ports:
             if port < 1 or port > 65535:
                 raise ValueError(f"invalid port: {port}")
@@ -78,11 +84,19 @@ class ScanAllowlist(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     @model_validator(mode="after")
-    def validate_unique_ids(self) -> "ScanAllowlist":
+    def validate_unique_entries(self) -> "ScanAllowlist":
         ids = [target.id for target in self.targets]
         duplicates = sorted({target_id for target_id in ids if ids.count(target_id) > 1})
         if duplicates:
             raise ValueError(f"duplicate target ids: {duplicates}")
+
+        endpoints = [
+            (target.schemes[0], target.hosts[0], target.ports[0])
+            for target in self.targets
+        ]
+        duplicate_endpoints = sorted({endpoint for endpoint in endpoints if endpoints.count(endpoint) > 1})
+        if duplicate_endpoints:
+            raise ValueError(f"duplicate allowlist endpoints: {duplicate_endpoints}")
         return self
 
     def get_target(self, allowlist_id: str) -> AllowlistTarget | None:
@@ -118,4 +132,3 @@ def ensure_unique(values: Iterable[str], label: str) -> None:
     duplicates = sorted({item for item in items if items.count(item) > 1})
     if duplicates:
         raise AllowlistError(f"duplicate {label}: {duplicates}")
-

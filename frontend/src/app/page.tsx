@@ -16,10 +16,10 @@ export default function Home() {
           <p className="eyebrow">Defensive Web App Security Audit</p>
           <h1>Local-first security evidence, normalized findings, and clear reports.</h1>
         </div>
-        <div className="statusPanel" aria-label="Phase 1 scaffold status">
-          <span>Phase 1</span>
-          <strong>Scaffold ready</strong>
-          <small>Scanning starts in later phases after target validation and worker APIs are implemented.</small>
+        <div className="statusPanel" aria-label="Phase 2 target validation status">
+          <span>Phase 2</span>
+          <strong>Target validation ready</strong>
+          <small>Create allowlisted targets now. Scan execution starts in Phase 3 after worker APIs are implemented.</small>
         </div>
       </section>
 

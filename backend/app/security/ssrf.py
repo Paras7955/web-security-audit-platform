@@ -26,6 +26,12 @@ class DestinationValidation:
 METADATA_IPS = {
     ipaddress.ip_address("169.254.169.254"),
 }
+RFC1918_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+)
+UNIQUE_LOCAL_IPV6 = ipaddress.ip_network("fc00::/7")
 
 
 def resolve_host(host: str, port: int) -> list[str]:
@@ -71,9 +77,15 @@ def validate_ip_for_target(ip: ipaddress._BaseAddress, host: str, allowlist_targ
     if ip in METADATA_IPS:
         raise SsrfGuardError("cloud metadata destinations are blocked")
 
-    if is_internal_address(ip):
-        if allowlist_target.local_demo and host in allowlist_target.hosts:
+    if is_never_allowed_internal_address(ip):
+        raise SsrfGuardError("loopback, link-local, reserved, multicast, and unspecified destinations are blocked")
+
+    if is_local_demo_network_address(ip):
+        if allowlist_target.local_demo and host == allowlist_target.hosts[0]:
             return
+        raise SsrfGuardError("private, loopback, link-local, and internal destinations are blocked")
+
+    if is_internal_address(ip):
         raise SsrfGuardError("private, loopback, link-local, and internal destinations are blocked")
 
 
@@ -87,3 +99,18 @@ def is_internal_address(ip: ipaddress._BaseAddress) -> bool:
         or ip.is_unspecified
     )
 
+
+def is_never_allowed_internal_address(ip: ipaddress._BaseAddress) -> bool:
+    return bool(
+        ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def is_local_demo_network_address(ip: ipaddress._BaseAddress) -> bool:
+    if isinstance(ip, ipaddress.IPv4Address):
+        return any(ip in network for network in RFC1918_NETWORKS)
+    return ip in UNIQUE_LOCAL_IPV6
