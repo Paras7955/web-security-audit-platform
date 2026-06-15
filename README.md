@@ -30,6 +30,19 @@ http://localhost:3000
 
 Phase 1 scaffolds the application contracts and safety docs. Target creation, scanning, findings, reports, AI, and ZAP workflows are implemented in later phases and must not be implied as production-ready by Phase 1 UI.
 
+## Phase 2 Status
+
+Phase 2 adds target validation and target creation. The backend validates submitted URLs against `config/scan-allowlist.yml`, applies deny-by-default destination checks, and stores authorized targets only after permission confirmation.
+
+Implemented target APIs:
+
+- `GET /targets/validate?target_url=...`
+- `POST /targets`
+- `GET /targets`
+- `GET /targets/{target_id}`
+
+Phase 2 does not run scans. The UI may save an allowlisted target, but scan execution starts in Phase 3.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.

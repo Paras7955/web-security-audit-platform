@@ -133,6 +133,119 @@ dd {
   margin-top: 16px;
 }
 
+.targetSetup {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 18px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.sectionHeader h2 {
+  margin-bottom: 0;
+}
+
+.phaseBadge {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.targetForm {
+  display: grid;
+  gap: 14px;
+}
+
+.targetForm label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.targetForm input[type="text"],
+.targetForm input:not([type]) {
+  width: 100%;
+}
+
+input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--foreground);
+  font: inherit;
+}
+
+.checkboxRow {
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+}
+
+.checkboxRow input {
+  margin-top: 3px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--foreground);
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 10px 14px;
+}
+
+button:disabled {
+  background: #e8ebef;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.formMessage {
+  margin: 14px 0 0;
+  color: var(--muted);
+}
+
+.validationPanel {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfd;
+}
+
+.validationPanel h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.validationPanel p {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.successPanel {
+  border-color: #9ccfbd;
+}
+
 @media (max-width: 900px) {
   .hero,
   .grid {
