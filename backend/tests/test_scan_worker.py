@@ -1,15 +1,19 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
-from app.core.contracts import ScanStatus, ScanStep
+from app.core.contracts import Confidence, ScanStatus, ScanStep, Severity
 from app.db.session import SessionLocal
-from app.models import Scan, Target
+from app.findings.schemas import NormalizedFindingInput
+from app.models import Finding, Scan, Target
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
-from app.scans.lifecycle import claim_next_queued_scan, run_internal_lifecycle_job
+from app.scans.lifecycle import claim_next_queued_scan, run_internal_lifecycle_job, run_passive_scan_job
+from app.scanner.passive import PassiveScanResult
+from app.security.allowlist import ScanAllowlist
 
 
 class ScanWorkerTests(unittest.TestCase):
@@ -41,6 +45,7 @@ class ScanWorkerTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         with SessionLocal() as db:
+            db.execute(delete(Finding).where(Finding.scan_id == self.scan_id))
             db.execute(delete(Scan).where(Scan.id == self.scan_id))
             db.execute(delete(Target).where(Target.id == self.target_id))
             db.commit()
@@ -103,7 +108,7 @@ class ScanWorkerTests(unittest.TestCase):
                 run_internal_lifecycle_job(db, scan, temp_dir)
 
                 self.assertEqual(scan.status, "failed")
-                self.assertEqual(scan.error_code, "internal_lifecycle_failed")
+                self.assertEqual(scan.error_code, "scan_worker_failed")
                 self.assertIn("only supports passive", scan.error_detail)
 
     def test_worker_fails_unconfirmed_target(self) -> None:
@@ -121,8 +126,59 @@ class ScanWorkerTests(unittest.TestCase):
                 run_internal_lifecycle_job(db, scan, temp_dir)
 
                 self.assertEqual(scan.status, "failed")
-                self.assertEqual(scan.error_code, "internal_lifecycle_failed")
+                self.assertEqual(scan.error_code, "scan_worker_failed")
                 self.assertIn("authorization is not confirmed", scan.error_detail)
+
+    def test_passive_scan_job_persists_findings(self) -> None:
+        allowlist = ScanAllowlist.model_validate(
+            {
+                "targets": [
+                    {
+                        "id": "juice-shop",
+                        "name": "OWASP Juice Shop",
+                        "base_url": "http://juice-shop:3000",
+                        "schemes": ["http"],
+                        "hosts": ["juice-shop"],
+                        "ports": [3000],
+                        "allowed_modes": ["passive"],
+                        "max_redirects": 5,
+                        "local_demo": True,
+                    }
+                ]
+            }
+        )
+        finding = NormalizedFindingInput(
+            title="Missing Content Security Policy",
+            severity=Severity.LOW,
+            confidence=Confidence.MEDIUM,
+            affected_url="http://juice-shop:3000/",
+            evidence="Content-Security-Policy header was not present.",
+            source_tool="custom-passive",
+            scanner_rule_id="header:content-security-policy",
+            cwe="CWE-693",
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_result = PassiveScanResult(
+                pages=(),
+                findings=(finding,),
+                errors=(),
+                artifact_dir=Path(temp_dir) / "scans" / self.scan_id,
+            )
+            with SessionLocal() as db:
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(scan)
+
+                with patch("app.scans.lifecycle.run_passive_scan", return_value=fake_result):
+                    run_passive_scan_job(db, scan, temp_dir, allowlist)
+
+                self.assertEqual(scan.status, "completed")
+                self.assertEqual(scan.current_step, "normalizing_findings")
+                self.assertEqual(scan.progress_percent, 100)
+                persisted = db.scalars(select(Finding).where(Finding.scan_id == self.scan_id)).all()
+                self.assertEqual(len(persisted), 1)
+                self.assertEqual(persisted[0].source_tool, "custom-passive")
+                self.assertEqual(persisted[0].scanner_rule_id, "header:content-security-policy")
 
 
 if __name__ == "__main__":

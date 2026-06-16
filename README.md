@@ -8,7 +8,7 @@ The project is designed as a cybersecurity resume project. Tools collect evidenc
 
 - Frontend: Next.js.
 - Backend: FastAPI.
-- Worker: Python worker skeleton; Postgres-backed scan jobs are planned for Phase 3.
+- Worker: Python worker for Postgres-backed scan jobs and bounded passive scanning.
 - Database: Postgres.
 - Security tooling: OWASP ZAP daemon/API integration in later phases.
 - Demo target: OWASP Juice Shop.
@@ -60,6 +60,30 @@ Phase 3 lifecycle jobs do not crawl targets, run passive checks, call ZAP, or ge
 Phase 4 adds normalized finding persistence primitives. The backend now has validated normalized finding inputs, evidence redaction and snippet capping, dedupe key generation, evidence artifact reference persistence, and fixture-backed tests for storing findings against a scan.
 
 Phase 4 does not yet add scanner-produced findings to the UI. Findings storage is ready for later scanner integrations and the dashboard phase.
+
+## Phase 5 Status
+
+Phase 5 adds the conservative custom passive scanner. The worker now runs queued passive scans against allowlisted targets, routes each outbound request through the guarded scanner HTTP client, follows redirects only after manual validation, writes a bounded crawl summary artifact, and persists normalized findings.
+
+Implemented passive scanner capabilities:
+
+- Guarded HTTP requests with automatic redirects disabled.
+- Bounded same-target crawl using the configured crawl depth and page cap.
+- Link, form, input, header, cookie, status, and redirect metadata collection.
+- Missing security header checks.
+- Cookie attribute checks.
+- Password-form GET-method checks.
+- Conservative exposed-file probes.
+- Login/admin route hints.
+
+Phase 5 does not call ZAP, run active scans, run AJAX crawling, generate reports, or expose a finished findings dashboard. Those are implemented in later phases.
+
+Known follow-up before Phase 6:
+
+- Perform a dedicated hardening pass for DNS re-resolution drift between SSRF validation and the actual outbound scanner connection.
+- This is intentionally scheduled before Phase 6 rather than Phase 9A so later phases build on the corrected outbound trust model.
+- Remove this note after the issue is resolved.
+- If the issue cannot be resolved then for a newly discovered technical reason, replace this note with the new target phase and rationale instead of leaving this stale reminder unchanged.
 
 ## Responsible Use
 

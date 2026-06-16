@@ -46,20 +46,20 @@ class ScanApiTests(unittest.TestCase):
         self.assertEqual(body["status"], "queued")
         self.assertEqual(body["current_step"], "target_validation")
         self.assertEqual(body["progress_percent"], 0)
-        self.assertIn("Phase 3 internal lifecycle job", body["status_message"])
+        self.assertIn("passive scanner worker", body["status_message"])
 
     def test_create_scan_rejects_missing_target(self) -> None:
         response = self.client.post("/scans", json={"target_id": str(uuid4()), "mode": "passive"})
 
         self.assertEqual(response.status_code, 404)
 
-    def test_create_scan_rejects_active_modes_in_phase_3(self) -> None:
+    def test_create_scan_rejects_active_modes_in_phase_5(self) -> None:
         target = self.create_target()
 
         response = self.client.post("/scans", json={"target_id": target["id"], "mode": "active_demo"})
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Only passive lifecycle jobs", response.json()["detail"])
+        self.assertIn("Only passive scans", response.json()["detail"])
 
     def test_list_and_get_scan(self) -> None:
         target = self.create_target()

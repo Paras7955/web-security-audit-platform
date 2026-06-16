@@ -4,8 +4,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.contracts import ScanStatus, ScanStep
+from app.findings.service import persist_normalized_findings
 from app.models import Scan
 from app.scans.artifacts import ensure_scan_artifact_dir
+from app.scanner.passive import run_passive_scan
+from app.security.allowlist import ScanAllowlist
 
 
 class ScanLifecycleError(ValueError):
@@ -91,9 +94,89 @@ def run_internal_lifecycle_job(db: Session, scan: Scan, artifact_root: str) -> N
         mark_scan_failed(db, scan, exc)
 
 
+def run_passive_scan_job(db: Session, scan: Scan, artifact_root: str, allowlist: ScanAllowlist) -> None:
+    try:
+        validate_passive_lifecycle_scan(scan)
+        if scan.target is None:
+            raise ScanLifecycleError("Scan target no longer exists.")
+        allowlist_target = allowlist.get_target(scan.target.allowlist_id)
+        if allowlist_target is None:
+            raise ScanLifecycleError("Scan target is not present in the allowlist.")
+
+        update_scan_progress(
+            db,
+            scan,
+            status=ScanStatus.VALIDATING,
+            current_step=ScanStep.TARGET_VALIDATION,
+            status_message="Validated target and allowlist entry for passive scan.",
+            progress_percent=10,
+        )
+        update_scan_progress(
+            db,
+            scan,
+            status=ScanStatus.RUNNING,
+            current_step=ScanStep.CUSTOM_CRAWL,
+            status_message="Running bounded passive crawl with guarded requests.",
+            progress_percent=30,
+        )
+
+        result = run_passive_scan(
+            scan_id=scan.id,
+            target_url=scan.target.base_url,
+            allowlist_target=allowlist_target,
+            artifact_root=artifact_root,
+        )
+
+        update_scan_progress(
+            db,
+            scan,
+            status=ScanStatus.RUNNING,
+            current_step=ScanStep.CUSTOM_CHECKS,
+            status_message=f"Completed passive checks for {len(result.pages)} crawled pages.",
+            progress_percent=70,
+        )
+        update_scan_progress(
+            db,
+            scan,
+            status=ScanStatus.NORMALIZING,
+            current_step=ScanStep.NORMALIZING_FINDINGS,
+            status_message=f"Persisting {len(result.findings)} normalized passive findings.",
+            progress_percent=85,
+        )
+
+        persist_normalized_findings(
+            db,
+            scan_id=scan.id,
+            findings=list(result.findings),
+            artifact_root=artifact_root,
+        )
+
+        terminal_status = ScanStatus.COMPLETED_WITH_WARNINGS if result.errors else ScanStatus.COMPLETED
+        status_message = (
+            f"Passive scan completed with {len(result.findings)} findings and {len(result.errors)} crawl warnings."
+            if result.errors
+            else f"Passive scan completed with {len(result.findings)} findings."
+        )
+        update_scan_progress(
+            db,
+            scan,
+            status=terminal_status,
+            current_step=ScanStep.NORMALIZING_FINDINGS,
+            status_message=status_message,
+            progress_percent=100,
+            completed_at=datetime.now(UTC),
+        )
+    except Exception as exc:
+        mark_scan_failed(db, scan, exc)
+
+
 def validate_phase3_lifecycle_scan(scan: Scan) -> None:
+    validate_passive_lifecycle_scan(scan)
+
+
+def validate_passive_lifecycle_scan(scan: Scan) -> None:
     if scan.mode != "passive":
-        raise ScanLifecycleError("Phase 3 worker only supports passive lifecycle jobs.")
+        raise ScanLifecycleError("Worker only supports passive scan jobs in this phase.")
     if scan.target is None:
         raise ScanLifecycleError("Scan target no longer exists.")
     if not scan.target.permission_confirmed:
@@ -126,10 +209,10 @@ def update_scan_progress(
 
 def mark_scan_failed(db: Session, scan: Scan, exc: Exception) -> None:
     scan.status = ScanStatus.FAILED.value
-    scan.status_message = "Phase 3 internal lifecycle job failed."
+    scan.status_message = "Scan worker job failed."
     scan.progress_percent = min(scan.progress_percent or 0, 99)
     scan.completed_at = datetime.now(UTC)
-    scan.error_code = "internal_lifecycle_failed"
+    scan.error_code = "scan_worker_failed"
     scan.error_detail = str(exc)
     db.add(scan)
     db.commit()

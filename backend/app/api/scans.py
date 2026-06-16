@@ -32,7 +32,7 @@ def create_scan(
         mode=mode.value,
         status=ScanStatus.QUEUED.value,
         current_step=ScanStep.TARGET_VALIDATION.value,
-        status_message="Queued for Phase 3 internal lifecycle job. Real scanner execution starts in later phases.",
+        status_message="Queued for passive scanner worker.",
         progress_percent=0,
     )
     db.add(scan)
@@ -68,6 +68,6 @@ def validate_scan_mode(raw_mode: str, target: Target, allowlist: ScanAllowlist) 
     if mode is not ScanMode.PASSIVE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only passive lifecycle jobs are available in Phase 3.",
+            detail="Only passive scans are available in Phase 5.",
         )
     return mode
