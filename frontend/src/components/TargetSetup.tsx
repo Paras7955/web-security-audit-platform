@@ -181,7 +181,7 @@ export function TargetSetup() {
           <p className="eyebrow">Target Setup</p>
           <h2 id="target-setup-heading">Create an authorized scan target</h2>
         </div>
-        <span className="phaseBadge">Phase 2</span>
+        <span className="phaseBadge">Phase 3</span>
       </div>
 
       <form onSubmit={validateTarget} className="targetForm">
