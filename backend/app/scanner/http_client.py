@@ -44,7 +44,10 @@ class GuardedHttpClient:
 
         with httpx.Client(follow_redirects=False, timeout=self.timeout_seconds) as client:
             for _attempt in range(self.allowlist_target.max_redirects + 1):
-                response = client.get(current_url.normalized_url)
+                try:
+                    response = client.get(current_url.normalized_url)
+                except httpx.HTTPError as exc:
+                    raise ScannerHttpError(str(exc)) from exc
                 if not is_redirect(response.status_code):
                     return ScannerHttpResponse(
                         url=current_url,

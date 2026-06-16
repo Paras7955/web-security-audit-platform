@@ -5,7 +5,8 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.db.session import engine
 from app.db.session import SessionLocal
-from app.scans.lifecycle import claim_next_queued_scan, run_internal_lifecycle_job
+from app.scans.lifecycle import claim_next_queued_scan, run_passive_scan_job
+from app.security.allowlist import load_allowlist
 
 
 def wait_for_database(max_attempts: int = 30) -> None:
@@ -28,7 +29,8 @@ def main() -> None:
             scan = claim_next_queued_scan(db)
             if scan is not None:
                 print(f"Processing scan {scan.id}", flush=True)
-                run_internal_lifecycle_job(db, scan, settings.artifact_root)
+                allowlist = load_allowlist(settings.allowlist_path)
+                run_passive_scan_job(db, scan, settings.artifact_root, allowlist)
                 continue
         time.sleep(5)
 
