@@ -87,6 +87,9 @@ Post-v1 unless explicitly approved:
 Commit completed implementation work before requesting review.
 
 - Use the review agent when a phase is complete, when a major component needs review, or when a major architectural, safety, security, or integration problem may be happening.
+- The review sub-agent must explicitly use `model: gpt-5.4` and `reasoning_effort: medium` instead of inheriting the main chat model.
+- This pin applies only to the review sub-agent. Other explorers or worker sub-agents remain task-dependent unless a later rule changes that.
+- The main implementation chat model remains independent and user-chosen.
 - The review agent does not need to run after every commit-sized subdivision.
 - If the review agent recommends changes and those recommendations are accepted, implement the changes and create a follow-up commit for the review fixes.
 - Invoke a fresh review sub-agent where available.
@@ -97,6 +100,7 @@ Commit completed implementation work before requesting review.
 - Pause implementation for safety-critical findings until reviewed.
 - If sub-agent review is unavailable, perform a separate self-review pass using the same checklist and record it in the decision log.
 - Reset review context every time.
+- If `gpt-5.4` is later removed or renamed, replace this rule with the closest supported review-grade successor and update `AGENTS.md` and `README.md` together.
 
 ## Commit Workflow
 

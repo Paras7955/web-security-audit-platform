@@ -170,6 +170,13 @@ Planned phase branches:
 
 Before a phase starts, the agent verifies a clean worktree, creates or switches to the phase branch from the current base branch, and confirms the active branch. Do not begin the next phase until the user confirms the previous phase branch has been merged back into the base branch.
 
+Review-agent policy for future phases:
+
+- The review sub-agent is pinned to `gpt-5.4` with `medium` reasoning.
+- This pin applies only to the review sub-agent, not to the main implementation chat model or to other spawned agents.
+- If the review sub-agent is unavailable, the fallback remains a separate self-review pass using the same checklist.
+- If `gpt-5.4` is removed or renamed later, replace this note with the closest supported review-grade successor and keep it aligned with `AGENTS.md`.
+
 ## Database Migrations
 
 Docker Compose includes a one-shot `migrate` service that runs:
