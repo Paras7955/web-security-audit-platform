@@ -68,6 +68,7 @@ Phase 5 adds the conservative custom passive scanner. The worker now runs queued
 Implemented passive scanner capabilities:
 
 - Guarded HTTP requests with automatic redirects disabled.
+- Custom scanner HTTP requests connect to the SSRF-validated destination IP to avoid DNS drift between validation and connection.
 - Bounded same-target crawl using the configured crawl depth and page cap.
 - Link, form, input, header, cookie, status, and redirect metadata collection.
 - Missing security header checks.
@@ -77,13 +78,6 @@ Implemented passive scanner capabilities:
 - Login/admin route hints.
 
 Phase 5 does not call ZAP, run active scans, run AJAX crawling, generate reports, or expose a finished findings dashboard. Those are implemented in later phases.
-
-Known follow-up before Phase 6:
-
-- Perform a dedicated hardening pass for DNS re-resolution drift between SSRF validation and the actual outbound scanner connection.
-- This is intentionally scheduled before Phase 6 rather than Phase 9A so later phases build on the corrected outbound trust model.
-- Remove this note after the issue is resolved.
-- If the issue cannot be resolved then for a newly discovered technical reason, replace this note with the new target phase and rationale instead of leaving this stale reminder unchanged.
 
 ## Responsible Use
 

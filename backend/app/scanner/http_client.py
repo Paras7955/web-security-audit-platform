@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 
 from app.security.allowlist import AllowlistTarget
 from app.security.redirects import RedirectValidationError, validate_redirect_location
-from app.security.ssrf import Resolver, resolve_host, validate_destination
+from app.security.ssrf import DestinationValidation, Resolver, resolve_host, validate_destination
 from app.security.target_url import NormalizedTargetUrl, normalize_target_url
 
 
@@ -40,13 +40,14 @@ class GuardedHttpClient:
         self.body_bytes_limit = body_bytes_limit
 
     def get(self, raw_url: str) -> ScannerHttpResponse:
-        current_url = self._validate_url(raw_url)
+        current_url, current_destination = self._validate_url(raw_url)
         redirect_chain: list[str] = []
 
         with httpx.Client(follow_redirects=False, timeout=self.timeout_seconds, trust_env=False) as client:
             for _attempt in range(self.allowlist_target.max_redirects + 1):
                 try:
-                    with client.stream("GET", current_url.normalized_url) as response:
+                    request_url = build_pinned_request_url(current_url, current_destination)
+                    with client.stream("GET", request_url, headers={"Host": build_host_header(current_url)}) as response:
                         if not is_redirect(response.status_code):
                             return ScannerHttpResponse(
                                 url=current_url,
@@ -75,13 +76,14 @@ class GuardedHttpClient:
 
                 redirect_chain.append(urljoin(current_url.normalized_url, location or ""))
                 current_url = next_url
+                current_destination = _destination
 
         raise ScannerHttpError("request did not complete")
 
-    def _validate_url(self, raw_url: str) -> NormalizedTargetUrl:
+    def _validate_url(self, raw_url: str) -> tuple[NormalizedTargetUrl, DestinationValidation]:
         normalized = normalize_target_url(raw_url)
-        validate_destination(normalized, self.allowlist_target, resolver=self.resolver)
-        return normalized
+        destination = validate_destination(normalized, self.allowlist_target, resolver=self.resolver)
+        return normalized, destination
 
 
 def is_redirect(status_code: int) -> bool:
@@ -90,6 +92,21 @@ def is_redirect(status_code: int) -> bool:
 
 def decode_limited_body(content: bytes, body_bytes_limit: int) -> str:
     return content[:body_bytes_limit].decode("utf-8", errors="replace")
+
+
+def build_pinned_request_url(normalized_url: NormalizedTargetUrl, destination: DestinationValidation) -> str:
+    if normalized_url.scheme != "http":
+        raise ScannerHttpError("pinned scanner connections currently support http targets only")
+
+    parsed = urlparse(normalized_url.normalized_url)
+    connection_host = destination.connection_ip
+    if ":" in connection_host and not connection_host.startswith("["):
+        connection_host = f"[{connection_host}]"
+    return urlunparse((parsed.scheme, f"{connection_host}:{normalized_url.port}", parsed.path, "", parsed.query, ""))
+
+
+def build_host_header(normalized_url: NormalizedTargetUrl) -> str:
+    return f"{normalized_url.host}:{normalized_url.port}"
 
 
 def read_limited_body(response: httpx.Response, body_bytes_limit: int) -> bytes:
