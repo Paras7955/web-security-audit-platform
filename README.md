@@ -122,7 +122,7 @@ Post-v1 unless explicitly approved:
 
 Implementation stops after each phase. The next phase starts only after explicit user approval.
 
-Within an approved phase, work is split into commit-sized subdivisions. The agent may commit each subdivision, continue through the phase, and then stop at the phase boundary for review and user approval.
+Within an approved phase, work is split into commit-sized subdivisions. The agent may commit each subdivision, continue through the phase, and then stop at the phase boundary for review and user approval. Subdivisions are the minimum planning unit, not a hard one-commit limit: the agent may use one commit, multiple focused commits, or follow-up fix commits when that makes the history clearer or safer.
 
 Each future phase is developed on its own branch using the `codex/phase-*` naming pattern. The user merges the completed phase branch back into the base branch after phase review.
 

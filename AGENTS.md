@@ -93,7 +93,7 @@ Commit completed implementation work before requesting review.
 
 ## Commit Workflow
 
-The agent has permission to create commits at each commit-sized subdivision inside a phase.
+The agent has permission to create commits at each commit-sized subdivision inside a phase. Commit-sized subdivisions are the minimum planning unit, not a hard one-commit limit.
 
 Rules:
 
@@ -102,11 +102,14 @@ Rules:
 - Do not stop between subdivisions unless blocked or a major safety/design issue appears.
 - Stop only at full phase boundaries.
 - Use multiple commits per phase so the Git history looks full and intentional.
-- After each subdivision commit, report the commit hash, commit message, what changed, what verification ran, and what subdivision comes next.
+- For each subdivision, use engineering judgment to decide whether it should be one cohesive commit, multiple commits split by API/data model/worker/UI/test/docs/safety concerns, or a follow-up fix commit after review or verification.
+- Prefer more commits when it improves reviewability, preserves a clear history, or separates risky safety/security behavior from mechanical wiring.
+- Prefer one commit when splitting would create tiny artificial commits that do not improve understanding.
+- After each commit, report the commit hash, commit message, what changed, what verification ran, and what comes next.
 - The user will push and merge commits after the phase is complete and reviewed.
 - Do not push unless the user explicitly asks.
 - If review-agent changes are accepted, commit those changes separately after the review.
-- Include the final phase branch name, commits, verification results, and merge reminder in the phase summary.
+- Include the final phase branch name, commits, verification results, merge reminder, and any extra commits made beyond the original subdivision list in the phase summary.
 
 ## Decision Log Format
 
