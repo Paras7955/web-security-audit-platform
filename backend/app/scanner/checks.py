@@ -62,33 +62,34 @@ def check_security_headers(page: CrawledPage) -> list[NormalizedFindingInput]:
 
 
 def check_cookies(page: CrawledPage) -> list[NormalizedFindingInput]:
-    set_cookie = page.headers.get("set-cookie")
-    if not set_cookie:
+    set_cookie_headers = page.set_cookie_headers or tuple([page.headers["set-cookie"]] if "set-cookie" in page.headers else [])
+    if not set_cookie_headers:
         return []
 
     findings: list[NormalizedFindingInput] = []
-    lower_cookie = set_cookie.lower()
     attributes = {
         "httponly": "Cookie Missing HttpOnly Attribute",
         "secure": "Cookie Missing Secure Attribute",
         "samesite": "Cookie Missing SameSite Attribute",
     }
-    for attribute, title in attributes.items():
-        if attribute not in lower_cookie:
-            findings.append(
-                NormalizedFindingInput(
-                    title=title,
-                    severity=Severity.LOW,
-                    confidence=Confidence.MEDIUM,
-                    affected_url=page.url,
-                    evidence=f"set-cookie: {set_cookie}",
-                    source_tool="custom-passive",
-                    scanner_rule_id=f"cookie:{attribute}",
-                    cwe="CWE-614",
-                    owasp_category="A05:2021",
-                    remediation=f"Set the {attribute} attribute on sensitive cookies where appropriate.",
+    for set_cookie in set_cookie_headers:
+        lower_cookie = set_cookie.lower()
+        for attribute, title in attributes.items():
+            if attribute not in lower_cookie:
+                findings.append(
+                    NormalizedFindingInput(
+                        title=title,
+                        severity=Severity.LOW,
+                        confidence=Confidence.MEDIUM,
+                        affected_url=page.url,
+                        evidence=f"A Set-Cookie header is missing the {attribute} attribute.",
+                        source_tool="custom-passive",
+                        scanner_rule_id=f"cookie:{attribute}",
+                        cwe="CWE-614",
+                        owasp_category="A05:2021",
+                        remediation=f"Set the {attribute} attribute on sensitive cookies where appropriate.",
+                    )
                 )
-            )
     return findings
 
 

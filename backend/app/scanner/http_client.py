@@ -22,6 +22,7 @@ class ScannerHttpResponse:
     headers: dict[str, str]
     body: str
     redirect_chain: tuple[str, ...]
+    set_cookie_headers: tuple[str, ...] = ()
 
 
 class GuardedHttpClient:
@@ -42,22 +43,24 @@ class GuardedHttpClient:
         current_url = self._validate_url(raw_url)
         redirect_chain: list[str] = []
 
-        with httpx.Client(follow_redirects=False, timeout=self.timeout_seconds) as client:
+        with httpx.Client(follow_redirects=False, timeout=self.timeout_seconds, trust_env=False) as client:
             for _attempt in range(self.allowlist_target.max_redirects + 1):
                 try:
-                    response = client.get(current_url.normalized_url)
+                    with client.stream("GET", current_url.normalized_url) as response:
+                        if not is_redirect(response.status_code):
+                            return ScannerHttpResponse(
+                                url=current_url,
+                                status_code=response.status_code,
+                                headers={key.lower(): value for key, value in response.headers.items()},
+                                body=decode_limited_body(read_limited_body(response, self.body_bytes_limit), self.body_bytes_limit),
+                                redirect_chain=tuple(redirect_chain),
+                                set_cookie_headers=tuple(response.headers.get_list("set-cookie")),
+                            )
+
+                        location = response.headers.get("location")
                 except httpx.HTTPError as exc:
                     raise ScannerHttpError(str(exc)) from exc
-                if not is_redirect(response.status_code):
-                    return ScannerHttpResponse(
-                        url=current_url,
-                        status_code=response.status_code,
-                        headers={key.lower(): value for key, value in response.headers.items()},
-                        body=decode_limited_body(response.content, self.body_bytes_limit),
-                        redirect_chain=tuple(redirect_chain),
-                    )
 
-                location = response.headers.get("location")
                 if len(redirect_chain) >= self.allowlist_target.max_redirects:
                     raise ScannerHttpError("redirect limit exceeded")
                 try:
@@ -87,3 +90,13 @@ def is_redirect(status_code: int) -> bool:
 
 def decode_limited_body(content: bytes, body_bytes_limit: int) -> str:
     return content[:body_bytes_limit].decode("utf-8", errors="replace")
+
+
+def read_limited_body(response: httpx.Response, body_bytes_limit: int) -> bytes:
+    body = bytearray()
+    for chunk in response.iter_bytes():
+        remaining = body_bytes_limit - len(body)
+        if remaining <= 0:
+            break
+        body.extend(chunk[:remaining])
+    return bytes(body)

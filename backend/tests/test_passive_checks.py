@@ -48,6 +48,19 @@ class PassiveChecksTests(unittest.TestCase):
 
         self.assertEqual({finding.scanner_rule_id for finding in findings}, {"cookie:httponly", "cookie:secure", "cookie:samesite"})
 
+    def test_cookie_attribute_findings_check_each_cookie(self) -> None:
+        findings = check_cookies(
+            page(
+                set_cookie_headers=(
+                    "session=abc123; HttpOnly; Secure; SameSite=Lax",
+                    "theme=light",
+                )
+            )
+        )
+
+        self.assertEqual({finding.scanner_rule_id for finding in findings}, {"cookie:httponly", "cookie:secure", "cookie:samesite"})
+        self.assertTrue(all("theme=light" not in (finding.evidence or "") for finding in findings))
+
     def test_password_get_form_emits_medium_finding(self) -> None:
         findings = check_forms(page(forms=(FormMetadata(action="/login", method="get", inputs=["password"]),)))
 

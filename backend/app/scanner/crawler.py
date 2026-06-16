@@ -19,6 +19,7 @@ class CrawledPage:
     forms: tuple[FormMetadata, ...]
     inputs: tuple[str, ...]
     redirect_chain: tuple[str, ...]
+    set_cookie_headers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,7 @@ def crawl_site(
             forms=tuple(metadata.forms),
             inputs=tuple(metadata.inputs),
             redirect_chain=response.redirect_chain,
+            set_cookie_headers=response.set_cookie_headers,
         )
         pages.append(page)
 
