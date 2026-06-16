@@ -40,7 +40,7 @@ V1 includes:
 - Next.js frontend.
 - Postgres.
 - Docker Compose.
-- Worker skeleton and later DB-backed jobs.
+- Worker-backed scan jobs and conservative custom passive scanning.
 - OWASP Juice Shop as the primary demo target.
 - ZAP daemon/API integration in later phases.
 - Normalized findings.
