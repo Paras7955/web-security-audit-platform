@@ -75,6 +75,13 @@ Post-v1 unless explicitly approved:
 - Redact evidence before persistence, AI, and reports.
 - Never send raw artifacts or unredacted evidence to AI.
 
+## Known Hardening Follow-Up
+
+- Before beginning Phase 6, perform a dedicated hardening pass to address DNS re-resolution drift between SSRF validation and the actual outbound scanner connection.
+- Treat this as the preferred engineering choice over deferring the work to Phase 9A, because later phases should build on the corrected outbound trust model instead of extending scanner behavior on top of a known network-boundary gap.
+- When this issue is resolved, remove this note from `AGENTS.md` and `README.md`.
+- If the issue cannot be fully resolved at that time for a newly discovered technical reason, replace this note with an updated phase target, rationale, and removal condition instead of silently leaving the old note in place.
+
 ## Sub-Agent Review Workflow
 
 Commit completed implementation work before requesting review.

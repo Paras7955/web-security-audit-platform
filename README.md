@@ -78,6 +78,13 @@ Implemented passive scanner capabilities:
 
 Phase 5 does not call ZAP, run active scans, run AJAX crawling, generate reports, or expose a finished findings dashboard. Those are implemented in later phases.
 
+Known follow-up before Phase 6:
+
+- Perform a dedicated hardening pass for DNS re-resolution drift between SSRF validation and the actual outbound scanner connection.
+- This is intentionally scheduled before Phase 6 rather than Phase 9A so later phases build on the corrected outbound trust model.
+- Remove this note after the issue is resolved.
+- If the issue cannot be resolved then for a newly discovered technical reason, replace this note with the new target phase and rationale instead of leaving this stale reminder unchanged.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.
