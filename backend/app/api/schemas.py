@@ -25,6 +25,30 @@ class ScanRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FindingRead(BaseModel):
+    id: str
+    scan_id: str
+    title: str
+    severity: str
+    confidence: str
+    affected_url: str | None
+    affected_file: str | None
+    evidence: str | None
+    source_tool: str
+    scanner_rule_id: str | None
+    dedupe_key: str
+    owasp_category: str | None
+    cwe: str | None
+    reproduction_steps: str | None
+    remediation: str | None
+    false_positive_notes: str | None
+    redaction_applied: bool
+    raw_artifact_ref: str | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TargetCreate(BaseModel):
     target_url: str = Field(min_length=1, max_length=2048)
     permission_confirmed: bool
