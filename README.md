@@ -43,6 +43,18 @@ Implemented target APIs:
 
 Phase 2 does not run scans. The UI may save an allowlisted target, but scan execution starts in Phase 3.
 
+## Phase 3 Status
+
+Phase 3 adds database-backed scan jobs and a worker lifecycle. The backend can create passive scan jobs, the worker claims queued jobs, updates `status` and `current_step`, creates a bounded scan artifact directory, and completes an internal lifecycle task.
+
+Implemented scan APIs:
+
+- `POST /scans`
+- `GET /scans`
+- `GET /scans/{scan_id}`
+
+Phase 3 lifecycle jobs do not crawl targets, run passive checks, call ZAP, or generate findings. They exist to prove queueing, worker status transitions, artifact path handling, and dashboard polling before real scanner execution is added in later phases.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.
@@ -110,7 +122,7 @@ Post-v1 unless explicitly approved:
 
 Implementation stops after each phase. The next phase starts only after explicit user approval.
 
-Within an approved phase, work is split into commit-sized subdivisions. The agent may commit each subdivision, continue through the phase, and then stop at the phase boundary for review and user approval.
+Within an approved phase, work is split into commit-sized subdivisions. The agent may commit each subdivision, continue through the phase, and then stop at the phase boundary for review and user approval. Subdivisions are the minimum planning unit, not a hard one-commit limit: the agent may use one commit, multiple focused commits, or follow-up fix commits when that makes the history clearer or safer.
 
 Each future phase is developed on its own branch using the `codex/phase-*` naming pattern. The user merges the completed phase branch back into the base branch after phase review.
 

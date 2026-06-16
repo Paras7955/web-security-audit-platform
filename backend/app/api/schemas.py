@@ -3,6 +3,28 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class ScanCreate(BaseModel):
+    target_id: str = Field(min_length=1, max_length=64)
+    mode: str = Field(default="passive", max_length=40)
+
+
+class ScanRead(BaseModel):
+    id: str
+    target_id: str
+    mode: str
+    status: str
+    current_step: str | None
+    status_message: str | None
+    progress_percent: int
+    started_at: datetime | None
+    completed_at: datetime | None
+    error_code: str | None
+    error_detail: str | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TargetCreate(BaseModel):
     target_url: str = Field(min_length=1, max_length=2048)
     permission_confirmed: bool
@@ -31,4 +53,3 @@ class TargetValidationRead(BaseModel):
     allowed_modes: list[str]
     max_redirects: int
     local_demo: bool
-
