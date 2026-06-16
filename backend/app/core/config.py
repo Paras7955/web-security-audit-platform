@@ -1,11 +1,15 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
 class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://security_audit:security_audit@postgres:5432/security_audit"
-    allowlist_path: str = "/app/config/scan-allowlist.yml"
+    allowlist_path: str = str(REPO_ROOT / "config" / "scan-allowlist.yml")
     artifact_root: str = "/app/artifacts"
     ai_provider: str = "template"
     openai_model: str | None = None
@@ -21,4 +25,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-
