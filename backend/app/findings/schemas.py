@@ -8,6 +8,14 @@ class EvidenceArtifactInput(BaseModel):
     path: str = Field(min_length=1, max_length=2048)
     redaction_applied: bool = True
 
+    @field_validator("artifact_type", "path")
+    @classmethod
+    def strip_artifact_fields(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value must not be blank")
+        return normalized
+
 
 class NormalizedFindingInput(BaseModel):
     title: str = Field(min_length=1, max_length=300)
@@ -34,4 +42,3 @@ class NormalizedFindingInput(BaseModel):
         if not normalized:
             raise ValueError("value must not be blank")
         return normalized
-

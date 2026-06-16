@@ -68,6 +68,9 @@ class FindingsTests(unittest.TestCase):
                 source_tool="zap",
             )
 
+        with self.assertRaises(ValidationError):
+            EvidenceArtifactInput(artifact_type="   ", path="   ")
+
     def test_redaction_and_evidence_cap_apply_before_persistence(self) -> None:
         evidence = "authorization: bearer super-secret-token\n" + ("A" * (EVIDENCE_SNIPPET_CAP + 100))
         redacted, applied = prepare_evidence_snippet(evidence)
@@ -99,6 +102,21 @@ class FindingsTests(unittest.TestCase):
 
         self.assertEqual(dedupe_key, "zap|http://juice-shop:3000/|missing content security policy|cwe-693")
 
+    def test_dedupe_key_is_bounded_for_long_valid_inputs(self) -> None:
+        finding = NormalizedFindingInput(
+            title="A" * 300,
+            severity="medium",
+            confidence="high",
+            affected_url=f"http://juice-shop:3000/{'x' * 1800}",
+            source_tool="zap",
+            cwe="CWE-693",
+        )
+
+        dedupe_key = build_dedupe_key(finding)
+
+        self.assertLessEqual(len(dedupe_key), 500)
+        self.assertIn("hash:", dedupe_key)
+
     def test_persist_normalized_findings_stores_artifact_reference_and_redaction(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             artifact_path = Path(temp_dir) / "scans" / self.scan_id / "raw.txt"
@@ -123,6 +141,7 @@ class FindingsTests(unittest.TestCase):
             self.assertTrue(persisted[0].redaction_applied)
             self.assertIsNotNone(persisted[0].raw_artifact_ref)
             self.assertNotIn("abc123", persisted[0].evidence or "")
+            self.assertLessEqual(len((persisted[0].evidence or "").encode("utf-8")), EVIDENCE_SNIPPET_CAP)
             self.assertNotIn("super-secret-key", persisted[1].evidence or "")
             self.assertEqual(persisted[1].scanner_rule_id, "generic-api-key")
 
@@ -143,6 +162,33 @@ class FindingsTests(unittest.TestCase):
                     ],
                     artifact_root=temp_dir,
                 )
+
+    def test_persistence_rolls_back_artifacts_when_batch_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            valid_artifact_path = Path(temp_dir) / "scans" / self.scan_id / "raw.txt"
+            valid_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            valid_artifact_path.write_text("raw artifact", encoding="utf-8")
+
+            with SessionLocal() as db, self.assertRaises(FindingPersistenceError):
+                persist_normalized_findings(
+                    db,
+                    scan_id=self.scan_id,
+                    findings=[
+                        NormalizedFindingInput(
+                            **ZAP_FIXTURE,
+                            raw_artifact=EvidenceArtifactInput(artifact_type="http_response", path=str(valid_artifact_path)),
+                        ),
+                        NormalizedFindingInput(
+                            **GITLEAKS_FIXTURE,
+                            raw_artifact=EvidenceArtifactInput(artifact_type="http_response", path="relative/path.txt"),
+                        ),
+                    ],
+                    artifact_root=temp_dir,
+                )
+
+            with SessionLocal() as db:
+                self.assertEqual(db.query(EvidenceArtifact).filter(EvidenceArtifact.scan_id == self.scan_id).count(), 0)
+                self.assertEqual(db.query(Finding).filter(Finding.scan_id == self.scan_id).count(), 0)
 
 
 if __name__ == "__main__":
