@@ -41,6 +41,7 @@ V1 includes:
 - Postgres.
 - Docker Compose.
 - Worker-backed scan jobs and conservative custom passive scanning.
+- Findings dashboard for passive scan history, progress, severity filtering, and finding details.
 - OWASP Juice Shop as the primary demo target.
 - ZAP daemon/API integration in later phases.
 - Normalized findings.

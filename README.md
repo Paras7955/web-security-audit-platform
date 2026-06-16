@@ -79,6 +79,21 @@ Implemented passive scanner capabilities:
 
 Phase 5 does not call ZAP, run active scans, run AJAX crawling, generate reports, or expose a finished findings dashboard. Those are implemented in later phases.
 
+## Phase 6 Status
+
+Phase 6 adds the findings dashboard. The UI can create allowlisted targets, start passive scans, poll worker progress, show scan history, filter normalized findings by severity, and display finding evidence/details.
+
+Implemented dashboard capabilities:
+
+- Saved target selection for passive scans.
+- Scan history and selected-scan progress.
+- Current step and status message display.
+- Findings table with severity filters.
+- Finding detail panel with evidence, rule metadata, CWE/OWASP fields, and redaction status.
+- Scan mode safety copy showing Active Demo and AJAX Short as later gated phases.
+
+Phase 6 does not generate report artifacts or call ZAP. Report links are represented as Phase 7 placeholders until Markdown/HTML report generation is implemented.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.
