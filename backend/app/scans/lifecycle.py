@@ -8,6 +8,10 @@ from app.models import Scan
 from app.scans.artifacts import ensure_scan_artifact_dir
 
 
+class ScanLifecycleError(ValueError):
+    pass
+
+
 def claim_next_queued_scan(db: Session) -> Scan | None:
     statement = (
         select(Scan)
@@ -34,6 +38,7 @@ def claim_next_queued_scan(db: Session) -> Scan | None:
 
 def run_internal_lifecycle_job(db: Session, scan: Scan, artifact_root: str) -> None:
     try:
+        validate_phase3_lifecycle_scan(scan)
         update_scan_progress(
             db,
             scan,
@@ -53,15 +58,15 @@ def run_internal_lifecycle_job(db: Session, scan: Scan, artifact_root: str) -> N
             db,
             scan,
             status=ScanStatus.RUNNING,
-            current_step=ScanStep.CUSTOM_CRAWL,
-            status_message="Exercising queued-to-running scan lifecycle. Real crawling starts in Phase 5.",
+            current_step=ScanStep.TARGET_VALIDATION,
+            status_message="Exercising queued-to-running scan lifecycle. No crawler runs in Phase 3.",
             progress_percent=40,
         )
         update_scan_progress(
             db,
             scan,
             status=ScanStatus.RUNNING,
-            current_step=ScanStep.CUSTOM_CHECKS,
+            current_step=ScanStep.TARGET_VALIDATION,
             status_message="Exercising worker progress updates. No passive checks run in Phase 3.",
             progress_percent=65,
         )
@@ -69,21 +74,30 @@ def run_internal_lifecycle_job(db: Session, scan: Scan, artifact_root: str) -> N
             db,
             scan,
             status=ScanStatus.NORMALIZING,
-            current_step=ScanStep.NORMALIZING_FINDINGS,
-            status_message="Completing lifecycle without normalized findings.",
+            current_step=ScanStep.TARGET_VALIDATION,
+            status_message="Completing internal lifecycle without findings.",
             progress_percent=85,
         )
         update_scan_progress(
             db,
             scan,
             status=ScanStatus.COMPLETED,
-            current_step=ScanStep.NORMALIZING_FINDINGS,
+            current_step=ScanStep.TARGET_VALIDATION,
             status_message="Phase 3 internal lifecycle job completed. Scanner execution starts in later phases.",
             progress_percent=100,
             completed_at=datetime.now(UTC),
         )
     except Exception as exc:
         mark_scan_failed(db, scan, exc)
+
+
+def validate_phase3_lifecycle_scan(scan: Scan) -> None:
+    if scan.mode != "passive":
+        raise ScanLifecycleError("Phase 3 worker only supports passive lifecycle jobs.")
+    if scan.target is None:
+        raise ScanLifecycleError("Scan target no longer exists.")
+    if not scan.target.permission_confirmed:
+        raise ScanLifecycleError("Scan target authorization is not confirmed.")
 
 
 def update_scan_progress(

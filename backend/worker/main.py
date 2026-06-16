@@ -1,5 +1,4 @@
 import time
-from urllib.request import urlopen
 
 from sqlalchemy import text
 
@@ -21,22 +20,8 @@ def wait_for_database(max_attempts: int = 30) -> None:
             time.sleep(2)
 
 
-def wait_for_zap(max_attempts: int = 30) -> None:
-    version_url = f"{settings.zap_base_url}/JSON/core/view/version/"
-    for attempt in range(1, max_attempts + 1):
-        try:
-            with urlopen(version_url, timeout=3) as response:
-                if response.status == 200:
-                    return
-        except Exception as exc:
-            if attempt == max_attempts:
-                raise RuntimeError("ZAP did not become ready") from exc
-            time.sleep(2)
-
-
 def main() -> None:
     wait_for_database()
-    wait_for_zap()
     print("Worker ready. Polling database-backed scan jobs.", flush=True)
     while True:
         with SessionLocal() as db:

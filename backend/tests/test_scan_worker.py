@@ -65,7 +65,7 @@ class ScanWorkerTests(unittest.TestCase):
                 run_internal_lifecycle_job(db, scan, temp_dir)
 
                 self.assertEqual(scan.status, "completed")
-                self.assertEqual(scan.current_step, "normalizing_findings")
+                self.assertEqual(scan.current_step, "target_validation")
                 self.assertEqual(scan.progress_percent, 100)
                 self.assertIsNotNone(scan.completed_at)
                 self.assertIn("internal lifecycle job completed", scan.status_message)
@@ -81,6 +81,48 @@ class ScanWorkerTests(unittest.TestCase):
             artifact_dir = ensure_scan_artifact_dir(temp_dir, self.scan_id)
             self.assertTrue(artifact_dir.exists())
             self.assertIn(Path(temp_dir).resolve(), artifact_dir.parents)
+
+    def test_artifact_root_must_not_escape_through_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as external_dir:
+            scans_link = Path(temp_dir) / "scans"
+            scans_link.symlink_to(external_dir, target_is_directory=True)
+
+            with self.assertRaises(ArtifactPathError):
+                scan_artifact_dir(temp_dir, self.scan_id)
+
+    def test_worker_fails_non_passive_queued_scan(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with SessionLocal() as db:
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(scan)
+                scan.mode = "active_demo"
+                db.add(scan)
+                db.commit()
+                db.refresh(scan)
+
+                run_internal_lifecycle_job(db, scan, temp_dir)
+
+                self.assertEqual(scan.status, "failed")
+                self.assertEqual(scan.error_code, "internal_lifecycle_failed")
+                self.assertIn("only supports passive", scan.error_detail)
+
+    def test_worker_fails_unconfirmed_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with SessionLocal() as db:
+                target = db.get(Target, self.target_id)
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(target)
+                self.assertIsNotNone(scan)
+                target.permission_confirmed = False
+                db.add(target)
+                db.commit()
+                db.refresh(scan)
+
+                run_internal_lifecycle_job(db, scan, temp_dir)
+
+                self.assertEqual(scan.status, "failed")
+                self.assertEqual(scan.error_code, "internal_lifecycle_failed")
+                self.assertIn("authorization is not confirmed", scan.error_detail)
 
 
 if __name__ == "__main__":
