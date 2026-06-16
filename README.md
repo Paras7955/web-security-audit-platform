@@ -55,6 +55,12 @@ Implemented scan APIs:
 
 Phase 3 lifecycle jobs do not crawl targets, run passive checks, call ZAP, or generate findings. They exist to prove queueing, worker status transitions, artifact path handling, and dashboard polling before real scanner execution is added in later phases.
 
+## Phase 4 Status
+
+Phase 4 adds normalized finding persistence primitives. The backend now has validated normalized finding inputs, evidence redaction and snippet capping, dedupe key generation, evidence artifact reference persistence, and fixture-backed tests for storing findings against a scan.
+
+Phase 4 does not yet add scanner-produced findings to the UI. Findings storage is ready for later scanner integrations and the dashboard phase.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.
