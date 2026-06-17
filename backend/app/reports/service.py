@@ -7,7 +7,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.contracts import ScanStatus
+from app.core.contracts import ScanMode, ScanStatus
 from app.models import Finding, ReportArtifact, Scan, Target
 from app.scans.artifacts import ensure_scan_artifact_dir
 
@@ -49,6 +49,8 @@ def build_report_data(db: Session, *, scan_id: str, ai_provider: str) -> ReportD
         raise ReportGenerationError("Scan not found.")
     if scan.status not in TERMINAL_REPORT_STATUSES:
         raise ReportGenerationError("Reports can only be generated for completed scans.")
+    if scan.mode != ScanMode.PASSIVE.value:
+        raise ReportGenerationError("Reports can only be generated for passive scans in Phase 7.")
 
     target = db.get(Target, scan.target_id)
     if target is None:
@@ -60,7 +62,7 @@ def build_report_data(db: Session, *, scan_id: str, ai_provider: str) -> ReportD
         .order_by(Finding.severity.asc(), Finding.created_at.asc())
     ).all()
     sorted_findings = tuple(sorted(findings, key=lambda finding: (SEVERITY_ORDER.get(finding.severity, 99), finding.title.lower())))
-    return ReportData(scan=scan, target=target, findings=sorted_findings, generated_at=datetime.now(UTC), ai_provider=ai_provider)
+    return ReportData(scan=scan, target=target, findings=sorted_findings, generated_at=report_timestamp(scan), ai_provider=ai_provider)
 
 
 def generate_report_artifacts(
@@ -120,20 +122,25 @@ def list_report_artifacts(db: Session, *, scan_id: str) -> list[ReportArtifact]:
 
 
 def read_report_artifact(artifact: ReportArtifact, *, artifact_root: str | Path) -> str:
-    path = validate_report_path(artifact.path, artifact_root)
+    path = validate_report_path(artifact.path, artifact_root, scan_id=artifact.scan_id, report_type=artifact.report_type)
     if not path.exists() or not path.is_file():
         raise ReportGenerationError("Report artifact file not found.")
     return path.read_text(encoding="utf-8")
 
 
-def validate_report_path(path: str, artifact_root: str | Path) -> Path:
+def validate_report_path(path: str, artifact_root: str | Path, *, scan_id: str, report_type: str) -> Path:
+    expected_filename = REPORT_FILENAMES.get(report_type)
+    if expected_filename is None:
+        raise ReportGenerationError("Unsupported report artifact type.")
+
     artifact_root_path = Path(artifact_root).resolve()
     candidate_path = Path(path)
     if not candidate_path.is_absolute():
         raise ReportGenerationError("Report artifact path must be absolute.")
     candidate = candidate_path.resolve()
-    if artifact_root_path != candidate and artifact_root_path not in candidate.parents:
-        raise ReportGenerationError("Report artifact path escaped artifact root.")
+    expected_path = (artifact_root_path / "scans" / scan_id / "reports" / expected_filename).resolve()
+    if candidate != expected_path:
+        raise ReportGenerationError("Report artifact path does not match the expected report location.")
     return candidate
 
 
@@ -310,7 +317,16 @@ def format_scan_mode(mode: str) -> str:
 
 
 def format_timestamp(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def report_timestamp(scan: Scan) -> datetime:
+    timestamp = scan.completed_at or scan.created_at
+    if isinstance(timestamp, datetime):
+        return timestamp
+    return datetime.fromtimestamp(0, UTC)
 
 
 def fenced_block(value: str) -> str:

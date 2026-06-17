@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
@@ -38,6 +39,7 @@ class ReportsTests(unittest.TestCase):
                     current_step="normalizing_findings",
                     status_message="Completed.",
                     progress_percent=100,
+                    completed_at=datetime(2026, 6, 17, 18, 0, 0, tzinfo=UTC),
                 )
             )
             db.commit()
@@ -125,6 +127,20 @@ class ReportsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("completed scans", response.json()["detail"])
 
+    def test_reports_require_passive_scan(self) -> None:
+        with SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            scan.mode = "active_demo"
+            db.add(scan)
+            db.commit()
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
+            response = self.client.post(f"/scans/{self.scan_id}/reports")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("passive scans", response.json()["detail"])
+
     def test_report_reader_rejects_paths_outside_artifact_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
             outside_path = Path(outside_dir) / "report.md"
@@ -139,14 +155,36 @@ class ReportsTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 read_report_artifact(artifact, artifact_root=temp_dir)
 
-    def test_regeneration_reuses_report_artifact_rows(self) -> None:
+    def test_report_reader_rejects_unexpected_paths_inside_artifact_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            unexpected_path = Path(temp_dir) / "scans" / self.scan_id / "crawl-summary.json"
+            unexpected_path.parent.mkdir(parents=True, exist_ok=True)
+            unexpected_path.write_text("not a report", encoding="utf-8")
+            artifact = ReportArtifact(
+                id=str(uuid4()),
+                scan_id=self.scan_id,
+                report_type="markdown",
+                path=str(unexpected_path),
+            )
+
+            with self.assertRaises(ValueError):
+                read_report_artifact(artifact, artifact_root=temp_dir)
+
+    def test_regeneration_reuses_rows_and_keeps_report_content_stable(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with SessionLocal() as db:
-                generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
-                generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                first_artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                first_markdown = next(artifact for artifact in first_artifacts if artifact.report_type == "markdown")
+                first_content = read_report_artifact(first_markdown, artifact_root=temp_dir)
+
+                second_artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                second_markdown = next(artifact for artifact in second_artifacts if artifact.report_type == "markdown")
+                second_content = read_report_artifact(second_markdown, artifact_root=temp_dir)
                 artifacts = db.scalars(select(ReportArtifact).where(ReportArtifact.scan_id == self.scan_id)).all()
 
             self.assertEqual(len(artifacts), 2)
+            self.assertEqual(first_content, second_content)
+            self.assertIn("Generated at: 2026-06-17T18:00:00Z", first_content)
 
 
 if __name__ == "__main__":
