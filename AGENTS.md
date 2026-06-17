@@ -97,7 +97,7 @@ Commit completed implementation work before requesting review.
 - Implement recommendations or explicitly reject them with rationale.
 - Pause implementation for safety-critical findings until reviewed.
 - If sub-agent review is unavailable, perform a separate self-review pass using the same checklist and record it in the decision log.
-- Reset review context every time.
+- Reset review context at the start of each new review-loop session by creating a fresh review sub-agent; follow-up prompts inside that same loop session may reuse the same reviewer context.
 - If `gpt-5.4` is later removed or renamed, replace this rule with the closest supported review-grade successor and update `AGENTS.md` and `README.md` together.
 
 ## Commit Workflow

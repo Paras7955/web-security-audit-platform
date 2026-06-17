@@ -229,6 +229,24 @@ class ReportsTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 read_report_artifact(artifact, artifact_root=temp_dir)
 
+    def test_report_reader_rejects_symlinked_html_report_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
+            reports_dir = Path(temp_dir) / "scans" / self.scan_id / "reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            outside_report = Path(outside_dir) / "report.html"
+            outside_report.write_text("outside", encoding="utf-8")
+            report_link = reports_dir / "report.html"
+            report_link.symlink_to(outside_report)
+            artifact = ReportArtifact(
+                id=str(uuid4()),
+                scan_id=self.scan_id,
+                report_type="html",
+                path=str(report_link),
+            )
+
+            with self.assertRaises(ValueError):
+                read_report_artifact(artifact, artifact_root=temp_dir)
+
     def test_report_generation_rejects_symlinked_scan_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             sibling_scan_dir = Path(temp_dir) / "scans" / "other-scan"
