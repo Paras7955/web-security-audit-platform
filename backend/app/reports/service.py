@@ -143,7 +143,7 @@ def render_markdown_report(data: ReportData) -> str:
         "",
         "## Summary",
         "",
-        f"- Generated at: {data.generated_at.isoformat()}Z",
+        f"- Generated at: {format_timestamp(data.generated_at)}",
         f"- Target: {data.target.name}",
         f"- Target allowlist ID: {data.target.allowlist_id}",
         f"- Target URL: {data.target.base_url}",
@@ -240,7 +240,7 @@ def render_html_report(data: ReportData) -> str:
   <h1>Defensive Web App Security Audit Report</h1>
   <h2>Summary</h2>
   <table>
-    <tr><th>Generated at</th><td>{escape(data.generated_at.isoformat())}Z</td></tr>
+    <tr><th>Generated at</th><td>{escape(format_timestamp(data.generated_at))}</td></tr>
     <tr><th>Target</th><td>{escape(data.target.name)}</td></tr>
     <tr><th>Target allowlist ID</th><td>{escape(data.target.allowlist_id)}</td></tr>
     <tr><th>Target URL</th><td>{escape(data.target.base_url)}</td></tr>
@@ -307,6 +307,10 @@ def format_scan_mode(mode: str) -> str:
         "active_demo": "Active Demo",
         "ajax_short": "AJAX Short",
     }.get(mode, mode)
+
+
+def format_timestamp(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def fenced_block(value: str) -> str:

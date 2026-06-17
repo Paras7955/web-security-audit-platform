@@ -82,9 +82,11 @@ class ReportsTests(unittest.TestCase):
                 html_content = read_report_artifact(html, artifact_root=temp_dir)
 
             self.assertIn("Target allowlist ID: juice-shop", markdown_content)
+            self.assertNotIn("+00:00Z", markdown_content)
             self.assertIn("ZAP active scan: not used.", markdown_content)
             self.assertIn("AI explanations: not generated in Phase 7", markdown_content)
             self.assertIn("Redaction applied: yes", markdown_content)
+            self.assertNotIn("+00:00Z", html_content)
             self.assertIn("&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;", html_content)
             self.assertNotIn("<script>alert('xss')</script>", html_content)
 
