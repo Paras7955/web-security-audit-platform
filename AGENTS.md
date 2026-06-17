@@ -87,7 +87,10 @@ Commit completed implementation work before requesting review.
 - The main implementation chat model remains independent and user-chosen.
 - The review agent does not need to run after every commit-sized subdivision.
 - If the review agent recommends changes and those recommendations are accepted, implement the changes and create a follow-up commit for the review fixes.
-- Invoke a fresh review sub-agent where available.
+- Continue the review loop after accepted fixes: prompt a review sub-agent again after each review-fix commit until the reviewer reports no further material findings, or until remaining findings are clearly negligible and not worth another review pass.
+- Use engineering judgment to stop the loop when another pass would not materially improve safety, correctness, maintainability, or test coverage.
+- Keep the loop-control policy in the main implementation context. Do not include the stop condition, repetition policy, or "review until no errors" framing in the reviewer's prompt.
+- Invoke a fresh review sub-agent for each review pass where available.
 - Give the reviewer only intended behavior, touched files, and test commands.
 - Ask the reviewer to check bugs, safety issues, regressions, missing tests, maintainability, and simplification opportunities.
 - Treat recommendations as advisory with a decision log.
