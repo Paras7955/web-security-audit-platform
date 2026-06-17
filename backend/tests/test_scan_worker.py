@@ -95,6 +95,15 @@ class ScanWorkerTests(unittest.TestCase):
             with self.assertRaises(ArtifactPathError):
                 scan_artifact_dir(temp_dir, self.scan_id)
 
+    def test_scan_artifact_path_must_not_be_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as external_dir:
+            scan_link = Path(temp_dir) / "scans" / self.scan_id
+            scan_link.parent.mkdir(parents=True, exist_ok=True)
+            scan_link.symlink_to(external_dir, target_is_directory=True)
+
+            with self.assertRaises(ArtifactPathError):
+                scan_artifact_dir(temp_dir, self.scan_id)
+
     def test_worker_fails_non_passive_queued_scan(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with SessionLocal() as db:

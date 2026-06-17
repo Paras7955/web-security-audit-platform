@@ -15,7 +15,11 @@ def scan_artifact_dir(artifact_root: str | Path, scan_id: str) -> Path:
     if root != scans_root_resolved and root not in scans_root_resolved.parents:
         raise ArtifactPathError("scan artifact root escaped artifact root")
 
-    candidate = (scans_root / scan_id).resolve()
+    scan_dir = scans_root / scan_id
+    if scan_dir.is_symlink():
+        raise ArtifactPathError("scan artifact path must not be a symlink")
+
+    candidate = scan_dir.resolve()
     if scans_root_resolved != candidate and scans_root_resolved not in candidate.parents:
         raise ArtifactPathError("scan artifact path escaped artifact root")
     return candidate
