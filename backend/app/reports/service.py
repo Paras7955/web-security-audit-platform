@@ -84,7 +84,7 @@ def generate_report_artifacts(
     artifacts: list[ReportArtifact] = []
     for report_type, content in rendered.items():
         path = reports_dir / REPORT_FILENAMES[report_type]
-        path.write_text(content, encoding="utf-8")
+        write_report_file(path, content)
         artifact = get_or_create_report_artifact(db, scan_id=scan_id, report_type=report_type, path=path)
         artifacts.append(artifact)
 
@@ -123,6 +123,8 @@ def list_report_artifacts(db: Session, *, scan_id: str) -> list[ReportArtifact]:
 
 def read_report_artifact(artifact: ReportArtifact, *, artifact_root: str | Path) -> str:
     path = validate_report_path(artifact.path, artifact_root, scan_id=artifact.scan_id, report_type=artifact.report_type)
+    if path.is_symlink():
+        raise ReportGenerationError("Report artifact file must not be a symlink.")
     if not path.exists() or not path.is_file():
         raise ReportGenerationError("Report artifact file not found.")
     return path.read_text(encoding="utf-8")
@@ -157,6 +159,12 @@ def safe_report_dir(artifact_root: str | Path, scan_id: str) -> Path:
     if scan_dir != resolved_reports_dir and scan_dir not in resolved_reports_dir.parents:
         raise ReportGenerationError("Report artifact directory escaped scan artifact directory.")
     return reports_dir
+
+
+def write_report_file(path: Path, content: str) -> None:
+    if path.is_symlink():
+        raise ReportGenerationError("Report artifact file must not be a symlink.")
+    path.write_text(content, encoding="utf-8")
 
 
 def render_markdown_report(data: ReportData) -> str:
