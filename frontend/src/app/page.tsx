@@ -16,10 +16,10 @@ export default function Home() {
           <p className="eyebrow">Defensive Web App Security Audit</p>
           <h1>Local-first security evidence, normalized findings, and clear reports.</h1>
         </div>
-        <div className="statusPanel" aria-label="Phase 3 scan lifecycle status">
-          <span>Phase 3</span>
-          <strong>Scan lifecycle ready</strong>
-          <small>Create allowlisted targets and run passive lifecycle jobs. Real scanner checks start in later phases.</small>
+        <div className="statusPanel" aria-label="Phase 6 dashboard status">
+          <span>Phase 6</span>
+          <strong>Dashboard ready</strong>
+          <small>Create allowlisted targets, run passive scans, track worker progress, and inspect normalized findings.</small>
         </div>
       </section>
 

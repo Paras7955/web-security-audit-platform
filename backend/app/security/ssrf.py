@@ -22,6 +22,10 @@ class DestinationValidation:
     port: int
     resolved_ips: tuple[str, ...]
 
+    @property
+    def connection_ip(self) -> str:
+        return self.resolved_ips[0]
+
 
 METADATA_IPS = {
     ipaddress.ip_address("169.254.169.254"),

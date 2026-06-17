@@ -68,6 +68,7 @@ Phase 5 adds the conservative custom passive scanner. The worker now runs queued
 Implemented passive scanner capabilities:
 
 - Guarded HTTP requests with automatic redirects disabled.
+- Custom scanner HTTP requests connect to the SSRF-validated destination IP to avoid DNS drift between validation and connection.
 - Bounded same-target crawl using the configured crawl depth and page cap.
 - Link, form, input, header, cookie, status, and redirect metadata collection.
 - Missing security header checks.
@@ -78,12 +79,20 @@ Implemented passive scanner capabilities:
 
 Phase 5 does not call ZAP, run active scans, run AJAX crawling, generate reports, or expose a finished findings dashboard. Those are implemented in later phases.
 
-Known follow-up before Phase 6:
+## Phase 6 Status
 
-- Perform a dedicated hardening pass for DNS re-resolution drift between SSRF validation and the actual outbound scanner connection.
-- This is intentionally scheduled before Phase 6 rather than Phase 9A so later phases build on the corrected outbound trust model.
-- Remove this note after the issue is resolved.
-- If the issue cannot be resolved then for a newly discovered technical reason, replace this note with the new target phase and rationale instead of leaving this stale reminder unchanged.
+Phase 6 adds the findings dashboard. The UI can create allowlisted targets, start passive scans, poll worker progress, show scan history, filter normalized findings by severity, and display finding evidence/details.
+
+Implemented dashboard capabilities:
+
+- Saved target selection for passive scans.
+- Scan history and selected-scan progress.
+- Current step and status message display.
+- Findings table with severity filters.
+- Finding detail panel with evidence, rule metadata, CWE/OWASP fields, and redaction status.
+- Scan mode safety copy showing Active Demo and AJAX Short as later gated phases.
+
+Phase 6 does not generate report artifacts or call ZAP. Report links are represented as Phase 7 placeholders until Markdown/HTML report generation is implemented.
 
 ## Responsible Use
 
