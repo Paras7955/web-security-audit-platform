@@ -92,7 +92,24 @@ Implemented dashboard capabilities:
 - Finding detail panel with evidence, rule metadata, CWE/OWASP fields, and redaction status.
 - Scan mode safety copy showing Active Demo and AJAX Short as later gated phases.
 
-Phase 6 does not generate report artifacts or call ZAP. Report links are represented as Phase 7 placeholders until Markdown/HTML report generation is implemented.
+Phase 6 does not call ZAP. ZAP integration remains planned for later phases.
+
+## Phase 7 Status
+
+Phase 7 adds Markdown and HTML report generation for completed passive scans. Reports are generated from normalized findings that have already passed through the persistence redaction path.
+
+Implemented report capabilities:
+
+- `POST /scans/{scan_id}/reports`
+- `GET /scans/{scan_id}/reports`
+- `GET /reports/{report_id}`
+- `GET /reports/{report_id}/download`
+- Deterministic Markdown and escaped HTML report rendering.
+- Report artifact persistence under each scan artifact directory.
+- Dashboard report generation, view, and download links.
+- Responsible-use, limitations, scan mode, ZAP/AJAX/AI/repo-scan, and redaction disclosures.
+
+Phase 7 does not call ZAP, generate AI explanations, run repo scanning, test authenticated workflows, or perform business logic checks.
 
 ## Responsible Use
 
@@ -183,6 +200,8 @@ Review-agent policy for future phases:
 
 - The review sub-agent is pinned to `gpt-5.4` with `medium` reasoning.
 - This pin applies only to the review sub-agent, not to the main implementation chat model or to other spawned agents.
+- The main implementation agent manages any follow-up review passes after review-fix commits.
+- Review orchestration stays in the main implementation context; reviewer prompts should remain ordinary code-review prompts.
 - If the review sub-agent is unavailable, the fallback remains a separate self-review pass using the same checklist.
 - If `gpt-5.4` is removed or renamed later, replace this note with the closest supported review-grade successor and keep it aligned with `AGENTS.md`.
 

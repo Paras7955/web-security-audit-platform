@@ -59,8 +59,18 @@ type Finding = {
   created_at: string;
 };
 
+type ReportArtifact = {
+  id: string;
+  scan_id: string;
+  report_type: string;
+  view_url: string;
+  download_url: string;
+  created_at: string;
+};
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const terminalStatuses = new Set(["completed", "completed_with_warnings", "failed", "cancelled"]);
+const reportableStatuses = new Set(["completed", "completed_with_warnings"]);
 const severityFilters = ["all", "info", "low", "medium", "high", "critical"];
 const severityRank: Record<string, number> = {
   critical: 5,
@@ -80,10 +90,13 @@ export function TargetSetup() {
   const [selectedScanId, setSelectedScanId] = useState("");
   const [scanHistory, setScanHistory] = useState<Scan[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
+  const [reports, setReports] = useState<ReportArtifact[]>([]);
   const [selectedFindingId, setSelectedFindingId] = useState("");
   const [severityFilter, setSeverityFilter] = useState("all");
   const [message, setMessage] = useState<string>("Enter an allowlisted local/demo target.");
+  const [reportMessage, setReportMessage] = useState<string>("Reports are available after a passive scan completes.");
   const [isBusy, setIsBusy] = useState(false);
+  const [isGeneratingReports, setIsGeneratingReports] = useState(false);
   const selectedScanIdRef = useRef("");
   const severityFilterRef = useRef("all");
 
@@ -125,10 +138,12 @@ export function TargetSetup() {
   useEffect(() => {
     if (!selectedScanId) {
       setFindings([]);
+      setReports([]);
       setSelectedFindingId("");
       return;
     }
     void loadFindings(selectedScanId, { onlyIfSelected: true });
+    void loadReports(selectedScanId, { onlyIfSelected: true });
   }, [selectedScanId]);
 
   async function validateTarget(event: FormEvent<HTMLFormElement>) {
@@ -203,7 +218,9 @@ export function TargetSetup() {
       const scan = body as Scan;
       setSelectedScanId(scan.id);
       setFindings([]);
+      setReports([]);
       setSelectedFindingId("");
+      setReportMessage("Reports are available after this passive scan completes.");
       setMessage("Scan queued. Worker status will update below.");
       await loadScanHistory(scan.id);
     } catch (error) {
@@ -224,6 +241,7 @@ export function TargetSetup() {
       setScanHistory((current) => mergeScan(current, scan));
       if (terminalStatuses.has(scan.status)) {
         await loadFindings(scan.id, { onlyIfSelected: true });
+        await loadReports(scan.id, { onlyIfSelected: true });
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Scan status refresh failed.");
@@ -288,12 +306,60 @@ export function TargetSetup() {
     }
   }
 
+  async function loadReports(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
+    try {
+      const response = await fetch(`${apiBaseUrl}/scans/${scanId}/reports`);
+      if (!response.ok) {
+        if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
+          return;
+        }
+        setReports([]);
+        return;
+      }
+      const body = (await response.json()) as ReportArtifact[];
+      if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
+        return;
+      }
+      setReports(body);
+      setReportMessage(body.length > 0 ? "Reports are ready." : "Generate Markdown and HTML reports for this completed scan.");
+    } catch {
+      if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
+        return;
+      }
+      setReports([]);
+    }
+  }
+
+  async function generateReports() {
+    if (!selectedScan) {
+      return;
+    }
+    setIsGeneratingReports(true);
+    setReportMessage("Generating Markdown and HTML reports...");
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/scans/${selectedScan.id}/reports`, {
+        method: "POST"
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body.detail ?? "Report generation failed.");
+      }
+      setReports(body as ReportArtifact[]);
+      setReportMessage("Reports are ready.");
+    } catch (error) {
+      setReportMessage(error instanceof Error ? error.message : "Report generation failed.");
+    } finally {
+      setIsGeneratingReports(false);
+    }
+  }
+
   return (
     <section className="dashboard" aria-labelledby="dashboard-heading">
       <div className="sectionHeader">
         <div>
-          <p className="eyebrow">Phase 6 Dashboard</p>
-          <h2 id="dashboard-heading">Run passive scans and review normalized findings</h2>
+          <p className="eyebrow">Phase 7 Reports</p>
+          <h2 id="dashboard-heading">Run passive scans, review findings, and generate reports</h2>
         </div>
         <span className="phaseBadge">Local demo only</span>
       </div>
@@ -333,6 +399,14 @@ export function TargetSetup() {
 
       {selectedScan ? <ScanProgress scan={selectedScan} /> : null}
 
+      <ReportsPanel
+        scan={selectedScan}
+        reports={reports}
+        message={reportMessage}
+        isGenerating={isGeneratingReports}
+        onGenerate={generateReports}
+      />
+
       <FindingsDashboard
         findings={filteredFindings}
         selectedFinding={selectedFinding}
@@ -341,6 +415,57 @@ export function TargetSetup() {
         onSelectFinding={setSelectedFindingId}
       />
     </section>
+  );
+}
+
+function ReportsPanel({
+  scan,
+  reports,
+  message,
+  isGenerating,
+  onGenerate
+}: {
+  scan: Scan | null;
+  reports: ReportArtifact[];
+  message: string;
+  isGenerating: boolean;
+  onGenerate: () => void;
+}) {
+  const canGenerate = Boolean(scan && reportableStatuses.has(scan.status) && !isGenerating);
+
+  return (
+    <div className="reportPanel">
+      <div className="panelHeader">
+        <h3>Reports</h3>
+        <span className="phaseBadge">Phase 7</span>
+      </div>
+
+      <div className="reportActions">
+        <button type="button" onClick={onGenerate} disabled={!canGenerate}>
+          Generate Reports
+        </button>
+        <p>{message}</p>
+      </div>
+
+      {reports.length > 0 ? (
+        <ul className="reportList">
+          {reports.map((report) => (
+            <li key={report.id}>
+              <strong>{report.report_type}</strong>
+              <span>{new Date(report.created_at).toLocaleString()}</span>
+              <a href={`${apiBaseUrl}${report.view_url}`} target="_blank" rel="noreferrer">
+                View
+              </a>
+              <a href={`${apiBaseUrl}${report.download_url}`}>
+                Download
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="emptyState">No report artifacts yet.</p>
+      )}
+    </div>
   );
 }
 
@@ -691,10 +816,6 @@ function FindingDetail({ finding }: { finding: Finding | null }) {
 
       <h4>Remediation</h4>
       <p>{finding.remediation ?? "Remediation guidance is added in later reporting phases."}</p>
-
-      <div className="reportStub" aria-label="Report links">
-        Reports are generated in Phase 7.
-      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.findings import router as findings_router
+from app.api.reports import router as reports_router
 from app.api.scans import router as scans_router
 from app.api.targets import router as targets_router
 from app.core.config import settings
@@ -25,6 +26,7 @@ app.add_middleware(
 app.include_router(targets_router)
 app.include_router(scans_router)
 app.include_router(findings_router)
+app.include_router(reports_router)
 
 
 @app.get("/health")

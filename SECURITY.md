@@ -33,6 +33,7 @@ Do not use this platform for:
 - Do not store full HTTP response bodies by default.
 - Store minimal evidence snippets only.
 - Redact sensitive values before database writes, reports, or AI processing.
+- Generate reports only from normalized persisted findings and redacted evidence snippets.
 - Secret scan results must be redacted.
 - Never send raw response bodies, raw ZAP output, raw secret scanner output, or unredacted evidence to AI providers.
 
@@ -59,4 +60,3 @@ When reporting a vulnerability, include:
 ## Disclosure Boundary
 
 This project is for local defensive learning and authorized testing. Report vulnerabilities found in third-party software only through that software owner's approved disclosure process.
-

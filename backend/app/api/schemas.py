@@ -49,6 +49,15 @@ class FindingRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ReportArtifactRead(BaseModel):
+    id: str
+    scan_id: str
+    report_type: str
+    view_url: str
+    download_url: str
+    created_at: datetime
+
+
 class TargetCreate(BaseModel):
     target_url: str = Field(min_length=1, max_length=2048)
     permission_confirmed: bool

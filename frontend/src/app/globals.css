@@ -414,6 +414,58 @@ select {
   color: #9f2d24 !important;
 }
 
+.reportPanel {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfd;
+}
+
+.reportActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.reportActions p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.reportList {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.reportList li {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 72px 96px;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  color: var(--foreground);
+  padding: 10px 12px;
+}
+
+.reportList span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.reportList a {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .scanList {
   display: grid;
   gap: 8px;
@@ -602,16 +654,8 @@ select {
 }
 
 .findingDetail p,
-.emptyState,
-.reportStub {
+.emptyState {
   color: var(--muted);
-}
-
-.reportStub {
-  margin-top: 14px;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  padding: 12px;
 }
 
 @media (max-width: 900px) {
@@ -630,6 +674,7 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .reportList li,
   .modeGrid,
   .scanMeta {
     grid-template-columns: 1fr;
