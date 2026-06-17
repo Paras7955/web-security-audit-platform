@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.contracts import ScanMode, ScanStatus
 from app.models import Finding, ReportArtifact, Scan, Target
-from app.scans.artifacts import ensure_scan_artifact_dir
+from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
 
 
 REPORT_TYPES = ("markdown", "html")
@@ -73,8 +73,8 @@ def generate_report_artifacts(
     ai_provider: str,
 ) -> list[ReportArtifact]:
     data = build_report_data(db, scan_id=scan_id, ai_provider=ai_provider)
-    reports_dir = ensure_scan_artifact_dir(artifact_root, scan_id) / "reports"
-    reports_dir.mkdir(parents=True, exist_ok=True)
+    ensure_scan_artifact_dir(artifact_root, scan_id)
+    reports_dir = safe_report_dir(artifact_root, scan_id)
 
     rendered = {
         "markdown": render_markdown_report(data),
@@ -133,15 +133,30 @@ def validate_report_path(path: str, artifact_root: str | Path, *, scan_id: str, 
     if expected_filename is None:
         raise ReportGenerationError("Unsupported report artifact type.")
 
-    artifact_root_path = Path(artifact_root).resolve()
     candidate_path = Path(path)
     if not candidate_path.is_absolute():
         raise ReportGenerationError("Report artifact path must be absolute.")
-    candidate = candidate_path.resolve()
-    expected_path = (artifact_root_path / "scans" / scan_id / "reports" / expected_filename).resolve()
-    if candidate != expected_path:
+    expected_path = safe_report_dir(artifact_root, scan_id) / expected_filename
+    if candidate_path != expected_path:
         raise ReportGenerationError("Report artifact path does not match the expected report location.")
-    return candidate
+    return expected_path
+
+
+def safe_report_dir(artifact_root: str | Path, scan_id: str) -> Path:
+    try:
+        scan_dir = scan_artifact_dir(artifact_root, scan_id)
+    except ArtifactPathError as exc:
+        raise ReportGenerationError(str(exc)) from exc
+
+    reports_dir = scan_dir / "reports"
+    if reports_dir.is_symlink():
+        raise ReportGenerationError("Report artifact directory must not be a symlink.")
+
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    resolved_reports_dir = reports_dir.resolve()
+    if scan_dir != resolved_reports_dir and scan_dir not in resolved_reports_dir.parents:
+        raise ReportGenerationError("Report artifact directory escaped scan artifact directory.")
+    return reports_dir
 
 
 def render_markdown_report(data: ReportData) -> str:
