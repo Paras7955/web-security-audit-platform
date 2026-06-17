@@ -200,9 +200,8 @@ Review-agent policy for future phases:
 
 - The review sub-agent is pinned to `gpt-5.4` with `medium` reasoning.
 - This pin applies only to the review sub-agent, not to the main implementation chat model or to other spawned agents.
-- After accepted review fixes are committed, the main agent continues review passes with the same review sub-agent for that loop session until no material findings remain, or until only negligible findings remain and another pass would not materially improve the phase.
-- Review-loop control stays in the main implementation context; reviewer prompts should remain ordinary code-review prompts.
-- Each new review-loop session starts with a fresh review sub-agent; follow-up prompts inside that same session may reuse the same reviewer context.
+- The main implementation agent manages any follow-up review passes after review-fix commits.
+- Review orchestration stays in the main implementation context; reviewer prompts should remain ordinary code-review prompts.
 - If the review sub-agent is unavailable, the fallback remains a separate self-review pass using the same checklist.
 - If `gpt-5.4` is removed or renamed later, replace this note with the closest supported review-grade successor and keep it aligned with `AGENTS.md`.
 

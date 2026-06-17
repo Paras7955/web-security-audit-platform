@@ -87,17 +87,14 @@ Commit completed implementation work before requesting review.
 - The main implementation chat model remains independent and user-chosen.
 - The review agent does not need to run after every commit-sized subdivision.
 - If the review agent recommends changes and those recommendations are accepted, implement the changes and create a follow-up commit for the review fixes.
-- Continue the review loop after accepted fixes: prompt a review sub-agent again after each review-fix commit until the reviewer reports no further material findings, or until remaining findings are clearly negligible and not worth another review pass.
-- Use engineering judgment to stop the loop when another pass would not materially improve safety, correctness, maintainability, or test coverage.
-- Keep the loop-control policy in the main implementation context. Do not include the stop condition, repetition policy, or "review until no errors" framing in the reviewer's prompt.
-- Invoke one fresh review sub-agent at the start of a review-loop session where available, then reuse that same review sub-agent for follow-up review prompts in that loop session.
+- The main implementation agent manages any follow-up review passes after review-fix commits.
+- Keep review orchestration in the main implementation context; reviewer prompts should remain ordinary code-review prompts.
 - Give the reviewer only intended behavior, touched files, and test commands.
 - Ask the reviewer to check bugs, safety issues, regressions, missing tests, maintainability, and simplification opportunities.
 - Treat recommendations as advisory with a decision log.
 - Implement recommendations or explicitly reject them with rationale.
 - Pause implementation for safety-critical findings until reviewed.
 - If sub-agent review is unavailable, perform a separate self-review pass using the same checklist and record it in the decision log.
-- Reset review context at the start of each new review-loop session by creating a fresh review sub-agent; follow-up prompts inside that same loop session may reuse the same reviewer context.
 - If `gpt-5.4` is later removed or renamed, replace this rule with the closest supported review-grade successor and update `AGENTS.md` and `README.md` together.
 
 ## Commit Workflow
