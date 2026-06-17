@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type ValidationResult = {
   allowlist_id: string;
@@ -84,10 +84,11 @@ export function TargetSetup() {
   const [severityFilter, setSeverityFilter] = useState("all");
   const [message, setMessage] = useState<string>("Enter an allowlisted local/demo target.");
   const [isBusy, setIsBusy] = useState(false);
+  const selectedScanIdRef = useRef("");
+  const severityFilterRef = useRef("all");
 
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
   const selectedScan = scanHistory.find((scan) => scan.id === selectedScanId) ?? null;
-  const selectedFinding = findings.find((finding) => finding.id === selectedFindingId) ?? findings[0] ?? null;
   const canCreate = useMemo(() => Boolean(validation && permissionConfirmed && !isBusy), [validation, permissionConfirmed, isBusy]);
   const canStartScan = Boolean(selectedTarget && !isBusy);
   const filteredFindings = useMemo(() => {
@@ -95,11 +96,20 @@ export function TargetSetup() {
       .filter((finding) => severityFilter === "all" || finding.severity === severityFilter)
       .sort((left, right) => (severityRank[right.severity] ?? 0) - (severityRank[left.severity] ?? 0));
   }, [findings, severityFilter]);
+  const selectedFinding = filteredFindings.find((finding) => finding.id === selectedFindingId) ?? filteredFindings[0] ?? null;
 
   useEffect(() => {
     void loadTargets();
     void loadScanHistory();
   }, []);
+
+  useEffect(() => {
+    selectedScanIdRef.current = selectedScanId;
+  }, [selectedScanId]);
+
+  useEffect(() => {
+    severityFilterRef.current = severityFilter;
+  }, [severityFilter]);
 
   useEffect(() => {
     if (!selectedScan || terminalStatuses.has(selectedScan.status)) {
@@ -118,7 +128,7 @@ export function TargetSetup() {
       setSelectedFindingId("");
       return;
     }
-    void loadFindings(selectedScanId);
+    void loadFindings(selectedScanId, { onlyIfSelected: true });
   }, [selectedScanId]);
 
   async function validateTarget(event: FormEvent<HTMLFormElement>) {
@@ -213,7 +223,7 @@ export function TargetSetup() {
       const scan = body as Scan;
       setScanHistory((current) => mergeScan(current, scan));
       if (terminalStatuses.has(scan.status)) {
-        await loadFindings(scan.id);
+        await loadFindings(scan.id, { onlyIfSelected: true });
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Scan status refresh failed.");
@@ -250,17 +260,30 @@ export function TargetSetup() {
     }
   }
 
-  async function loadFindings(scanId: string) {
+  async function loadFindings(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
     try {
       const response = await fetch(`${apiBaseUrl}/scans/${scanId}/findings`);
       if (!response.ok) {
+        if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
+          return;
+        }
         setFindings([]);
         return;
       }
       const body = (await response.json()) as Finding[];
+      if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
+        return;
+      }
       setFindings(body);
-      setSelectedFindingId((current) => (body.some((finding) => finding.id === current) ? current : body[0]?.id ?? ""));
+      setSelectedFindingId((current) => {
+        const currentSeverityFilter = severityFilterRef.current;
+        const nextFindings = body.filter((finding) => currentSeverityFilter === "all" || finding.severity === currentSeverityFilter);
+        return nextFindings.some((finding) => finding.id === current) ? current : nextFindings[0]?.id ?? "";
+      });
     } catch {
+      if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
+        return;
+      }
       setFindings([]);
     }
   }

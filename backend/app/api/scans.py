@@ -68,6 +68,6 @@ def validate_scan_mode(raw_mode: str, target: Target, allowlist: ScanAllowlist) 
     if mode is not ScanMode.PASSIVE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only passive scans are available in Phase 5.",
+            detail="Only passive scans are available in Phase 6.",
         )
     return mode

@@ -53,7 +53,7 @@ class ScanApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
 
-    def test_create_scan_rejects_active_modes_in_phase_5(self) -> None:
+    def test_create_scan_rejects_active_modes_in_phase_6(self) -> None:
         target = self.create_target()
 
         response = self.client.post("/scans", json={"target_id": target["id"], "mode": "active_demo"})
