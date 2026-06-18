@@ -10,7 +10,7 @@ The project is designed as a cybersecurity resume project. Tools collect evidenc
 - Backend: FastAPI.
 - Worker: Python worker for Postgres-backed scan jobs and bounded passive scanning.
 - Database: Postgres.
-- Security tooling: OWASP ZAP daemon/API integration in later phases.
+- Security tooling: conservative custom passive scanning, with OWASP ZAP daemon/API integration in later phases.
 - Demo target: OWASP Juice Shop.
 - Deployment: local Docker Compose.
 
@@ -107,9 +107,37 @@ Implemented report capabilities:
 - Deterministic Markdown and escaped HTML report rendering.
 - Report artifact persistence under each scan artifact directory.
 - Dashboard report generation, view, and download links.
-- Responsible-use, limitations, scan mode, ZAP/AJAX/AI/repo-scan, and redaction disclosures.
+- Responsible-use, limitations, scan mode, ZAP/AJAX/repo-scan, AI, and redaction disclosures.
 
-Phase 7 does not call ZAP, generate AI explanations, run repo scanning, test authenticated workflows, or perform business logic checks.
+Phase 7 does not call ZAP, run repo scanning, test authenticated workflows, or perform business logic checks.
+
+## Phase 8 Status
+
+Phase 8 adds AI-assisted explanations for completed passive scan findings. The default provider is deterministic `template`; optional `openai` mode is available through the backend provider interface.
+
+Implemented AI explanation capabilities:
+
+- `GET /scans/{scan_id}/ai-explanations`
+- Provider-agnostic explanation service with template and optional OpenAI providers.
+- Severity/confidence prioritization and severity grouping.
+- OWASP/CWE/remediation explanation helpers.
+- Provider fallback to template explanations when optional OpenAI mode is unavailable or fails.
+- Dashboard AI explanations panel with provider and fallback disclosure.
+- Markdown and HTML reports include generated AI explanation summaries and per-finding notes.
+
+AI provider inputs are restricted to normalized finding fields and redacted evidence snippets. Raw response bodies, raw artifacts, raw ZAP output, secret scanner output, and unredacted evidence must not be sent to AI providers.
+
+Relevant environment settings:
+
+```text
+AI_PROVIDER=template
+OPENAI_MODEL=
+OPENAI_API_KEY=
+```
+
+Set `AI_PROVIDER=openai` only when an OpenAI API key and model are configured. If OpenAI configuration is missing or the provider request fails, the backend returns template explanations and discloses the fallback.
+
+Phase 8 does not call ZAP, run repo scanning, test authenticated workflows, or perform business logic checks.
 
 ## Responsible Use
 

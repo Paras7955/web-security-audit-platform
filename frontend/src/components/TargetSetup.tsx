@@ -68,6 +68,32 @@ type ReportArtifact = {
   created_at: string;
 };
 
+type AiExplanationGroup = {
+  label: string;
+  count: number;
+  finding_ids: string[];
+};
+
+type FindingExplanation = {
+  finding_id: string;
+  priority: number;
+  summary: string;
+  why_it_matters: string;
+  recommended_action: string;
+  owasp_mapping: string;
+  limitations: string;
+};
+
+type AiExplanation = {
+  scan_id: string;
+  provider: string;
+  fallback_used: boolean;
+  provider_error: string | null;
+  summary: string;
+  groups: AiExplanationGroup[];
+  explanations: FindingExplanation[];
+};
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const terminalStatuses = new Set(["completed", "completed_with_warnings", "failed", "cancelled"]);
 const reportableStatuses = new Set(["completed", "completed_with_warnings"]);
@@ -91,10 +117,12 @@ export function TargetSetup() {
   const [scanHistory, setScanHistory] = useState<Scan[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [reports, setReports] = useState<ReportArtifact[]>([]);
+  const [aiExplanation, setAiExplanation] = useState<AiExplanation | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState("");
   const [severityFilter, setSeverityFilter] = useState("all");
   const [message, setMessage] = useState<string>("Enter an allowlisted local/demo target.");
   const [reportMessage, setReportMessage] = useState<string>("Reports are available after a passive scan completes.");
+  const [aiMessage, setAiMessage] = useState<string>("AI explanations are available after a passive scan completes.");
   const [isBusy, setIsBusy] = useState(false);
   const [isGeneratingReports, setIsGeneratingReports] = useState(false);
   const selectedScanIdRef = useRef("");
@@ -139,11 +167,13 @@ export function TargetSetup() {
     if (!selectedScanId) {
       setFindings([]);
       setReports([]);
+      setAiExplanation(null);
       setSelectedFindingId("");
       return;
     }
     void loadFindings(selectedScanId, { onlyIfSelected: true });
     void loadReports(selectedScanId, { onlyIfSelected: true });
+    void loadAiExplanation(selectedScanId, { onlyIfSelected: true });
   }, [selectedScanId]);
 
   async function validateTarget(event: FormEvent<HTMLFormElement>) {
@@ -219,8 +249,10 @@ export function TargetSetup() {
       setSelectedScanId(scan.id);
       setFindings([]);
       setReports([]);
+      setAiExplanation(null);
       setSelectedFindingId("");
       setReportMessage("Reports are available after this passive scan completes.");
+      setAiMessage("AI explanations are available after this passive scan completes.");
       setMessage("Scan queued. Worker status will update below.");
       await loadScanHistory(scan.id);
     } catch (error) {
@@ -242,6 +274,7 @@ export function TargetSetup() {
       if (terminalStatuses.has(scan.status)) {
         await loadFindings(scan.id, { onlyIfSelected: true });
         await loadReports(scan.id, { onlyIfSelected: true });
+        await loadAiExplanation(scan.id, { onlyIfSelected: true });
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Scan status refresh failed.");
@@ -330,6 +363,32 @@ export function TargetSetup() {
     }
   }
 
+  async function loadAiExplanation(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
+    try {
+      const response = await fetch(`${apiBaseUrl}/scans/${scanId}/ai-explanations`);
+      if (!response.ok) {
+        if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
+          return;
+        }
+        setAiExplanation(null);
+        setAiMessage("AI explanations are available after this passive scan completes.");
+        return;
+      }
+      const body = (await response.json()) as AiExplanation;
+      if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
+        return;
+      }
+      setAiExplanation(body);
+      setAiMessage(body.fallback_used ? "Template fallback explanation is ready." : "AI explanations are ready.");
+    } catch {
+      if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
+        return;
+      }
+      setAiExplanation(null);
+      setAiMessage("AI explanations could not be loaded.");
+    }
+  }
+
   async function generateReports() {
     if (!selectedScan) {
       return;
@@ -358,8 +417,8 @@ export function TargetSetup() {
     <section className="dashboard" aria-labelledby="dashboard-heading">
       <div className="sectionHeader">
         <div>
-          <p className="eyebrow">Phase 7 Reports</p>
-          <h2 id="dashboard-heading">Run passive scans, review findings, and generate reports</h2>
+          <p className="eyebrow">Phase 8 AI Explanations</p>
+          <h2 id="dashboard-heading">Run passive scans, review findings, explain risk, and generate reports</h2>
         </div>
         <span className="phaseBadge">Local demo only</span>
       </div>
@@ -407,6 +466,8 @@ export function TargetSetup() {
         onGenerate={generateReports}
       />
 
+      <AiExplanationsPanel explanation={aiExplanation} message={aiMessage} />
+
       <FindingsDashboard
         findings={filteredFindings}
         selectedFinding={selectedFinding}
@@ -437,7 +498,7 @@ function ReportsPanel({
     <div className="reportPanel">
       <div className="panelHeader">
         <h3>Reports</h3>
-        <span className="phaseBadge">Phase 7</span>
+        <span className="phaseBadge">Phase 8</span>
       </div>
 
       <div className="reportActions">
@@ -464,6 +525,69 @@ function ReportsPanel({
         </ul>
       ) : (
         <p className="emptyState">No report artifacts yet.</p>
+      )}
+    </div>
+  );
+}
+
+function AiExplanationsPanel({ explanation, message }: { explanation: AiExplanation | null; message: string }) {
+  return (
+    <div className="aiPanel">
+      <div className="panelHeader">
+        <h3>AI Explanations</h3>
+        <span className="phaseBadge">{explanation?.provider ?? "Phase 8"}</span>
+      </div>
+
+      {explanation ? (
+        <>
+          <dl className="aiMeta">
+            <div>
+              <dt>Provider</dt>
+              <dd>{explanation.provider}</dd>
+            </div>
+            <div>
+              <dt>Fallback</dt>
+              <dd>{explanation.fallback_used ? "used" : "not used"}</dd>
+            </div>
+            <div>
+              <dt>Groups</dt>
+              <dd>{explanation.groups.length}</dd>
+            </div>
+          </dl>
+          <p>{explanation.summary}</p>
+          {explanation.provider_error ? <p className="errorText">{explanation.provider_error}</p> : null}
+
+          {explanation.groups.length > 0 ? (
+            <ul className="aiGroupList">
+              {explanation.groups.map((group) => (
+                <li key={group.label}>
+                  <strong>{group.label}</strong>
+                  <span>{group.count} finding(s)</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {explanation.explanations.length > 0 ? (
+            <div className="aiFindingGrid">
+              {explanation.explanations.slice(0, 4).map((item) => (
+                <div className="aiFinding" key={item.finding_id}>
+                  <div className="aiFindingHeader">
+                    <strong>Priority {item.priority}</strong>
+                    <small>{item.owasp_mapping}</small>
+                  </div>
+                  <p>{item.summary}</p>
+                  <h4>Recommended action</h4>
+                  <p>{item.recommended_action}</p>
+                  <h4>Limitations</h4>
+                  <p>{item.limitations}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <p className="emptyState">{message}</p>
       )}
     </div>
   );
