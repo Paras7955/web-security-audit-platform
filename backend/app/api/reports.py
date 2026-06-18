@@ -24,6 +24,8 @@ def generate_reports(scan_id: str, db: Session = Depends(get_db)) -> list[Report
             scan_id=scan_id,
             artifact_root=settings.artifact_root,
             ai_provider=settings.ai_provider,
+            openai_api_key=settings.openai_api_key,
+            openai_model=settings.openai_model,
         )
     except ReportGenerationError as exc:
         raise report_error(exc) from exc
