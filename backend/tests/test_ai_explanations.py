@@ -114,6 +114,32 @@ class AiExplanationTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_running_scan_is_not_eligible_for_ai_explanations(self) -> None:
+        with SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            scan.status = "running"
+            db.add(scan)
+            db.commit()
+
+        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("completed scans", response.json()["detail"])
+
+    def test_non_passive_scan_is_not_eligible_for_ai_explanations(self) -> None:
+        with SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            scan.mode = "active_demo"
+            db.add(scan)
+            db.commit()
+
+        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("passive scans", response.json()["detail"])
+
     def test_openai_without_configuration_falls_back_to_template(self) -> None:
         with SessionLocal() as db:
             result = generate_ai_explanations(
@@ -155,6 +181,53 @@ class AiExplanationTests(unittest.TestCase):
         self.assertNotIn("dedupe_key", payload)
         self.assertIn("[REDACTED]", str(payload["evidence"]))
         self.assertNotIn("raw-artifact-id", str(payload))
+
+    def test_provider_payload_strips_query_strings_and_unredacted_text(self) -> None:
+        unsafe_id = str(uuid4())
+        provider = CapturingProvider()
+        with SessionLocal() as db:
+            db.add(
+                Finding(
+                    id=unsafe_id,
+                    scan_id=self.scan_id,
+                    title="Sensitive callback URL",
+                    severity="medium",
+                    confidence="medium",
+                    affected_url="http://juice-shop:3000/callback?code=secret-code&token=secret-token#fragment",
+                    evidence="authorization: bearer raw-secret",
+                    source_tool="custom-passive",
+                    scanner_rule_id="url:callback",
+                    dedupe_key="custom-passive|http://juice-shop:3000/callback|sensitive callback url",
+                    reproduction_steps="Visit /callback?code=secret-code",
+                    remediation="Remove secret token secret-token.",
+                    redaction_applied=False,
+                )
+            )
+            db.commit()
+
+        try:
+            with SessionLocal() as db, patch("app.ai.service.build_provider", return_value=provider):
+                generate_ai_explanations(
+                    db,
+                    scan_id=self.scan_id,
+                    provider_name="openai",
+                    openai_api_key="test-key",
+                    openai_model="test-model",
+                )
+
+            self.assertIsNotNone(provider.payload)
+            unsafe_payload = next(item.to_provider_dict() for item in provider.payload if item.id == unsafe_id)
+            self.assertEqual(unsafe_payload["location"], "http://juice-shop:3000/callback")
+            self.assertIsNone(unsafe_payload["evidence"])
+            self.assertIsNone(unsafe_payload["reproduction_steps"])
+            self.assertIsNone(unsafe_payload["remediation"])
+            self.assertNotIn("secret-code", str(unsafe_payload))
+            self.assertNotIn("secret-token", str(unsafe_payload))
+            self.assertNotIn("raw-secret", str(unsafe_payload))
+        finally:
+            with SessionLocal() as db:
+                db.execute(delete(Finding).where(Finding.id == unsafe_id))
+                db.commit()
 
     def test_openai_response_is_parsed_without_network_when_mocked(self) -> None:
         response_body = {

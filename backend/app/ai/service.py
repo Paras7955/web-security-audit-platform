@@ -1,11 +1,13 @@
 import json
 from dataclasses import dataclass
 from typing import Protocol
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.contracts import ScanMode, ScanStatus
 from app.models import Finding, Scan
 
 
@@ -23,6 +25,10 @@ CONFIDENCE_PRIORITY = {
     "low": 1,
 }
 EVIDENCE_PROVIDER_CAP = 1000
+ELIGIBLE_SCAN_STATUSES = {
+    ScanStatus.COMPLETED.value,
+    ScanStatus.COMPLETED_WITH_WARNINGS.value,
+}
 
 
 class AiExplanationError(ValueError):
@@ -192,8 +198,13 @@ def generate_ai_explanations(
     openai_api_key: str | None,
     openai_model: str | None,
 ) -> AiExplanationResult:
-    if db.get(Scan, scan_id) is None:
+    scan = db.get(Scan, scan_id)
+    if scan is None:
         raise AiExplanationError("Scan not found.")
+    if scan.mode != ScanMode.PASSIVE.value:
+        raise AiExplanationError("AI explanations can only be generated for passive scans.")
+    if scan.status not in ELIGIBLE_SCAN_STATUSES:
+        raise AiExplanationError("AI explanations can only be generated for completed scans.")
 
     safe_findings = load_safe_findings(db, scan_id=scan_id)
     template_provider = TemplateAiProvider()
@@ -228,21 +239,22 @@ def load_safe_findings(db: Session, *, scan_id: str) -> tuple[SafeFindingInput, 
 
 
 def safe_finding_input(finding: Finding) -> SafeFindingInput:
+    redaction_confirmed = bool(finding.redaction_applied)
     return SafeFindingInput(
         id=finding.id,
         title=finding.title,
         severity=finding.severity,
         confidence=finding.confidence,
-        affected_url=finding.affected_url,
+        affected_url=sanitize_provider_url(finding.affected_url),
         affected_file=finding.affected_file,
-        evidence=truncate_text(finding.evidence, EVIDENCE_PROVIDER_CAP),
+        evidence=truncate_text(finding.evidence, EVIDENCE_PROVIDER_CAP) if redaction_confirmed else None,
         source_tool=finding.source_tool,
         scanner_rule_id=finding.scanner_rule_id,
         owasp_category=finding.owasp_category,
         cwe=finding.cwe,
-        reproduction_steps=finding.reproduction_steps,
-        remediation=finding.remediation,
-        redaction_applied=finding.redaction_applied,
+        reproduction_steps=finding.reproduction_steps if redaction_confirmed else None,
+        remediation=finding.remediation if redaction_confirmed else None,
+        redaction_applied=redaction_confirmed,
     )
 
 
@@ -385,3 +397,10 @@ def truncate_text(value: str | None, limit: int) -> str | None:
     if len(value) <= limit:
         return value
     return value[: limit - 24] + "\n[TRUNCATED FOR AI INPUT]"
+
+
+def sanitize_provider_url(value: str | None) -> str | None:
+    if value is None:
+        return None
+    parsed = urlsplit(value)
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))

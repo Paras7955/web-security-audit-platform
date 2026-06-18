@@ -570,7 +570,7 @@ function AiExplanationsPanel({ explanation, message }: { explanation: AiExplanat
 
           {explanation.explanations.length > 0 ? (
             <div className="aiFindingGrid">
-              {explanation.explanations.slice(0, 4).map((item) => (
+              {explanation.explanations.map((item) => (
                 <div className="aiFinding" key={item.finding_id}>
                   <div className="aiFindingHeader">
                     <strong>Priority {item.priority}</strong>

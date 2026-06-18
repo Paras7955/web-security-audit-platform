@@ -122,10 +122,12 @@ Implemented AI explanation capabilities:
 - Severity/confidence prioritization and severity grouping.
 - OWASP/CWE/remediation explanation helpers.
 - Provider fallback to template explanations when optional OpenAI mode is unavailable or fails.
+- AI generation is limited to completed passive scans.
+- Provider URLs are stripped of query strings and fragments before leaving the backend.
 - Dashboard AI explanations panel with provider and fallback disclosure.
 - Markdown and HTML reports include generated AI explanation summaries and per-finding notes.
 
-AI provider inputs are restricted to normalized finding fields and redacted evidence snippets. Raw response bodies, raw artifacts, raw ZAP output, secret scanner output, and unredacted evidence must not be sent to AI providers.
+AI provider inputs are restricted to normalized finding fields and redacted evidence snippets. If redaction has not been confirmed for a finding, evidence, reproduction, and remediation text are omitted from provider payloads. Raw response bodies, raw artifacts, raw ZAP output, secret scanner output, and unredacted evidence must not be sent to AI providers.
 
 Relevant environment settings:
 
