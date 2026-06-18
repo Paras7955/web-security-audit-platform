@@ -58,6 +58,32 @@ class ReportArtifactRead(BaseModel):
     created_at: datetime
 
 
+class AiExplanationGroupRead(BaseModel):
+    label: str
+    count: int
+    finding_ids: list[str]
+
+
+class FindingExplanationRead(BaseModel):
+    finding_id: str
+    priority: int
+    summary: str
+    why_it_matters: str
+    recommended_action: str
+    owasp_mapping: str
+    limitations: str
+
+
+class AiExplanationRead(BaseModel):
+    scan_id: str
+    provider: str
+    fallback_used: bool
+    provider_error: str | None
+    summary: str
+    groups: list[AiExplanationGroupRead]
+    explanations: list[FindingExplanationRead]
+
+
 class TargetCreate(BaseModel):
     target_url: str = Field(min_length=1, max_length=2048)
     permission_confirmed: bool

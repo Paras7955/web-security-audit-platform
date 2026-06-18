@@ -466,6 +466,79 @@ select {
   text-decoration: none;
 }
 
+.aiPanel {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfd;
+}
+
+.aiPanel p {
+  margin: 0 0 12px;
+  color: var(--muted);
+}
+
+.aiMeta {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 12px;
+}
+
+.aiGroupList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.aiGroupList li {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: white;
+  color: var(--foreground);
+  padding: 6px 10px;
+}
+
+.aiGroupList span {
+  color: var(--muted);
+}
+
+.aiFindingGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.aiFinding {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  padding: 12px;
+}
+
+.aiFindingHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.aiFindingHeader small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.aiFinding h4 {
+  margin: 10px 0 6px;
+  font-size: 0.84rem;
+}
+
 .scanList {
   display: grid;
   gap: 8px;
@@ -676,7 +749,9 @@ select {
 
   .reportList li,
   .modeGrid,
-  .scanMeta {
+  .scanMeta,
+  .aiMeta,
+  .aiFindingGrid {
     grid-template-columns: 1fr;
   }
 

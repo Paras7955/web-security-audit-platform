@@ -7,6 +7,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai.service import AiExplanationResult, generate_ai_explanations
 from app.core.contracts import ScanMode, ScanStatus
 from app.models import Finding, ReportArtifact, Scan, Target
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
@@ -40,10 +41,17 @@ class ReportData:
     target: Target
     findings: tuple[Finding, ...]
     generated_at: datetime
-    ai_provider: str
+    ai_explanations: AiExplanationResult
 
 
-def build_report_data(db: Session, *, scan_id: str, ai_provider: str) -> ReportData:
+def build_report_data(
+    db: Session,
+    *,
+    scan_id: str,
+    ai_provider: str,
+    openai_api_key: str | None = None,
+    openai_model: str | None = None,
+) -> ReportData:
     scan = db.get(Scan, scan_id)
     if scan is None:
         raise ReportGenerationError("Scan not found.")
@@ -62,7 +70,20 @@ def build_report_data(db: Session, *, scan_id: str, ai_provider: str) -> ReportD
         .order_by(Finding.severity.asc(), Finding.created_at.asc())
     ).all()
     sorted_findings = tuple(sorted(findings, key=lambda finding: (SEVERITY_ORDER.get(finding.severity, 99), finding.title.lower())))
-    return ReportData(scan=scan, target=target, findings=sorted_findings, generated_at=report_timestamp(scan), ai_provider=ai_provider)
+    ai_explanations = generate_ai_explanations(
+        db,
+        scan_id=scan.id,
+        provider_name=ai_provider,
+        openai_api_key=openai_api_key,
+        openai_model=openai_model,
+    )
+    return ReportData(
+        scan=scan,
+        target=target,
+        findings=sorted_findings,
+        generated_at=report_timestamp(scan),
+        ai_explanations=ai_explanations,
+    )
 
 
 def generate_report_artifacts(
@@ -71,8 +92,16 @@ def generate_report_artifacts(
     scan_id: str,
     artifact_root: str | Path,
     ai_provider: str,
+    openai_api_key: str | None = None,
+    openai_model: str | None = None,
 ) -> list[ReportArtifact]:
-    data = build_report_data(db, scan_id=scan_id, ai_provider=ai_provider)
+    data = build_report_data(
+        db,
+        scan_id=scan_id,
+        ai_provider=ai_provider,
+        openai_api_key=openai_api_key,
+        openai_model=openai_model,
+    )
     ensure_scan_artifact_dir(artifact_root, scan_id)
     reports_dir = safe_report_dir(artifact_root, scan_id)
 
@@ -187,7 +216,7 @@ def render_markdown_report(data: ReportData) -> str:
         "- Custom passive scanner: used.",
         "- ZAP active scan: not used.",
         "- AJAX crawl: not used.",
-        f"- AI explanations: not generated in Phase 7; configured provider: {data.ai_provider}.",
+        f"- AI explanations: generated with {data.ai_explanations.provider} provider.",
         "- Repo scanning: not included.",
         "- Authenticated workflows: not tested.",
         "- Business logic checks: not tested.",
@@ -202,6 +231,10 @@ def render_markdown_report(data: ReportData) -> str:
         "## Redaction Notice",
         "",
         "Evidence is normalized and redacted before persistence and reporting. Full HTTP response bodies are not stored by default.",
+        "",
+        "## AI Explanations",
+        "",
+        render_markdown_ai_explanations(data.ai_explanations),
         "",
         "## Findings",
         "",
@@ -246,10 +279,45 @@ def render_markdown_report(data: ReportData) -> str:
     return "\n".join(lines)
 
 
+def render_markdown_ai_explanations(explanations: AiExplanationResult) -> str:
+    lines = [
+        f"- Provider used: {explanations.provider}",
+        f"- Fallback used: {'yes' if explanations.fallback_used else 'no'}",
+        f"- Summary: {explanations.summary}",
+        "- Limitation: AI explanations are based only on normalized, redacted findings and do not add new vulnerability claims.",
+    ]
+    if explanations.provider_error:
+        lines.append(f"- Provider error: {explanations.provider_error}")
+
+    if explanations.groups:
+        lines.extend(["", "### AI Finding Groups", ""])
+        for group in explanations.groups:
+            lines.append(f"- {group.label}: {group.count}")
+
+    if explanations.explanations:
+        lines.extend(["", "### AI Finding Notes", ""])
+        for explanation in explanations.explanations:
+            lines.extend(
+                [
+                    f"#### Finding {explanation.finding_id}",
+                    "",
+                    f"- Priority: {explanation.priority}",
+                    f"- Summary: {explanation.summary}",
+                    f"- Why it matters: {explanation.why_it_matters}",
+                    f"- Recommended action: {explanation.recommended_action}",
+                    f"- OWASP mapping: {explanation.owasp_mapping}",
+                    f"- Limitations: {explanation.limitations}",
+                    "",
+                ]
+            )
+    return "\n".join(lines)
+
+
 def render_html_report(data: ReportData) -> str:
     finding_sections = "\n".join(render_html_finding(index, finding) for index, finding in enumerate(data.findings, start=1))
     if not finding_sections:
         finding_sections = "<p>No normalized findings were recorded for this scan.</p>"
+    ai_section = render_html_ai_explanations(data.ai_explanations)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -285,7 +353,7 @@ def render_html_report(data: ReportData) -> str:
     <li>Custom passive scanner: used.</li>
     <li>ZAP active scan: not used.</li>
     <li>AJAX crawl: not used.</li>
-    <li>AI explanations: not generated in Phase 7; configured provider: {escape(data.ai_provider)}.</li>
+    <li>AI explanations: generated with {escape(data.ai_explanations.provider)} provider.</li>
     <li>Repo scanning: not included.</li>
     <li>Authenticated workflows: not tested.</li>
     <li>Business logic checks: not tested.</li>
@@ -300,10 +368,50 @@ def render_html_report(data: ReportData) -> str:
   <h2>Redaction Notice</h2>
   <p>Evidence is normalized and redacted before persistence and reporting. Full HTTP response bodies are not stored by default.</p>
 
+  <h2>AI Explanations</h2>
+  {ai_section}
+
   <h2>Findings</h2>
   {finding_sections}
 </body>
 </html>
+"""
+
+
+def render_html_ai_explanations(explanations: AiExplanationResult) -> str:
+    group_items = "".join(
+        f"<li>{escape(group.label)}: {group.count}</li>"
+        for group in explanations.groups
+    )
+    groups = f"<h3>AI Finding Groups</h3><ul>{group_items}</ul>" if group_items else ""
+    finding_items = "".join(
+        f"""<section class="finding">
+  <h3>Finding {escape(explanation.finding_id)}</h3>
+  <table>
+    <tr><th>Priority</th><td>{explanation.priority}</td></tr>
+    <tr><th>Summary</th><td>{escape(explanation.summary)}</td></tr>
+    <tr><th>Why it matters</th><td>{escape(explanation.why_it_matters)}</td></tr>
+    <tr><th>Recommended action</th><td>{escape(explanation.recommended_action)}</td></tr>
+    <tr><th>OWASP mapping</th><td>{escape(explanation.owasp_mapping)}</td></tr>
+    <tr><th>Limitations</th><td>{escape(explanation.limitations)}</td></tr>
+  </table>
+</section>"""
+        for explanation in explanations.explanations
+    )
+    finding_notes = f"<h3>AI Finding Notes</h3>{finding_items}" if finding_items else ""
+    provider_error = ""
+    if explanations.provider_error:
+        provider_error = f"<p><strong>Provider error:</strong> {escape(explanations.provider_error)}</p>"
+    return f"""
+  <table>
+    <tr><th>Provider used</th><td>{escape(explanations.provider)}</td></tr>
+    <tr><th>Fallback used</th><td>{"yes" if explanations.fallback_used else "no"}</td></tr>
+    <tr><th>Summary</th><td>{escape(explanations.summary)}</td></tr>
+  </table>
+  <p>AI explanations are based only on normalized, redacted findings and do not add new vulnerability claims.</p>
+  {provider_error}
+  {groups}
+  {finding_notes}
 """
 
 

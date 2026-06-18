@@ -37,6 +37,16 @@ Do not use this platform for:
 - Secret scan results must be redacted.
 - Never send raw response bodies, raw ZAP output, raw secret scanner output, or unredacted evidence to AI providers.
 
+## AI Provider Safety
+
+- Use `AI_PROVIDER=template` by default for local deterministic explanations.
+- Optional OpenAI explanations must receive only normalized finding fields and redacted evidence snippets.
+- Omit finding text fields from AI provider payloads when redaction has not been confirmed.
+- Strip query strings and fragments from URLs before including locations in AI provider payloads.
+- Do not send raw artifacts, raw HTTP bodies, raw ZAP output, secret scanner output, authorization material, cookies, or unredacted evidence to any AI provider.
+- AI explanations must describe only existing findings and must not invent vulnerabilities, affected assets, evidence, or scan coverage.
+- If an optional provider fails or is misconfigured, fall back to template explanations and disclose the fallback.
+
 ## Vulnerability Reporting For This Project
 
 Do not open public issues with exploitable details.
