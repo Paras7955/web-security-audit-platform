@@ -193,7 +193,7 @@ class AiExplanationTests(unittest.TestCase):
                     title="Sensitive callback URL",
                     severity="medium",
                     confidence="medium",
-                    affected_url="http://juice-shop:3000/callback?code=secret-code&token=secret-token#fragment",
+                    affected_url="http://user:pass@juice-shop:3000/callback?code=secret-code&token=secret-token#fragment",
                     evidence="authorization: bearer raw-secret",
                     source_tool="custom-passive",
                     scanner_rule_id="url:callback",
@@ -224,6 +224,7 @@ class AiExplanationTests(unittest.TestCase):
             self.assertNotIn("secret-code", str(unsafe_payload))
             self.assertNotIn("secret-token", str(unsafe_payload))
             self.assertNotIn("raw-secret", str(unsafe_payload))
+            self.assertNotIn("user:pass", str(unsafe_payload))
         finally:
             with SessionLocal() as db:
                 db.execute(delete(Finding).where(Finding.id == unsafe_id))

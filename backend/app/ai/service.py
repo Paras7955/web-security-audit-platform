@@ -403,4 +403,5 @@ def sanitize_provider_url(value: str | None) -> str | None:
     if value is None:
         return None
     parsed = urlsplit(value)
-    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+    netloc = parsed.netloc.rsplit("@", 1)[-1]
+    return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
