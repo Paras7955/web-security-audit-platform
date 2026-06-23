@@ -10,12 +10,13 @@ import httpx
 from app.core.contracts import Confidence, DEFAULT_LIMITS, Severity
 from app.findings.schemas import NormalizedFindingInput
 from app.security.allowlist import AllowlistTarget
-from app.security.ssrf import Resolver, validate_destination
-from app.security.target_url import NormalizedTargetUrl, normalize_target_url
+from app.security.ssrf import Resolver, SsrfGuardError, validate_destination
+from app.security.target_url import NormalizedTargetUrl, TargetUrlError, normalize_target_url
 
 
 ZAP_PASSIVE_URL_CAP = int(DEFAULT_LIMITS["page_cap"])
-ZAP_ALERT_CAP = 500
+ZAP_ALERT_PAGE_SIZE = 100
+ZAP_ALERT_TOTAL_CAP = 500
 ZAP_POLL_LIMIT = 40
 ZAP_POLL_INTERVAL_SECONDS = 0.25
 
@@ -29,6 +30,19 @@ class ZapPassiveResult:
     findings: tuple[NormalizedFindingInput, ...]
     errors: tuple[str, ...]
     submitted_urls: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ScopedZapUrl:
+    original_url: str
+    pinned_url: str
+    normalized: NormalizedTargetUrl
+
+
+@dataclass(frozen=True)
+class ZapAlertPage:
+    alerts: tuple[dict[str, object], ...]
+    truncated: bool
 
 
 class ZapApiClient:
@@ -74,15 +88,22 @@ class ZapApiClient:
         except ValueError as exc:
             raise ZapPassiveError("ZAP returned an invalid passive records count.") from exc
 
-    def alerts(self, *, base_url: str) -> list[dict[str, object]]:
-        payload = self._zap_get(
-            "/JSON/core/view/alerts/",
-            {"baseurl": base_url, "start": "0", "count": str(ZAP_ALERT_CAP)},
-        )
-        alerts = payload.get("alerts")
-        if not isinstance(alerts, list):
-            raise ZapPassiveError("ZAP did not return an alerts list.")
-        return [alert for alert in alerts if isinstance(alert, dict)]
+    def alerts(self, *, base_url: str) -> ZapAlertPage:
+        collected: list[dict[str, object]] = []
+        start = 0
+        while len(collected) < ZAP_ALERT_TOTAL_CAP:
+            payload = self._zap_get(
+                "/JSON/core/view/alerts/",
+                {"baseurl": base_url, "start": str(start), "count": str(ZAP_ALERT_PAGE_SIZE)},
+            )
+            alerts = payload.get("alerts")
+            if not isinstance(alerts, list):
+                raise ZapPassiveError("ZAP did not return an alerts list.")
+            collected.extend(alert for alert in alerts if isinstance(alert, dict))
+            if len(alerts) < ZAP_ALERT_PAGE_SIZE:
+                return ZapAlertPage(alerts=tuple(collected), truncated=False)
+            start += ZAP_ALERT_PAGE_SIZE
+        return ZapAlertPage(alerts=tuple(collected[:ZAP_ALERT_TOTAL_CAP]), truncated=True)
 
     def _zap_get(self, path: str, params: dict[str, str]) -> dict[str, object]:
         try:
@@ -118,44 +139,51 @@ def run_zap_passive_scan(
         context_name = f"scan-{scan_id}"
         zap_client.new_session(name=context_name)
         zap_client.new_context(name=context_name)
-        zap_client.include_in_context(context_name=context_name, regex=context_regex(target.normalized_url))
+        zap_client.include_in_context(context_name=context_name, regex=context_regex(target.pinned_url))
         zap_client.set_context_in_scope(context_name=context_name, enabled=True)
         zap_client.enable_passive_scanner()
         zap_client.delete_all_alerts()
 
-        for url in scoped_urls:
-            zap_client.access_url(url=url)
+        for scoped_url in scoped_urls:
+            zap_client.access_url(url=scoped_url.pinned_url)
 
         wait_for_passive_records(zap_client)
-        findings = tuple(normalize_zap_alert(alert) for alert in zap_client.alerts(base_url=target.normalized_url))
-        return ZapPassiveResult(findings=findings, errors=(), submitted_urls=scoped_urls)
-    except Exception as exc:
+        alert_page = zap_client.alerts(base_url=target.pinned_url)
+        url_map = {scoped_url.pinned_url: scoped_url.original_url for scoped_url in scoped_urls}
+        findings = tuple(normalize_zap_alert(rewrite_alert_url(alert, url_map)) for alert in alert_page.alerts)
+        errors = ("ZAP alert results were truncated at the configured cap.",) if alert_page.truncated else ()
+        return ZapPassiveResult(
+            findings=findings,
+            errors=errors,
+            submitted_urls=tuple(scoped_url.original_url for scoped_url in scoped_urls),
+        )
+    except (ZapPassiveError, TargetUrlError, SsrfGuardError) as exc:
         return ZapPassiveResult(findings=(), errors=(str(exc),), submitted_urls=())
 
 
 def scope_observed_urls(
     *,
-    target: NormalizedTargetUrl,
+    target: ScopedZapUrl,
     allowlist_target: AllowlistTarget,
     urls: tuple[str, ...],
     resolver: Resolver | None,
-) -> tuple[str, ...]:
-    scoped: list[str] = [target.normalized_url]
-    seen: set[str] = {target.normalized_url}
+) -> tuple[ScopedZapUrl, ...]:
+    scoped: list[ScopedZapUrl] = [target]
+    seen: set[str] = {target.original_url}
     for raw_url in urls:
         try:
             normalized = validate_zap_scope_url(raw_url, allowlist_target, resolver=resolver)
-        except Exception:
+        except (TargetUrlError, SsrfGuardError):
             continue
         if (
-            normalized.scheme != target.scheme
-            or normalized.host != target.host
-            or normalized.port != target.port
-            or normalized.normalized_url in seen
+            normalized.normalized.scheme != target.normalized.scheme
+            or normalized.normalized.host != target.normalized.host
+            or normalized.normalized.port != target.normalized.port
+            or normalized.original_url in seen
         ):
             continue
-        scoped.append(normalized.normalized_url)
-        seen.add(normalized.normalized_url)
+        scoped.append(normalized)
+        seen.add(normalized.original_url)
         if len(scoped) >= ZAP_PASSIVE_URL_CAP:
             break
     return tuple(scoped)
@@ -165,13 +193,22 @@ def validate_zap_scope_url(
     raw_url: str,
     allowlist_target: AllowlistTarget,
     resolver: Resolver | None,
-) -> NormalizedTargetUrl:
+) -> ScopedZapUrl:
     normalized = normalize_target_url(raw_url)
     if resolver is None:
-        validate_destination(normalized, allowlist_target)
+        destination = validate_destination(normalized, allowlist_target)
     else:
-        validate_destination(normalized, allowlist_target, resolver=resolver)
-    return normalized
+        destination = validate_destination(normalized, allowlist_target, resolver=resolver)
+    return ScopedZapUrl(
+        original_url=normalized.normalized_url,
+        pinned_url=pinned_url(normalized, destination.connection_ip),
+        normalized=normalized,
+    )
+
+
+def pinned_url(normalized: NormalizedTargetUrl, connection_ip: str) -> str:
+    host = f"[{connection_ip}]" if ":" in connection_ip else connection_ip
+    return urlunsplit((normalized.scheme, f"{host}:{normalized.port}", normalized.path.split("?", 1)[0] or "/", "", ""))
 
 
 def context_regex(target_url: str) -> str:
@@ -206,6 +243,19 @@ def normalize_zap_alert(alert: dict[str, object]) -> NormalizedFindingInput:
         remediation=string_field(alert, "solution") or None,
         false_positive_notes="ZAP passive alerts require human validation before remediation is prioritized.",
     )
+
+
+def rewrite_alert_url(alert: dict[str, object], url_map: dict[str, str]) -> dict[str, object]:
+    url = string_field(alert, "url")
+    if url is None:
+        return alert
+    sanitized = sanitize_alert_url(url)
+    mapped_url = url_map.get(sanitized)
+    if mapped_url is None:
+        return alert
+    rewritten = dict(alert)
+    rewritten["url"] = mapped_url
+    return rewritten
 
 
 def build_alert_evidence(alert: dict[str, object]) -> str:

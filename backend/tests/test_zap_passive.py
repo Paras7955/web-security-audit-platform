@@ -4,6 +4,7 @@ from app.core.contracts import Confidence, Severity
 from app.security.allowlist import AllowlistTarget
 from app.zap.passive import (
     ZapApiClient,
+    ZapAlertPage,
     context_regex,
     normalize_zap_alert,
     run_zap_passive_scan,
@@ -45,7 +46,8 @@ class ZapPassiveTests(unittest.TestCase):
             resolver=resolver,
         )
 
-        self.assertEqual(target, ("http://juice-shop:3000/", "http://juice-shop:3000/login"))
+        self.assertEqual(tuple(item.original_url for item in target), ("http://juice-shop:3000/", "http://juice-shop:3000/login"))
+        self.assertEqual(tuple(item.pinned_url for item in target), ("http://172.20.0.10:3000/", "http://172.20.0.10:3000/login"))
 
     def test_run_zap_passive_scan_scopes_session_and_accesses_urls_without_redirects(self) -> None:
         client = FakeZapClient()
@@ -63,10 +65,11 @@ class ZapPassiveTests(unittest.TestCase):
         self.assertEqual(result.errors, ())
         self.assertEqual(result.submitted_urls, ("http://juice-shop:3000/", "http://juice-shop:3000/login"))
         self.assertEqual([call[0] for call in client.calls[:6]], ["new_session", "new_context", "include", "scope", "enable", "delete"])
-        self.assertIn(("access", "http://juice-shop:3000/"), client.calls)
-        self.assertIn(("access", "http://juice-shop:3000/login"), client.calls)
+        self.assertIn(("access", "http://172.20.0.10:3000/"), client.calls)
+        self.assertIn(("access", "http://172.20.0.10:3000/login"), client.calls)
         self.assertEqual(result.findings[0].source_tool, "zap-passive")
         self.assertEqual(result.findings[0].scanner_rule_id, "10038")
+        self.assertEqual(result.findings[0].affected_url, "http://juice-shop:3000/")
 
     def test_run_zap_passive_scan_returns_warning_on_scope_error(self) -> None:
         result = run_zap_passive_scan(
@@ -121,6 +124,21 @@ class ZapPassiveTests(unittest.TestCase):
         self.assertEqual(calls[0][0], "http://zap:8080/JSON/core/action/accessUrl/")
         self.assertEqual(calls[0][1]["followRedirects"], "false")
 
+    def test_zap_api_alerts_paginates_and_reports_truncation(self) -> None:
+        def handler(url, *, params, timeout):
+            del url, timeout
+            start = int(params["start"])
+            if start < 500:
+                return MockResponse({"alerts": [{"alert": f"alert-{start + index}"} for index in range(100)]})
+            return MockResponse({"alerts": []})
+
+        with patch_httpx_get(handler):
+            client = ZapApiClient(base_url="http://zap:8080")
+            page = client.alerts(base_url="http://172.20.0.10:3000/")
+
+        self.assertEqual(len(page.alerts), 500)
+        self.assertTrue(page.truncated)
+
     def test_context_regex_scopes_to_exact_origin(self) -> None:
         regex = context_regex("http://juice-shop:3000/")
 
@@ -166,16 +184,19 @@ class FakeZapClient:
 
     def alerts(self, *, base_url: str):
         self.calls.append(("alerts", base_url))
-        return [
+        return ZapAlertPage(
+            truncated=False,
+            alerts=(
             {
                 "alert": "Content Security Policy Header Not Set",
                 "risk": "Medium",
                 "confidence": "High",
-                "url": "http://juice-shop:3000/",
+                "url": "http://172.20.0.10:3000/",
                 "pluginId": "10038",
                 "cweid": "693",
-            }
-        ]
+            },
+            ),
+        )
 
 
 class MockResponse:

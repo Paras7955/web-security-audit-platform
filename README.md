@@ -149,8 +149,10 @@ Implemented ZAP passive capabilities:
 
 - Creates an isolated ZAP session/context per scan.
 - Includes only the exact allowlisted target origin in the ZAP context.
-- Submits bounded allowlisted URLs to ZAP with automatic redirect following disabled.
+- Serializes access to the shared ZAP daemon with a database advisory lock.
+- Submits bounded allowlisted URLs to ZAP as SSRF-validated destination-IP-pinned URLs with automatic redirect following disabled.
 - Polls ZAP passive records and normalizes ZAP alerts into persisted findings.
+- Paginates ZAP alerts up to the configured cap and reports truncation as a scan warning.
 - Stores normalized/redacted ZAP alert metadata only, not raw ZAP output or response bodies.
 - Treats ZAP API failures or passive-scan timeouts as scan warnings instead of failing the custom passive scan.
 - Dashboard and reports disclose that ZAP passive analysis is used.

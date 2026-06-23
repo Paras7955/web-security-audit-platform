@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
+from contextlib import contextmanager
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.core.contracts import ScanStatus, ScanStep
@@ -14,6 +15,9 @@ from app.zap.passive import run_zap_passive_scan
 
 class ScanLifecycleError(ValueError):
     pass
+
+
+ZAP_DAEMON_LOCK_KEY = 9001
 
 
 def claim_next_queued_scan(db: Session) -> Scan | None:
@@ -154,13 +158,14 @@ def run_passive_scan_job(
                 status_message="Running scoped ZAP passive analysis for allowlisted URLs.",
                 progress_percent=76,
             )
-            zap_result = run_zap_passive_scan(
-                scan_id=scan.id,
-                target_url=scan.target.base_url,
-                allowlist_target=allowlist_target,
-                zap_base_url=zap_base_url,
-                observed_urls=tuple(page.url for page in result.pages),
-            )
+            with zap_daemon_lock(db):
+                zap_result = run_zap_passive_scan(
+                    scan_id=scan.id,
+                    target_url=scan.target.base_url,
+                    allowlist_target=allowlist_target,
+                    zap_base_url=zap_base_url,
+                    observed_urls=tuple(page.url for page in result.pages),
+                )
             zap_findings = zap_result.findings
             zap_errors = zap_result.errors
 
@@ -203,6 +208,15 @@ def run_passive_scan_job(
 
 def validate_phase3_lifecycle_scan(scan: Scan) -> None:
     validate_passive_lifecycle_scan(scan)
+
+
+@contextmanager
+def zap_daemon_lock(db: Session):
+    db.execute(text("SELECT pg_advisory_lock(:lock_key)"), {"lock_key": ZAP_DAEMON_LOCK_KEY})
+    try:
+        yield
+    finally:
+        db.execute(text("SELECT pg_advisory_unlock(:lock_key)"), {"lock_key": ZAP_DAEMON_LOCK_KEY})
 
 
 def validate_passive_lifecycle_scan(scan: Scan) -> None:
