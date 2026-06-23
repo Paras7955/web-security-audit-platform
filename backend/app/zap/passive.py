@@ -88,6 +88,31 @@ class ZapApiClient:
         except ValueError as exc:
             raise ZapPassiveError("ZAP returned an invalid passive records count.") from exc
 
+    def active_scan(self, *, url: str, context_id: str) -> str:
+        payload = self._zap_get(
+            "/JSON/ascan/action/scan/",
+            {
+                "url": url,
+                "recurse": "false",
+                "inScopeOnly": "true",
+                "contextId": context_id,
+            },
+        )
+        scan_id = payload.get("scan")
+        if not isinstance(scan_id, str):
+            raise ZapPassiveError("ZAP did not return an active scan id.")
+        return scan_id
+
+    def active_scan_status(self, *, scan_id: str) -> int:
+        payload = self._zap_get("/JSON/ascan/view/status/", {"scanId": scan_id})
+        raw_status = payload.get("status")
+        if not isinstance(raw_status, str):
+            raise ZapPassiveError("ZAP did not return active scan status.")
+        try:
+            return int(raw_status)
+        except ValueError as exc:
+            raise ZapPassiveError("ZAP returned an invalid active scan status.") from exc
+
     def alerts(self, *, base_url: str) -> ZapAlertPage:
         collected: list[dict[str, object]] = []
         start = 0
@@ -239,7 +264,7 @@ def wait_for_passive_records(client: ZapApiClient) -> None:
     raise ZapPassiveError("ZAP passive scanner did not finish within the poll limit.")
 
 
-def normalize_zap_alert(alert: dict[str, object]) -> NormalizedFindingInput:
+def normalize_zap_alert(alert: dict[str, object], *, source_tool: str = "zap-passive") -> NormalizedFindingInput:
     name = string_field(alert, "alert") or string_field(alert, "name") or "ZAP passive alert"
     plugin_id = string_field(alert, "pluginId") or string_field(alert, "alertRef")
     cwe = normalize_cwe(string_field(alert, "cweid"))
@@ -249,7 +274,7 @@ def normalize_zap_alert(alert: dict[str, object]) -> NormalizedFindingInput:
         confidence=map_zap_confidence(string_field(alert, "confidence")),
         affected_url=sanitize_alert_url(string_field(alert, "url")),
         evidence=build_alert_evidence(alert),
-        source_tool="zap-passive",
+        source_tool=source_tool,
         scanner_rule_id=plugin_id,
         cwe=cwe,
         owasp_category=map_owasp_category(cwe),
