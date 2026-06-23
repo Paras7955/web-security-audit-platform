@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
@@ -15,7 +16,8 @@ from app.security.target_url import NormalizedTargetUrl, normalize_target_url
 
 ZAP_PASSIVE_URL_CAP = int(DEFAULT_LIMITS["page_cap"])
 ZAP_ALERT_CAP = 500
-ZAP_POLL_LIMIT = 20
+ZAP_POLL_LIMIT = 40
+ZAP_POLL_INTERVAL_SECONDS = 0.25
 
 
 class ZapPassiveError(ValueError):
@@ -182,6 +184,7 @@ def wait_for_passive_records(client: ZapApiClient) -> None:
     for _attempt in range(ZAP_POLL_LIMIT):
         if client.records_to_scan() <= 0:
             return
+        time.sleep(ZAP_POLL_INTERVAL_SECONDS)
     raise ZapPassiveError("ZAP passive scanner did not finish within the poll limit.")
 
 
