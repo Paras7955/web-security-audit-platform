@@ -196,6 +196,7 @@ input {
 }
 
 .checkboxRow {
+  display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: start;
 }
@@ -317,6 +318,7 @@ select {
   padding: 12px;
   color: var(--muted);
   background: #f1f3f6;
+  text-align: left;
 }
 
 .modeCard strong,
@@ -332,6 +334,12 @@ select {
 .modeCardActive {
   border-color: #9ccfbd;
   background: #eef8f4;
+}
+
+.activeDemoAck {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .scanPanel {

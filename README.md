@@ -159,6 +159,22 @@ Implemented ZAP passive capabilities:
 
 Phase 9A does not run ZAP active scans, AJAX crawling, repo scanning, authenticated workflows, or business logic checks.
 
+## Phase 9B Status
+
+Phase 9B adds a bounded Active Demo scan mode for the local OWASP Juice Shop demo target. Active Demo is deliberately narrower than general active scanning and remains unavailable for arbitrary public URLs.
+
+Implemented Active Demo capabilities:
+
+- `POST /scans` accepts `mode: "active_demo"` only for allowlisted `local_demo` targets.
+- Active Demo requests require `active_demo_acknowledged: true`.
+- The dashboard exposes a mode selector and acknowledgement checkbox before queuing Active Demo scans.
+- The worker runs the existing custom passive and ZAP passive checks before the bounded ZAP active step.
+- ZAP active traffic is scoped to the exact allowlisted context and submitted through SSRF-validated destination-IP-pinned URLs.
+- Shared ZAP daemon access remains serialized with the advisory lock.
+- ZAP active alerts are normalized as `zap-active` findings and pass through the same redaction/persistence path.
+
+Phase 9B does not enable arbitrary active scans, AJAX crawling, repo scanning, authenticated workflows, or business logic checks.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.
