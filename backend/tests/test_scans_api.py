@@ -53,13 +53,27 @@ class ScanApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
 
-    def test_create_scan_rejects_active_modes_before_phase_9b(self) -> None:
+    def test_create_active_demo_scan_requires_acknowledgement(self) -> None:
         target = self.create_target()
 
         response = self.client.post("/scans", json={"target_id": target["id"], "mode": "active_demo"})
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Only passive scans", response.json()["detail"])
+        self.assertIn("acknowledgement", response.json()["detail"])
+
+    def test_create_active_demo_scan_queues_for_local_demo_target(self) -> None:
+        target = self.create_target()
+
+        response = self.client.post(
+            "/scans",
+            json={"target_id": target["id"], "mode": "active_demo", "active_demo_acknowledged": True},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.created_scan_ids.append(body["id"])
+        self.assertEqual(body["mode"], "active_demo")
+        self.assertEqual(body["status"], "queued")
 
     def test_list_and_get_scan(self) -> None:
         target = self.create_target()
