@@ -417,7 +417,7 @@ export function TargetSetup() {
     <section className="dashboard" aria-labelledby="dashboard-heading">
       <div className="sectionHeader">
         <div>
-          <p className="eyebrow">Phase 8 AI Explanations</p>
+          <p className="eyebrow">Phase 9A ZAP Passive</p>
           <h2 id="dashboard-heading">Run passive scans, review findings, explain risk, and generate reports</h2>
         </div>
         <span className="phaseBadge">Local demo only</span>
@@ -498,7 +498,7 @@ function ReportsPanel({
     <div className="reportPanel">
       <div className="panelHeader">
         <h3>Reports</h3>
-        <span className="phaseBadge">Phase 8</span>
+        <span className="phaseBadge">Phase 9A</span>
       </div>
 
       <div className="reportActions">
@@ -535,7 +535,7 @@ function AiExplanationsPanel({ explanation, message }: { explanation: AiExplanat
     <div className="aiPanel">
       <div className="panelHeader">
         <h3>AI Explanations</h3>
-        <span className="phaseBadge">{explanation?.provider ?? "Phase 8"}</span>
+        <span className="phaseBadge">{explanation?.provider ?? "Phase 9A"}</span>
       </div>
 
       {explanation ? (
@@ -725,7 +725,7 @@ function ScanLauncher({
       <div className="modeGrid" aria-label="Scan mode safety controls">
         <div className="modeCard modeCardActive">
           <strong>Passive</strong>
-          <span>Custom crawl and passive checks</span>
+          <span>Custom crawl plus ZAP passive analysis</span>
         </div>
         <div className="modeCard">
           <strong>Active Demo</strong>

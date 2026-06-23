@@ -214,6 +214,7 @@ def render_markdown_report(data: ReportData) -> str:
         "## Scope And Tooling",
         "",
         "- Custom passive scanner: used.",
+        "- ZAP passive analysis: used for allowlisted URLs.",
         "- ZAP active scan: not used.",
         "- AJAX crawl: not used.",
         f"- AI explanations: generated with {data.ai_explanations.provider} provider.",
@@ -351,6 +352,7 @@ def render_html_report(data: ReportData) -> str:
   <h2>Scope And Tooling</h2>
   <ul>
     <li>Custom passive scanner: used.</li>
+    <li>ZAP passive analysis: used for allowlisted URLs.</li>
     <li>ZAP active scan: not used.</li>
     <li>AJAX crawl: not used.</li>
     <li>AI explanations: generated with {escape(data.ai_explanations.provider)} provider.</li>

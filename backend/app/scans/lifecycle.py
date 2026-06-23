@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
+from contextlib import contextmanager
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.core.contracts import ScanStatus, ScanStep
@@ -9,10 +10,14 @@ from app.models import Scan
 from app.scans.artifacts import ensure_scan_artifact_dir
 from app.scanner.passive import run_passive_scan
 from app.security.allowlist import ScanAllowlist
+from app.zap.passive import run_zap_passive_scan
 
 
 class ScanLifecycleError(ValueError):
     pass
+
+
+ZAP_DAEMON_LOCK_KEY = 9001
 
 
 def claim_next_queued_scan(db: Session) -> Scan | None:
@@ -94,7 +99,13 @@ def run_internal_lifecycle_job(db: Session, scan: Scan, artifact_root: str) -> N
         mark_scan_failed(db, scan, exc)
 
 
-def run_passive_scan_job(db: Session, scan: Scan, artifact_root: str, allowlist: ScanAllowlist) -> None:
+def run_passive_scan_job(
+    db: Session,
+    scan: Scan,
+    artifact_root: str,
+    allowlist: ScanAllowlist,
+    zap_base_url: str | None = None,
+) -> None:
     try:
         validate_passive_lifecycle_scan(scan)
         if scan.target is None:
@@ -135,27 +146,52 @@ def run_passive_scan_job(db: Session, scan: Scan, artifact_root: str, allowlist:
             status_message=f"Completed passive checks for {len(result.pages)} crawled pages.",
             progress_percent=70,
         )
+
+        zap_findings = ()
+        zap_errors = ()
+        if zap_base_url:
+            update_scan_progress(
+                db,
+                scan,
+                status=ScanStatus.RUNNING,
+                current_step=ScanStep.ZAP_PASSIVE,
+                status_message="Running scoped ZAP passive analysis for allowlisted URLs.",
+                progress_percent=76,
+            )
+            with zap_daemon_lock(db):
+                zap_result = run_zap_passive_scan(
+                    scan_id=scan.id,
+                    target_url=scan.target.base_url,
+                    allowlist_target=allowlist_target,
+                    zap_base_url=zap_base_url,
+                    observed_urls=tuple(page.url for page in result.pages),
+                )
+            zap_findings = zap_result.findings
+            zap_errors = zap_result.errors
+
+        all_findings = tuple(result.findings) + tuple(zap_findings)
+        all_errors = tuple(result.errors) + tuple(zap_errors)
         update_scan_progress(
             db,
             scan,
             status=ScanStatus.NORMALIZING,
             current_step=ScanStep.NORMALIZING_FINDINGS,
-            status_message=f"Persisting {len(result.findings)} normalized passive findings.",
+            status_message=f"Persisting {len(all_findings)} normalized passive findings.",
             progress_percent=85,
         )
 
         persist_normalized_findings(
             db,
             scan_id=scan.id,
-            findings=list(result.findings),
+            findings=list(all_findings),
             artifact_root=artifact_root,
         )
 
-        terminal_status = ScanStatus.COMPLETED_WITH_WARNINGS if result.errors else ScanStatus.COMPLETED
+        terminal_status = ScanStatus.COMPLETED_WITH_WARNINGS if all_errors else ScanStatus.COMPLETED
         status_message = (
-            f"Passive scan completed with {len(result.findings)} findings and {len(result.errors)} crawl warnings."
-            if result.errors
-            else f"Passive scan completed with {len(result.findings)} findings."
+            f"Passive scan completed with {len(all_findings)} findings and {len(all_errors)} warning(s)."
+            if all_errors
+            else f"Passive scan completed with {len(all_findings)} findings."
         )
         update_scan_progress(
             db,
@@ -172,6 +208,15 @@ def run_passive_scan_job(db: Session, scan: Scan, artifact_root: str, allowlist:
 
 def validate_phase3_lifecycle_scan(scan: Scan) -> None:
     validate_passive_lifecycle_scan(scan)
+
+
+@contextmanager
+def zap_daemon_lock(db: Session):
+    db.execute(text("SELECT pg_advisory_lock(:lock_key)"), {"lock_key": ZAP_DAEMON_LOCK_KEY})
+    try:
+        yield
+    finally:
+        db.execute(text("SELECT pg_advisory_unlock(:lock_key)"), {"lock_key": ZAP_DAEMON_LOCK_KEY})
 
 
 def validate_passive_lifecycle_scan(scan: Scan) -> None:

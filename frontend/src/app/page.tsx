@@ -16,10 +16,10 @@ export default function Home() {
           <p className="eyebrow">Defensive Web App Security Audit</p>
           <h1>Local-first security evidence, normalized findings, and clear reports.</h1>
         </div>
-        <div className="statusPanel" aria-label="Phase 8 AI explanations status">
-          <span>Phase 8</span>
-          <strong>AI explanations ready</strong>
-          <small>Create allowlisted targets, run passive scans, inspect findings, explain risk, and generate reports.</small>
+        <div className="statusPanel" aria-label="Phase 9A ZAP passive status">
+          <span>Phase 9A</span>
+          <strong>ZAP passive ready</strong>
+          <small>Create allowlisted targets, run passive scans with ZAP passive analysis, inspect findings, explain risk, and generate reports.</small>
         </div>
       </section>
 

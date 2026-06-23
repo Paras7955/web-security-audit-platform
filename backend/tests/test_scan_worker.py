@@ -14,6 +14,7 @@ from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, sca
 from app.scans.lifecycle import claim_next_queued_scan, run_internal_lifecycle_job, run_passive_scan_job
 from app.scanner.passive import PassiveScanResult
 from app.security.allowlist import ScanAllowlist
+from app.zap.passive import ZapPassiveResult
 
 
 class ScanWorkerTests(unittest.TestCase):
@@ -188,6 +189,104 @@ class ScanWorkerTests(unittest.TestCase):
                 self.assertEqual(len(persisted), 1)
                 self.assertEqual(persisted[0].source_tool, "custom-passive")
                 self.assertEqual(persisted[0].scanner_rule_id, "header:content-security-policy")
+
+    def test_passive_scan_job_persists_zap_passive_findings(self) -> None:
+        allowlist = build_test_allowlist()
+        custom_finding = NormalizedFindingInput(
+            title="Missing Content Security Policy",
+            severity=Severity.LOW,
+            confidence=Confidence.MEDIUM,
+            affected_url="http://juice-shop:3000/",
+            evidence="Content-Security-Policy header was not present.",
+            source_tool="custom-passive",
+            scanner_rule_id="header:content-security-policy",
+            cwe="CWE-693",
+        )
+        zap_finding = NormalizedFindingInput(
+            title="ZAP CSP Alert",
+            severity=Severity.MEDIUM,
+            confidence=Confidence.HIGH,
+            affected_url="http://juice-shop:3000/",
+            evidence="ZAP passive alert metadata.",
+            source_tool="zap-passive",
+            scanner_rule_id="10038",
+            cwe="CWE-693",
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_result = PassiveScanResult(
+                pages=(),
+                findings=(custom_finding,),
+                errors=(),
+                artifact_dir=Path(temp_dir) / "scans" / self.scan_id,
+            )
+            fake_zap_result = ZapPassiveResult(
+                findings=(zap_finding,),
+                errors=(),
+                submitted_urls=("http://juice-shop:3000/",),
+            )
+            with SessionLocal() as db:
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(scan)
+
+                with patch("app.scans.lifecycle.run_passive_scan", return_value=fake_result), patch(
+                    "app.scans.lifecycle.run_zap_passive_scan", return_value=fake_zap_result
+                ) as zap:
+                    run_passive_scan_job(db, scan, temp_dir, allowlist, zap_base_url="http://zap:8080")
+
+                zap.assert_called_once()
+                self.assertEqual(scan.status, "completed")
+                persisted = db.scalars(select(Finding).where(Finding.scan_id == self.scan_id).order_by(Finding.source_tool.asc())).all()
+                self.assertEqual(len(persisted), 2)
+                self.assertEqual({finding.source_tool for finding in persisted}, {"custom-passive", "zap-passive"})
+
+    def test_passive_scan_job_completes_with_warning_when_zap_warns(self) -> None:
+        allowlist = build_test_allowlist()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_result = PassiveScanResult(
+                pages=(),
+                findings=(),
+                errors=(),
+                artifact_dir=Path(temp_dir) / "scans" / self.scan_id,
+            )
+            fake_zap_result = ZapPassiveResult(
+                findings=(),
+                errors=("ZAP passive scanner did not finish within the poll limit.",),
+                submitted_urls=(),
+            )
+            with SessionLocal() as db:
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(scan)
+
+                with patch("app.scans.lifecycle.run_passive_scan", return_value=fake_result), patch(
+                    "app.scans.lifecycle.run_zap_passive_scan", return_value=fake_zap_result
+                ):
+                    run_passive_scan_job(db, scan, temp_dir, allowlist, zap_base_url="http://zap:8080")
+
+                self.assertEqual(scan.status, "completed_with_warnings")
+                self.assertEqual(scan.current_step, "normalizing_findings")
+                self.assertIn("warning", scan.status_message)
+
+
+def build_test_allowlist() -> ScanAllowlist:
+    return ScanAllowlist.model_validate(
+        {
+            "targets": [
+                {
+                    "id": "juice-shop",
+                    "name": "OWASP Juice Shop",
+                    "base_url": "http://juice-shop:3000",
+                    "schemes": ["http"],
+                    "hosts": ["juice-shop"],
+                    "ports": [3000],
+                    "allowed_modes": ["passive"],
+                    "max_redirects": 5,
+                    "local_demo": True,
+                }
+            ]
+        }
+    )
 
 
 if __name__ == "__main__":
