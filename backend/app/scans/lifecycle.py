@@ -4,12 +4,13 @@ from contextlib import contextmanager
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from app.core.contracts import ScanStatus, ScanStep
+from app.core.contracts import ScanMode, ScanStatus, ScanStep
 from app.findings.service import persist_normalized_findings
 from app.models import Scan
 from app.scans.artifacts import ensure_scan_artifact_dir
 from app.scanner.passive import run_passive_scan
 from app.security.allowlist import ScanAllowlist
+from app.zap.active import run_zap_active_demo_scan
 from app.zap.passive import run_zap_passive_scan
 
 
@@ -107,19 +108,22 @@ def run_passive_scan_job(
     zap_base_url: str | None = None,
 ) -> None:
     try:
-        validate_passive_lifecycle_scan(scan)
+        validate_scan_job(scan)
         if scan.target is None:
             raise ScanLifecycleError("Scan target no longer exists.")
         allowlist_target = allowlist.get_target(scan.target.allowlist_id)
         if allowlist_target is None:
             raise ScanLifecycleError("Scan target is not present in the allowlist.")
+        active_demo = scan.mode == ScanMode.ACTIVE_DEMO.value
+        if active_demo and not allowlist_target.local_demo:
+            raise ScanLifecycleError("Active Demo scan target must be a local/demo allowlist target.")
 
         update_scan_progress(
             db,
             scan,
             status=ScanStatus.VALIDATING,
             current_step=ScanStep.TARGET_VALIDATION,
-            status_message="Validated target and allowlist entry for passive scan.",
+            status_message=f"Validated target and allowlist entry for {format_scan_mode(scan.mode)} scan.",
             progress_percent=10,
         )
         update_scan_progress(
@@ -149,6 +153,8 @@ def run_passive_scan_job(
 
         zap_findings = ()
         zap_errors = ()
+        active_findings = ()
+        active_errors = ()
         if zap_base_url:
             update_scan_progress(
                 db,
@@ -169,14 +175,33 @@ def run_passive_scan_job(
             zap_findings = zap_result.findings
             zap_errors = zap_result.errors
 
-        all_findings = tuple(result.findings) + tuple(zap_findings)
-        all_errors = tuple(result.errors) + tuple(zap_errors)
+            if active_demo:
+                update_scan_progress(
+                    db,
+                    scan,
+                    status=ScanStatus.RUNNING,
+                    current_step=ScanStep.ZAP_ACTIVE,
+                    status_message="Running bounded ZAP Active Demo scan against the local/demo target.",
+                    progress_percent=82,
+                )
+                with zap_daemon_lock(db):
+                    active_result = run_zap_active_demo_scan(
+                        scan_id=scan.id,
+                        target_url=scan.target.base_url,
+                        allowlist_target=allowlist_target,
+                        zap_base_url=zap_base_url,
+                    )
+                active_findings = active_result.findings
+                active_errors = active_result.errors
+
+        all_findings = tuple(result.findings) + tuple(zap_findings) + tuple(active_findings)
+        all_errors = tuple(result.errors) + tuple(zap_errors) + tuple(active_errors)
         update_scan_progress(
             db,
             scan,
             status=ScanStatus.NORMALIZING,
             current_step=ScanStep.NORMALIZING_FINDINGS,
-            status_message=f"Persisting {len(all_findings)} normalized passive findings.",
+            status_message=f"Persisting {len(all_findings)} normalized {format_scan_mode(scan.mode)} findings.",
             progress_percent=85,
         )
 
@@ -189,9 +214,9 @@ def run_passive_scan_job(
 
         terminal_status = ScanStatus.COMPLETED_WITH_WARNINGS if all_errors else ScanStatus.COMPLETED
         status_message = (
-            f"Passive scan completed with {len(all_findings)} findings and {len(all_errors)} warning(s)."
+            f"{format_scan_mode(scan.mode)} scan completed with {len(all_findings)} findings and {len(all_errors)} warning(s)."
             if all_errors
-            else f"Passive scan completed with {len(all_findings)} findings."
+            else f"{format_scan_mode(scan.mode)} scan completed with {len(all_findings)} findings."
         )
         update_scan_progress(
             db,
@@ -207,7 +232,7 @@ def run_passive_scan_job(
 
 
 def validate_phase3_lifecycle_scan(scan: Scan) -> None:
-    validate_passive_lifecycle_scan(scan)
+    validate_scan_job(scan)
 
 
 @contextmanager
@@ -219,13 +244,17 @@ def zap_daemon_lock(db: Session):
         db.execute(text("SELECT pg_advisory_unlock(:lock_key)"), {"lock_key": ZAP_DAEMON_LOCK_KEY})
 
 
-def validate_passive_lifecycle_scan(scan: Scan) -> None:
-    if scan.mode != "passive":
-        raise ScanLifecycleError("Worker only supports passive scan jobs in this phase.")
+def validate_scan_job(scan: Scan) -> None:
+    if scan.mode not in {ScanMode.PASSIVE.value, ScanMode.ACTIVE_DEMO.value}:
+        raise ScanLifecycleError("Worker only supports passive and Active Demo scan jobs in this phase.")
     if scan.target is None:
         raise ScanLifecycleError("Scan target no longer exists.")
     if not scan.target.permission_confirmed:
         raise ScanLifecycleError("Scan target authorization is not confirmed.")
+
+
+def format_scan_mode(mode: str) -> str:
+    return "Active Demo" if mode == ScanMode.ACTIVE_DEMO.value else "Passive"
 
 
 def update_scan_progress(

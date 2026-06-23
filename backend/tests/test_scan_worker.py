@@ -14,6 +14,7 @@ from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, sca
 from app.scans.lifecycle import claim_next_queued_scan, run_internal_lifecycle_job, run_passive_scan_job
 from app.scanner.passive import PassiveScanResult
 from app.security.allowlist import ScanAllowlist
+from app.zap.active import ZapActiveDemoResult
 from app.zap.passive import ZapPassiveResult
 
 
@@ -110,7 +111,7 @@ class ScanWorkerTests(unittest.TestCase):
             with SessionLocal() as db:
                 scan = db.get(Scan, self.scan_id)
                 self.assertIsNotNone(scan)
-                scan.mode = "active_demo"
+                scan.mode = "ajax_short"
                 db.add(scan)
                 db.commit()
                 db.refresh(scan)
@@ -119,7 +120,7 @@ class ScanWorkerTests(unittest.TestCase):
 
                 self.assertEqual(scan.status, "failed")
                 self.assertEqual(scan.error_code, "scan_worker_failed")
-                self.assertIn("only supports passive", scan.error_detail)
+                self.assertIn("only supports passive and Active Demo", scan.error_detail)
 
     def test_worker_fails_unconfirmed_target(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -267,6 +268,52 @@ class ScanWorkerTests(unittest.TestCase):
                 self.assertEqual(scan.status, "completed_with_warnings")
                 self.assertEqual(scan.current_step, "normalizing_findings")
                 self.assertIn("warning", scan.status_message)
+
+    def test_active_demo_scan_job_persists_zap_active_findings(self) -> None:
+        allowlist = build_test_allowlist()
+        active_finding = NormalizedFindingInput(
+            title="ZAP Active Demo Alert",
+            severity=Severity.MEDIUM,
+            confidence=Confidence.HIGH,
+            affected_url="http://juice-shop:3000/",
+            evidence="ZAP active alert metadata.",
+            source_tool="zap-active",
+            scanner_rule_id="40012",
+            cwe="CWE-79",
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_result = PassiveScanResult(
+                pages=(),
+                findings=(),
+                errors=(),
+                artifact_dir=Path(temp_dir) / "scans" / self.scan_id,
+            )
+            fake_zap_passive = ZapPassiveResult(findings=(), errors=(), submitted_urls=("http://juice-shop:3000/",))
+            fake_zap_active = ZapActiveDemoResult(
+                findings=(active_finding,),
+                errors=(),
+                submitted_url="http://juice-shop:3000/",
+            )
+            with SessionLocal() as db:
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(scan)
+                scan.mode = "active_demo"
+                db.add(scan)
+                db.commit()
+                db.refresh(scan)
+
+                with patch("app.scans.lifecycle.run_passive_scan", return_value=fake_result), patch(
+                    "app.scans.lifecycle.run_zap_passive_scan", return_value=fake_zap_passive
+                ), patch("app.scans.lifecycle.run_zap_active_demo_scan", return_value=fake_zap_active) as active:
+                    run_passive_scan_job(db, scan, temp_dir, allowlist, zap_base_url="http://zap:8080")
+
+                active.assert_called_once()
+                self.assertEqual(scan.status, "completed")
+                self.assertEqual(scan.current_step, "normalizing_findings")
+                persisted = db.scalars(select(Finding).where(Finding.scan_id == self.scan_id)).all()
+                self.assertEqual(len(persisted), 1)
+                self.assertEqual(persisted[0].source_tool, "zap-active")
 
 
 def build_test_allowlist() -> ScanAllowlist:
