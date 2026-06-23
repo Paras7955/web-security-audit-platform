@@ -25,6 +25,7 @@ Do not use this platform for:
 - HTTP clients must disable automatic redirects and manually revalidate redirect destinations.
 - Every outbound scanner request must pass SSRF and allowlist validation.
 - ZAP must be scoped to the exact allowlisted target/context.
+- ZAP passive URL submission must use only validated allowlisted URLs and must disable automatic redirect following.
 - Active Demo scans require explicit user acknowledgement.
 - Cloud demos must use sample data only and must not allow arbitrary active scans.
 

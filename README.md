@@ -141,6 +141,22 @@ Set `AI_PROVIDER=openai` only when an OpenAI API key and model are configured. I
 
 Phase 8 does not call ZAP, run repo scanning, test authenticated workflows, or perform business logic checks.
 
+## Phase 9A Status
+
+Phase 9A adds scoped ZAP passive analysis to the passive scan worker. The custom guarded crawler still controls target discovery; ZAP receives only allowlisted URLs that were validated against the configured target scope.
+
+Implemented ZAP passive capabilities:
+
+- Creates an isolated ZAP session/context per scan.
+- Includes only the exact allowlisted target origin in the ZAP context.
+- Submits bounded allowlisted URLs to ZAP with automatic redirect following disabled.
+- Polls ZAP passive records and normalizes ZAP alerts into persisted findings.
+- Stores normalized/redacted ZAP alert metadata only, not raw ZAP output or response bodies.
+- Treats ZAP API failures or passive-scan timeouts as scan warnings instead of failing the custom passive scan.
+- Dashboard and reports disclose that ZAP passive analysis is used.
+
+Phase 9A does not run ZAP active scans, AJAX crawling, repo scanning, authenticated workflows, or business logic checks.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.

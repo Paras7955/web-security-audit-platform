@@ -85,6 +85,7 @@ class ReportsTests(unittest.TestCase):
 
             self.assertIn("Target allowlist ID: juice-shop", markdown_content)
             self.assertNotIn("+00:00Z", markdown_content)
+            self.assertIn("ZAP passive analysis: used for allowlisted URLs.", markdown_content)
             self.assertIn("ZAP active scan: not used.", markdown_content)
             self.assertIn("AI explanations: generated with template provider.", markdown_content)
             self.assertIn("## AI Explanations", markdown_content)
@@ -93,6 +94,7 @@ class ReportsTests(unittest.TestCase):
             self.assertIn("Redaction applied: yes", markdown_content)
             self.assertNotIn("+00:00Z", html_content)
             self.assertIn("<h2>AI Explanations</h2>", html_content)
+            self.assertIn("ZAP passive analysis: used for allowlisted URLs.", html_content)
             self.assertIn("generated with template provider", html_content)
             self.assertIn("&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;", html_content)
             self.assertNotIn("<script>alert('xss')</script>", html_content)
