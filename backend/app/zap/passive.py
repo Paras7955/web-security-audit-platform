@@ -91,7 +91,7 @@ class ZapApiClient:
     def alerts(self, *, base_url: str) -> ZapAlertPage:
         collected: list[dict[str, object]] = []
         start = 0
-        while len(collected) < ZAP_ALERT_TOTAL_CAP:
+        while True:
             payload = self._zap_get(
                 "/JSON/core/view/alerts/",
                 {"baseurl": base_url, "start": str(start), "count": str(ZAP_ALERT_PAGE_SIZE)},
@@ -99,11 +99,24 @@ class ZapApiClient:
             alerts = payload.get("alerts")
             if not isinstance(alerts, list):
                 raise ZapPassiveError("ZAP did not return an alerts list.")
-            collected.extend(alert for alert in alerts if isinstance(alert, dict))
+            remaining = ZAP_ALERT_TOTAL_CAP - len(collected)
+            collected.extend(alert for alert in alerts[:remaining] if isinstance(alert, dict))
             if len(alerts) < ZAP_ALERT_PAGE_SIZE:
                 return ZapAlertPage(alerts=tuple(collected), truncated=False)
+            if len(collected) >= ZAP_ALERT_TOTAL_CAP:
+                probe = self._zap_get(
+                    "/JSON/core/view/alerts/",
+                    {
+                        "baseurl": base_url,
+                        "start": str(start + ZAP_ALERT_PAGE_SIZE),
+                        "count": "1",
+                    },
+                )
+                probe_alerts = probe.get("alerts")
+                if not isinstance(probe_alerts, list):
+                    raise ZapPassiveError("ZAP did not return an alerts list.")
+                return ZapAlertPage(alerts=tuple(collected), truncated=bool(probe_alerts))
             start += ZAP_ALERT_PAGE_SIZE
-        return ZapAlertPage(alerts=tuple(collected[:ZAP_ALERT_TOTAL_CAP]), truncated=True)
 
     def _zap_get(self, path: str, params: dict[str, str]) -> dict[str, object]:
         try:
@@ -149,7 +162,7 @@ def run_zap_passive_scan(
 
         wait_for_passive_records(zap_client)
         alert_page = zap_client.alerts(base_url=target.pinned_url)
-        url_map = {scoped_url.pinned_url: scoped_url.original_url for scoped_url in scoped_urls}
+        url_map = {alert_url_map_key(scoped_url.pinned_url): scoped_url.original_url for scoped_url in scoped_urls}
         findings = tuple(normalize_zap_alert(rewrite_alert_url(alert, url_map)) for alert in alert_page.alerts)
         errors = ("ZAP alert results were truncated at the configured cap.",) if alert_page.truncated else ()
         return ZapPassiveResult(
@@ -208,7 +221,8 @@ def validate_zap_scope_url(
 
 def pinned_url(normalized: NormalizedTargetUrl, connection_ip: str) -> str:
     host = f"[{connection_ip}]" if ":" in connection_ip else connection_ip
-    return urlunsplit((normalized.scheme, f"{host}:{normalized.port}", normalized.path.split("?", 1)[0] or "/", "", ""))
+    parsed = urlsplit(normalized.normalized_url)
+    return urlunsplit((normalized.scheme, f"{host}:{normalized.port}", parsed.path or "/", parsed.query, ""))
 
 
 def context_regex(target_url: str) -> str:
@@ -249,13 +263,18 @@ def rewrite_alert_url(alert: dict[str, object], url_map: dict[str, str]) -> dict
     url = string_field(alert, "url")
     if url is None:
         return alert
-    sanitized = sanitize_alert_url(url)
-    mapped_url = url_map.get(sanitized)
+    mapped_url = url_map.get(alert_url_map_key(url))
     if mapped_url is None:
         return alert
     rewritten = dict(alert)
     rewritten["url"] = mapped_url
     return rewritten
+
+
+def alert_url_map_key(value: str) -> str:
+    parsed = urlsplit(value)
+    netloc = parsed.netloc.rsplit("@", 1)[-1]
+    return urlunsplit((parsed.scheme, netloc, parsed.path or "/", parsed.query, ""))
 
 
 def build_alert_evidence(alert: dict[str, object]) -> str:
