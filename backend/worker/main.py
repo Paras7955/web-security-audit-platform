@@ -30,7 +30,7 @@ def main() -> None:
             if scan is not None:
                 print(f"Processing scan {scan.id}", flush=True)
                 allowlist = load_allowlist(settings.allowlist_path)
-                run_passive_scan_job(db, scan, settings.artifact_root, allowlist)
+                run_passive_scan_job(db, scan, settings.artifact_root, allowlist, zap_base_url=settings.zap_base_url)
                 continue
         time.sleep(5)
 
