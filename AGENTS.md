@@ -28,6 +28,7 @@ Future phase branch names use the `phase-*` convention:
 - Phase 9A: `phase-9a-zap-passive`
 - Phase 9B: `phase-9b-active-demo`
 - Phase 9C: `phase-9c-ajax-short`
+- Phase 9D: `phase-9d-multimode-reports-ai`
 - Phase 10: `phase-10-repo-scanning`
 
 Historical branches may still use the previous `codex/phase-*` prefix. Do not rename old branches or rewrite branch history for this convention change.
@@ -47,6 +48,15 @@ V1 includes:
 - Normalized findings.
 - Markdown/HTML reports.
 - Template AI explanations with optional OpenAI provider later.
+
+Phase 9D is a planned hardening phase before repo scanning:
+
+- Expand reports to support normalized findings from completed `passive` and `active_demo` scans.
+- Expand AI explanations to support normalized findings from completed `passive` and `active_demo` scans.
+- Keep OpenAI optional and default to the deterministic template provider.
+- Prove with tests that AI provider payloads and reports receive only normalized/redacted fields.
+- Do not send raw ZAP alerts, raw HTTP bodies, raw artifacts, unredacted evidence, or secrets to AI providers or reports.
+- Do not include repo-scan findings in Phase 9D; repo findings have separate leakage risks and belong after Phase 10 normalization/redaction exists.
 
 Post-v1 unless explicitly approved:
 

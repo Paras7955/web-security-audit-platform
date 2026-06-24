@@ -175,6 +175,19 @@ Implemented Active Demo capabilities:
 
 Phase 9B does not enable arbitrary active scans, AJAX crawling, repo scanning, authenticated workflows, or business logic checks.
 
+## Planned Phase 9D Scope
+
+Phase 9D is planned as a multi-mode reports and AI hardening phase after Phase 9C and before Phase 10 repo scanning.
+
+Planned Phase 9D capabilities:
+
+- Reports support completed `passive` and `active_demo` scans.
+- AI explanations support completed `passive` and `active_demo` scans.
+- OpenAI remains optional; the default provider remains deterministic `template`.
+- Provider payload tests prove AI receives only normalized/redacted fields.
+- Reports and AI must not receive raw ZAP alerts, raw HTTP bodies, raw artifacts, unredacted evidence, or secrets.
+- Repo-scan findings remain out of Phase 9D and should be handled only after Phase 10 normalization/redaction exists.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.
@@ -256,6 +269,7 @@ Planned phase branches:
 - Phase 9A: `phase-9a-zap-passive`
 - Phase 9B: `phase-9b-active-demo`
 - Phase 9C: `phase-9c-ajax-short`
+- Phase 9D: `phase-9d-multimode-reports-ai`
 - Phase 10: `phase-10-repo-scanning`
 
 Before a phase starts, the agent verifies a clean worktree, creates or switches to the phase branch from the current base branch, and confirms the active branch. Do not begin the next phase until the user confirms the previous phase branch has been merged back into the base branch.
