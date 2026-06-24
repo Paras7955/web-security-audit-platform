@@ -19,7 +19,7 @@ export default function Home() {
         <div className="statusPanel" aria-label="Phase 9B Active Demo status">
           <span>Phase 9B</span>
           <strong>Active Demo ready</strong>
-          <small>Create allowlisted local demo targets, run passive or acknowledged Active Demo scans, inspect findings, explain risk, and generate reports.</small>
+          <small>Create allowlisted local demo targets, run passive or acknowledged Active Demo scans, and inspect normalized findings.</small>
         </div>
       </section>
 

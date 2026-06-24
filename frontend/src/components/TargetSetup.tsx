@@ -426,7 +426,7 @@ export function TargetSetup() {
       <div className="sectionHeader">
         <div>
           <p className="eyebrow">Phase 9B ZAP Active Demo</p>
-          <h2 id="dashboard-heading">Run passive and Active Demo scans, review findings, explain risk, and generate reports</h2>
+          <h2 id="dashboard-heading">Run passive and Active Demo scans, review normalized findings, and create passive reports</h2>
         </div>
         <span className="phaseBadge">Local demo only</span>
       </div>

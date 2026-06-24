@@ -115,8 +115,13 @@ def run_passive_scan_job(
         if allowlist_target is None:
             raise ScanLifecycleError("Scan target is not present in the allowlist.")
         active_demo = scan.mode == ScanMode.ACTIVE_DEMO.value
-        if active_demo and not allowlist_target.local_demo:
-            raise ScanLifecycleError("Active Demo scan target must be a local/demo allowlist target.")
+        if scan.mode not in set(allowlist_target.allowed_modes):
+            raise ScanLifecycleError("Scan mode is no longer allowed for this target.")
+        if active_demo:
+            if not allowlist_target.local_demo:
+                raise ScanLifecycleError("Active Demo scan target must be a local/demo allowlist target.")
+            if not zap_base_url:
+                raise ScanLifecycleError("Active Demo scans require a configured ZAP daemon.")
 
         update_scan_progress(
             db,
