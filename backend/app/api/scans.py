@@ -9,6 +9,8 @@ from app.api.schemas import ScanCreate, ScanRead
 from app.core.contracts import ScanMode, ScanStatus, ScanStep
 from app.models import Scan, Target
 from app.security.allowlist import ScanAllowlist
+from app.security.ssrf import SsrfGuardError, validate_destination
+from app.security.target_url import TargetUrlError, match_allowlisted_target
 
 router = APIRouter(prefix="/scans", tags=["scans"])
 
@@ -25,7 +27,13 @@ def create_scan(
     if not target.permission_confirmed:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target authorization is not confirmed.")
 
-    mode = validate_scan_mode(payload.mode, target, allowlist, active_demo_acknowledged=payload.active_demo_acknowledged)
+    mode = validate_scan_mode(
+        payload.mode,
+        target,
+        allowlist,
+        active_demo_acknowledged=payload.active_demo_acknowledged,
+        ajax_short_acknowledged=payload.ajax_short_acknowledged,
+    )
     scan = Scan(
         id=str(uuid4()),
         target_id=target.id,
@@ -60,6 +68,7 @@ def validate_scan_mode(
     allowlist: ScanAllowlist,
     *,
     active_demo_acknowledged: bool,
+    ajax_short_acknowledged: bool,
 ) -> ScanMode:
     try:
         mode = ScanMode(raw_mode)
@@ -79,11 +88,34 @@ def validate_scan_mode(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Active Demo scans require explicit acknowledgement.",
             )
+        revalidate_target_record(target, allowlist)
+        return mode
+
+    if mode is ScanMode.AJAX_SHORT:
+        if allowlist_target is None or not allowlist_target.local_demo:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="AJAX Short scans are local/demo allowlist only.")
+        if not ajax_short_acknowledged:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="AJAX Short scans require explicit acknowledgement.",
+            )
+        revalidate_target_record(target, allowlist)
         return mode
 
     if mode is not ScanMode.PASSIVE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only passive and Active Demo scans are available before Phase 9C.",
+            detail="Only passive, Active Demo, and AJAX Short scans are available before Phase 10.",
         )
+    revalidate_target_record(target, allowlist)
     return mode
+
+
+def revalidate_target_record(target: Target, allowlist: ScanAllowlist) -> None:
+    try:
+        match = match_allowlisted_target(target.base_url, allowlist)
+        if match.allowlist_target.id != target.allowlist_id:
+            raise TargetUrlError("target record no longer matches its allowlist entry")
+        validate_destination(match.url, match.allowlist_target)
+    except (TargetUrlError, SsrfGuardError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

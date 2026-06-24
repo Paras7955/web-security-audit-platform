@@ -175,6 +175,22 @@ Implemented Active Demo capabilities:
 
 Phase 9B does not enable arbitrary active scans, AJAX crawling, repo scanning, authenticated workflows, or business logic checks.
 
+## Phase 9C Status
+
+Phase 9C adds a bounded AJAX Short scan mode for the local OWASP Juice Shop demo target. AJAX Short uses ZAP's browser-driven AJAX spider as a short passive crawling aid; it is not an authenticated workflow, business-logic test, or arbitrary public web crawler.
+
+Implemented AJAX Short capabilities:
+
+- `POST /scans` accepts `mode: "ajax_short"` only for allowlisted `local_demo` targets.
+- AJAX Short requests require `ajax_short_acknowledged: true`.
+- The dashboard exposes AJAX Short selection and acknowledgement before queuing AJAX Short scans.
+- The worker runs the existing custom passive and ZAP passive checks before the bounded ZAP AJAX crawl.
+- ZAP AJAX traffic is scoped to the exact allowlisted context and submitted through SSRF-validated destination-IP-pinned URLs.
+- Shared ZAP daemon access remains serialized with the advisory lock.
+- ZAP AJAX alerts are normalized as `zap-ajax` findings and pass through the same redaction/persistence path.
+
+Phase 9C does not enable arbitrary AJAX crawling, authenticated browser sessions, login workflows, repo scanning, public URL scanning, or business logic checks.
+
 ## Planned Phase 9D Scope
 
 Phase 9D is planned as a multi-mode reports and AI hardening phase after Phase 9C and before Phase 10 repo scanning.

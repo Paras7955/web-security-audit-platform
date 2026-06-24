@@ -15,6 +15,7 @@ from app.scans.lifecycle import claim_next_queued_scan, run_internal_lifecycle_j
 from app.scanner.passive import PassiveScanResult
 from app.security.allowlist import ScanAllowlist
 from app.zap.active import ZapActiveDemoResult
+from app.zap.ajax import ZapAjaxShortResult
 from app.zap.passive import ZapPassiveResult
 
 
@@ -106,12 +107,12 @@ class ScanWorkerTests(unittest.TestCase):
             with self.assertRaises(ArtifactPathError):
                 scan_artifact_dir(temp_dir, self.scan_id)
 
-    def test_worker_fails_non_passive_queued_scan(self) -> None:
+    def test_worker_fails_unsupported_queued_scan_mode(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with SessionLocal() as db:
                 scan = db.get(Scan, self.scan_id)
                 self.assertIsNotNone(scan)
-                scan.mode = "ajax_short"
+                scan.mode = "future_mode"
                 db.add(scan)
                 db.commit()
                 db.refresh(scan)
@@ -120,7 +121,7 @@ class ScanWorkerTests(unittest.TestCase):
 
                 self.assertEqual(scan.status, "failed")
                 self.assertEqual(scan.error_code, "scan_worker_failed")
-                self.assertIn("only supports passive and Active Demo", scan.error_detail)
+                self.assertIn("only supports passive, Active Demo, and AJAX Short", scan.error_detail)
 
     def test_worker_fails_unconfirmed_target(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -340,6 +341,69 @@ class ScanWorkerTests(unittest.TestCase):
                 scan = db.get(Scan, self.scan_id)
                 self.assertIsNotNone(scan)
                 scan.mode = "active_demo"
+                db.add(scan)
+                db.commit()
+                db.refresh(scan)
+
+                run_passive_scan_job(db, scan, temp_dir, allowlist, zap_base_url=None)
+
+                self.assertEqual(scan.status, "failed")
+                self.assertIn("require a configured ZAP daemon", scan.error_detail)
+
+    def test_ajax_short_scan_job_persists_zap_ajax_findings(self) -> None:
+        allowlist = build_test_allowlist(allowed_modes=("passive", "ajax_short"))
+        ajax_finding = NormalizedFindingInput(
+            title="ZAP AJAX Alert",
+            severity=Severity.LOW,
+            confidence=Confidence.MEDIUM,
+            affected_url="http://juice-shop:3000/search",
+            evidence="ZAP AJAX alert metadata.",
+            source_tool="zap-ajax",
+            scanner_rule_id="10038",
+            cwe="CWE-693",
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_result = PassiveScanResult(
+                pages=(),
+                findings=(),
+                errors=(),
+                artifact_dir=Path(temp_dir) / "scans" / self.scan_id,
+            )
+            fake_zap_passive = ZapPassiveResult(findings=(), errors=(), submitted_urls=("http://juice-shop:3000/",))
+            fake_zap_ajax = ZapAjaxShortResult(
+                findings=(ajax_finding,),
+                errors=(),
+                submitted_url="http://juice-shop:3000/",
+            )
+            with SessionLocal() as db:
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(scan)
+                scan.mode = "ajax_short"
+                db.add(scan)
+                db.commit()
+                db.refresh(scan)
+
+                with patch("app.scans.lifecycle.run_passive_scan", return_value=fake_result), patch(
+                    "app.scans.lifecycle.run_zap_passive_scan", return_value=fake_zap_passive
+                ), patch("app.scans.lifecycle.run_zap_ajax_short_scan", return_value=fake_zap_ajax) as ajax:
+                    run_passive_scan_job(db, scan, temp_dir, allowlist, zap_base_url="http://zap:8080")
+
+                ajax.assert_called_once()
+                self.assertEqual(scan.status, "completed")
+                self.assertEqual(scan.current_step, "normalizing_findings")
+                persisted = db.scalars(select(Finding).where(Finding.scan_id == self.scan_id)).all()
+                self.assertEqual(len(persisted), 1)
+                self.assertEqual(persisted[0].source_tool, "zap-ajax")
+
+    def test_ajax_short_scan_job_fails_without_zap_base_url(self) -> None:
+        allowlist = build_test_allowlist(allowed_modes=("passive", "ajax_short"))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with SessionLocal() as db:
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(scan)
+                scan.mode = "ajax_short"
                 db.add(scan)
                 db.commit()
                 db.refresh(scan)

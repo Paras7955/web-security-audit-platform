@@ -336,7 +336,7 @@ select {
   background: #eef8f4;
 }
 
-.activeDemoAck {
+.scanModeAck {
   margin: 0 0 14px;
   color: var(--muted);
   font-size: 0.9rem;

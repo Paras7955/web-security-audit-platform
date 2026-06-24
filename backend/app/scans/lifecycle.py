@@ -11,6 +11,7 @@ from app.scans.artifacts import ensure_scan_artifact_dir
 from app.scanner.passive import run_passive_scan
 from app.security.allowlist import ScanAllowlist
 from app.zap.active import run_zap_active_demo_scan
+from app.zap.ajax import run_zap_ajax_short_scan
 from app.zap.passive import run_zap_passive_scan
 
 
@@ -115,6 +116,7 @@ def run_passive_scan_job(
         if allowlist_target is None:
             raise ScanLifecycleError("Scan target is not present in the allowlist.")
         active_demo = scan.mode == ScanMode.ACTIVE_DEMO.value
+        ajax_short = scan.mode == ScanMode.AJAX_SHORT.value
         if scan.mode not in set(allowlist_target.allowed_modes):
             raise ScanLifecycleError("Scan mode is no longer allowed for this target.")
         if active_demo:
@@ -122,6 +124,11 @@ def run_passive_scan_job(
                 raise ScanLifecycleError("Active Demo scan target must be a local/demo allowlist target.")
             if not zap_base_url:
                 raise ScanLifecycleError("Active Demo scans require a configured ZAP daemon.")
+        if ajax_short:
+            if not allowlist_target.local_demo:
+                raise ScanLifecycleError("AJAX Short scan target must be a local/demo allowlist target.")
+            if not zap_base_url:
+                raise ScanLifecycleError("AJAX Short scans require a configured ZAP daemon.")
 
         update_scan_progress(
             db,
@@ -160,6 +167,8 @@ def run_passive_scan_job(
         zap_errors = ()
         active_findings = ()
         active_errors = ()
+        ajax_findings = ()
+        ajax_errors = ()
         if zap_base_url:
             update_scan_progress(
                 db,
@@ -199,8 +208,27 @@ def run_passive_scan_job(
                 active_findings = active_result.findings
                 active_errors = active_result.errors
 
-        all_findings = tuple(result.findings) + tuple(zap_findings) + tuple(active_findings)
-        all_errors = tuple(result.errors) + tuple(zap_errors) + tuple(active_errors)
+            if ajax_short:
+                update_scan_progress(
+                    db,
+                    scan,
+                    status=ScanStatus.RUNNING,
+                    current_step=ScanStep.ZAP_AJAX,
+                    status_message="Running bounded ZAP AJAX Short crawl against the local/demo target.",
+                    progress_percent=82,
+                )
+                with zap_daemon_lock(db):
+                    ajax_result = run_zap_ajax_short_scan(
+                        scan_id=scan.id,
+                        target_url=scan.target.base_url,
+                        allowlist_target=allowlist_target,
+                        zap_base_url=zap_base_url,
+                    )
+                ajax_findings = ajax_result.findings
+                ajax_errors = ajax_result.errors
+
+        all_findings = tuple(result.findings) + tuple(zap_findings) + tuple(active_findings) + tuple(ajax_findings)
+        all_errors = tuple(result.errors) + tuple(zap_errors) + tuple(active_errors) + tuple(ajax_errors)
         update_scan_progress(
             db,
             scan,
@@ -250,8 +278,8 @@ def zap_daemon_lock(db: Session):
 
 
 def validate_scan_job(scan: Scan) -> None:
-    if scan.mode not in {ScanMode.PASSIVE.value, ScanMode.ACTIVE_DEMO.value}:
-        raise ScanLifecycleError("Worker only supports passive and Active Demo scan jobs in this phase.")
+    if scan.mode not in {ScanMode.PASSIVE.value, ScanMode.ACTIVE_DEMO.value, ScanMode.AJAX_SHORT.value}:
+        raise ScanLifecycleError("Worker only supports passive, Active Demo, and AJAX Short scan jobs in this phase.")
     if scan.target is None:
         raise ScanLifecycleError("Scan target no longer exists.")
     if not scan.target.permission_confirmed:
@@ -259,7 +287,11 @@ def validate_scan_job(scan: Scan) -> None:
 
 
 def format_scan_mode(mode: str) -> str:
-    return "Active Demo" if mode == ScanMode.ACTIVE_DEMO.value else "Passive"
+    if mode == ScanMode.ACTIVE_DEMO.value:
+        return "Active Demo"
+    if mode == ScanMode.AJAX_SHORT.value:
+        return "AJAX Short"
+    return "Passive"
 
 
 def update_scan_progress(

@@ -113,6 +113,33 @@ class ZapApiClient:
         except ValueError as exc:
             raise ZapPassiveError("ZAP returned an invalid active scan status.") from exc
 
+    def set_ajax_max_duration(self, *, minutes: int) -> None:
+        self._zap_get("/JSON/ajaxSpider/action/setOptionMaxDuration/", {"Integer": str(minutes)})
+
+    def set_ajax_max_crawl_depth(self, *, depth: int) -> None:
+        self._zap_get("/JSON/ajaxSpider/action/setOptionMaxCrawlDepth/", {"Integer": str(depth)})
+
+    def ajax_scan(self, *, url: str, context_name: str) -> None:
+        self._zap_get(
+            "/JSON/ajaxSpider/action/scan/",
+            {
+                "url": url,
+                "inScope": "true",
+                "contextName": context_name,
+                "subtreeOnly": "true",
+            },
+        )
+
+    def ajax_status(self) -> str:
+        payload = self._zap_get("/JSON/ajaxSpider/view/status/", {})
+        status = payload.get("status")
+        if not isinstance(status, str):
+            raise ZapPassiveError("ZAP did not return AJAX spider status.")
+        return status
+
+    def stop_ajax(self) -> None:
+        self._zap_get("/JSON/ajaxSpider/action/stop/", {})
+
     def alerts(self, *, base_url: str) -> ZapAlertPage:
         collected: list[dict[str, object]] = []
         start = 0

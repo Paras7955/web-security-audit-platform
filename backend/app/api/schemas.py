@@ -7,6 +7,7 @@ class ScanCreate(BaseModel):
     target_id: str = Field(min_length=1, max_length=64)
     mode: str = Field(default="passive", max_length=40)
     active_demo_acknowledged: bool = False
+    ajax_short_acknowledged: bool = False
 
 
 class ScanRead(BaseModel):
