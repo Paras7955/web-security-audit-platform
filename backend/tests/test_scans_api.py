@@ -93,13 +93,43 @@ class ScanApiTests(unittest.TestCase):
         self.assertEqual(body["mode"], "active_demo")
         self.assertEqual(body["status"], "queued")
 
-    def test_create_ajax_short_scan_rejected_until_phase_9c(self) -> None:
+    def test_create_ajax_short_scan_requires_acknowledgement(self) -> None:
         target = self.create_target()
 
         response = self.client.post("/scans", json={"target_id": target["id"], "mode": "ajax_short"})
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Phase 9C", response.json()["detail"])
+        self.assertIn("acknowledgement", response.json()["detail"])
+
+    def test_create_ajax_short_scan_rejects_non_local_demo_target(self) -> None:
+        allowlist = build_scan_allowlist(local_demo=False, allowed_modes=("passive", "ajax_short"))
+        target = self.create_db_target(allowlist_id="remote-demo", base_url="https://owned.example.test/")
+
+        app.dependency_overrides[get_scan_allowlist] = lambda: allowlist
+        try:
+            response = self.client.post(
+                "/scans",
+                json={"target_id": target.id, "mode": "ajax_short", "ajax_short_acknowledged": True},
+            )
+        finally:
+            app.dependency_overrides.pop(get_scan_allowlist, None)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("local/demo", response.json()["detail"])
+
+    def test_create_ajax_short_scan_queues_for_local_demo_target(self) -> None:
+        target = self.create_target()
+
+        response = self.client.post(
+            "/scans",
+            json={"target_id": target["id"], "mode": "ajax_short", "ajax_short_acknowledged": True},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.created_scan_ids.append(body["id"])
+        self.assertEqual(body["mode"], "ajax_short")
+        self.assertEqual(body["status"], "queued")
 
     def test_list_and_get_scan(self) -> None:
         target = self.create_target()
