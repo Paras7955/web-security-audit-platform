@@ -291,8 +291,15 @@ export function TargetSetup() {
       setScanHistory((current) => mergeScan(current, scan));
       if (terminalStatuses.has(scan.status)) {
         await loadFindings(scan.id, { onlyIfSelected: true });
-        await loadReports(scan.id, { onlyIfSelected: true });
-        await loadAiExplanation(scan.id, { onlyIfSelected: true });
+        if (scan.mode === "passive") {
+          await loadReports(scan.id, { onlyIfSelected: true });
+          await loadAiExplanation(scan.id, { onlyIfSelected: true });
+        } else if (selectedScanIdRef.current === scan.id) {
+          setReports([]);
+          setReportMessage("Reports remain available for passive scans in this phase.");
+          setAiExplanation(null);
+          setAiMessage("AI explanations remain available for passive scans in this phase.");
+        }
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Scan status refresh failed.");
