@@ -54,6 +54,7 @@ class ZapActiveDemoTests(unittest.TestCase):
 
         self.assertEqual(result.errors, ())
         self.assertEqual(result.submitted_url, "http://juice-shop:3000/")
+        self.assertIn(("access", "http://172.20.0.10:3000/"), client.calls)
         self.assertIn(("active_scan", "http://172.20.0.10:3000/", "1"), client.calls)
         self.assertEqual(result.findings[0].source_tool, "zap-active")
         self.assertEqual(result.findings[0].affected_url, "http://juice-shop:3000/")
@@ -95,6 +96,9 @@ class FakeActiveZapClient:
 
     def delete_all_alerts(self) -> None:
         self.calls.append(("delete",))
+
+    def access_url(self, *, url: str) -> None:
+        self.calls.append(("access", url))
 
     def active_scan(self, *, url: str, context_id: str) -> str:
         self.calls.append(("active_scan", url, context_id))

@@ -18,7 +18,7 @@ from app.zap.passive import (
 )
 
 
-ZAP_ACTIVE_POLL_LIMIT = 60
+ZAP_ACTIVE_POLL_LIMIT = 180
 ZAP_ACTIVE_POLL_INTERVAL_SECONDS = 0.5
 
 
@@ -50,6 +50,7 @@ def run_zap_active_demo_scan(
         zap_client.set_context_in_scope(context_name=context_name, enabled=True)
         zap_client.enable_passive_scanner()
         zap_client.delete_all_alerts()
+        zap_client.access_url(url=target.pinned_url)
         scan_id_from_zap = zap_client.active_scan(url=target.pinned_url, context_id=context_id)
         wait_for_active_scan(zap_client, scan_id=scan_id_from_zap)
         alert_page = zap_client.alerts(base_url=target.pinned_url)
