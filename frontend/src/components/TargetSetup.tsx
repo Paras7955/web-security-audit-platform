@@ -530,7 +530,7 @@ function ReportsPanel({
     <div className="reportPanel">
       <div className="panelHeader">
         <h3>Reports</h3>
-        <span className="phaseBadge">Passive</span>
+        <span className="phaseBadge">Passive + Active Demo</span>
       </div>
 
       <div className="reportActions">
