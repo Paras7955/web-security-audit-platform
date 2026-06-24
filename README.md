@@ -191,17 +191,17 @@ Implemented AJAX Short capabilities:
 
 Phase 9C does not enable arbitrary AJAX crawling, authenticated browser sessions, login workflows, repo scanning, public URL scanning, or business logic checks.
 
-## Planned Phase 9D Scope
+## Phase 9D Status
 
-Phase 9D is planned as a multi-mode reports and AI hardening phase after Phase 9C and before Phase 10 repo scanning.
+Phase 9D expands reports and AI explanations to normalized Active Demo findings while keeping repo-scan findings out of scope until Phase 10 normalization and redaction exists.
 
-Planned Phase 9D capabilities:
+Implemented Phase 9D capabilities:
 
 - Reports support completed `passive` and `active_demo` scans.
 - AI explanations support completed `passive` and `active_demo` scans.
 - OpenAI remains optional; the default provider remains deterministic `template`.
-- Provider payload tests prove AI receives only normalized/redacted fields.
-- Reports and AI must not receive raw ZAP alerts, raw HTTP bodies, raw artifacts, unredacted evidence, or secrets.
+- Provider payload tests prove AI receives only normalized/redacted fields from Active Demo findings.
+- Reports and AI do not receive raw ZAP alerts, raw HTTP bodies, raw artifacts, unredacted evidence, or secrets.
 - Repo-scan findings remain out of Phase 9D and should be handled only after Phase 10 normalization/redaction exists.
 
 ## Responsible Use
