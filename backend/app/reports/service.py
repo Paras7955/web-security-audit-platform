@@ -22,6 +22,10 @@ TERMINAL_REPORT_STATUSES = {
     ScanStatus.COMPLETED.value,
     ScanStatus.COMPLETED_WITH_WARNINGS.value,
 }
+REPORT_SCAN_MODES = {
+    ScanMode.PASSIVE.value,
+    ScanMode.ACTIVE_DEMO.value,
+}
 SEVERITY_ORDER = {
     "critical": 0,
     "high": 1,
@@ -57,8 +61,8 @@ def build_report_data(
         raise ReportGenerationError("Scan not found.")
     if scan.status not in TERMINAL_REPORT_STATUSES:
         raise ReportGenerationError("Reports can only be generated for completed scans.")
-    if scan.mode != ScanMode.PASSIVE.value:
-        raise ReportGenerationError("Reports can only be generated for passive scans in Phase 7.")
+    if scan.mode not in REPORT_SCAN_MODES:
+        raise ReportGenerationError("Reports can only be generated for passive and Active Demo scans in Phase 9D.")
 
     target = db.get(Target, scan.target_id)
     if target is None:
@@ -215,7 +219,7 @@ def render_markdown_report(data: ReportData) -> str:
         "",
         "- Custom passive scanner: used.",
         "- ZAP passive analysis: used for allowlisted URLs.",
-        "- ZAP active scan: not used.",
+        f"- ZAP active scan: {tooling_used(data.scan.mode, ScanMode.ACTIVE_DEMO.value)}.",
         "- AJAX crawl: not used.",
         f"- AI explanations: generated with {data.ai_explanations.provider} provider.",
         "- Repo scanning: not included.",
@@ -227,7 +231,7 @@ def render_markdown_report(data: ReportData) -> str:
         "",
         "This report is for local defensive learning and explicitly authorized testing only.",
         "It is not a professional penetration test, compliance audit, or guarantee that the target is secure.",
-        "Findings are based on bounded passive checks against allowlisted targets.",
+        "Findings are based on bounded checks against allowlisted targets.",
         "",
         "## Redaction Notice",
         "",
@@ -353,7 +357,7 @@ def render_html_report(data: ReportData) -> str:
   <ul>
     <li>Custom passive scanner: used.</li>
     <li>ZAP passive analysis: used for allowlisted URLs.</li>
-    <li>ZAP active scan: not used.</li>
+    <li>ZAP active scan: {escape(tooling_used(data.scan.mode, ScanMode.ACTIVE_DEMO.value))}.</li>
     <li>AJAX crawl: not used.</li>
     <li>AI explanations: generated with {escape(data.ai_explanations.provider)} provider.</li>
     <li>Repo scanning: not included.</li>
@@ -365,7 +369,7 @@ def render_html_report(data: ReportData) -> str:
   <h2>Responsible Use And Limitations</h2>
   <p>This report is for local defensive learning and explicitly authorized testing only.</p>
   <p>It is not a professional penetration test, compliance audit, or guarantee that the target is secure.</p>
-  <p>Findings are based on bounded passive checks against allowlisted targets.</p>
+  <p>Findings are based on bounded checks against allowlisted targets.</p>
 
   <h2>Redaction Notice</h2>
   <p>Evidence is normalized and redacted before persistence and reporting. Full HTTP response bodies are not stored by default.</p>
@@ -447,6 +451,10 @@ def format_scan_mode(mode: str) -> str:
         "active_demo": "Active Demo",
         "ajax_short": "AJAX Short",
     }.get(mode, mode)
+
+
+def tooling_used(scan_mode: str, expected_mode: str) -> str:
+    return "used" if scan_mode == expected_mode else "not used"
 
 
 def format_timestamp(value: datetime) -> str:

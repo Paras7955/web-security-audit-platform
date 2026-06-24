@@ -134,11 +134,40 @@ class ReportsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("completed scans", response.json()["detail"])
 
-    def test_reports_require_passive_scan(self) -> None:
+    def test_reports_support_active_demo_scan(self) -> None:
         with SessionLocal() as db:
             scan = db.get(Scan, self.scan_id)
             self.assertIsNotNone(scan)
             scan.mode = "active_demo"
+            finding = db.get(Finding, self.finding_id)
+            self.assertIsNotNone(finding)
+            finding.source_tool = "zap-active"
+            finding.evidence = "ZAP active alert metadata with api_key=[REDACTED]"
+            db.add(scan)
+            db.add(finding)
+            db.commit()
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
+            response = self.client.post(f"/scans/{self.scan_id}/reports")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.json()), 2)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with SessionLocal() as db:
+                artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
+                markdown_content = read_report_artifact(markdown, artifact_root=temp_dir)
+
+        self.assertIn("Scan mode: Active Demo", markdown_content)
+        self.assertIn("ZAP active scan: used.", markdown_content)
+        self.assertIn("Source tool: zap-active", markdown_content)
+
+    def test_reports_reject_ajax_short_scan(self) -> None:
+        with SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            scan.mode = "ajax_short"
             db.add(scan)
             db.commit()
 
@@ -146,7 +175,7 @@ class ReportsTests(unittest.TestCase):
             response = self.client.post(f"/scans/{self.scan_id}/reports")
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("passive scans", response.json()["detail"])
+        self.assertIn("passive and Active Demo scans", response.json()["detail"])
 
     def test_report_reader_rejects_paths_outside_artifact_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
