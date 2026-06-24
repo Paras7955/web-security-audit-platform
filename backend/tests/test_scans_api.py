@@ -4,9 +4,11 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
+from app.api.deps import get_scan_allowlist
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import Scan, Target
+from app.security.allowlist import ScanAllowlist
 
 
 class ScanApiTests(unittest.TestCase):
@@ -61,6 +63,22 @@ class ScanApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("acknowledgement", response.json()["detail"])
 
+    def test_create_active_demo_scan_rejects_non_local_demo_target(self) -> None:
+        allowlist = build_scan_allowlist(local_demo=False, allowed_modes=("passive", "active_demo"))
+        target = self.create_db_target(allowlist_id="remote-demo", base_url="https://owned.example.test/")
+
+        app.dependency_overrides[get_scan_allowlist] = lambda: allowlist
+        try:
+            response = self.client.post(
+                "/scans",
+                json={"target_id": target.id, "mode": "active_demo", "active_demo_acknowledged": True},
+            )
+        finally:
+            app.dependency_overrides.pop(get_scan_allowlist, None)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("local/demo", response.json()["detail"])
+
     def test_create_active_demo_scan_queues_for_local_demo_target(self) -> None:
         target = self.create_target()
 
@@ -75,6 +93,14 @@ class ScanApiTests(unittest.TestCase):
         self.assertEqual(body["mode"], "active_demo")
         self.assertEqual(body["status"], "queued")
 
+    def test_create_ajax_short_scan_rejected_until_phase_9c(self) -> None:
+        target = self.create_target()
+
+        response = self.client.post("/scans", json={"target_id": target["id"], "mode": "ajax_short"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Phase 9C", response.json()["detail"])
+
     def test_list_and_get_scan(self) -> None:
         target = self.create_target()
         created = self.client.post("/scans", json={"target_id": target["id"], "mode": "passive"}).json()
@@ -87,6 +113,41 @@ class ScanApiTests(unittest.TestCase):
         self.assertEqual(detail.json()["id"], created["id"])
         self.assertEqual(scan_list.status_code, 200)
         self.assertTrue(any(scan["id"] == created["id"] for scan in scan_list.json()))
+
+    def create_db_target(self, *, allowlist_id: str, base_url: str) -> Target:
+        target = Target(
+            id=str(uuid4()),
+            allowlist_id=allowlist_id,
+            name="Remote demo",
+            base_url=base_url,
+            permission_confirmed=True,
+        )
+        with SessionLocal() as db:
+            db.add(target)
+            db.commit()
+            db.refresh(target)
+            self.created_target_ids.append(target.id)
+            return target
+
+
+def build_scan_allowlist(*, local_demo: bool, allowed_modes: tuple[str, ...]) -> ScanAllowlist:
+    return ScanAllowlist.model_validate(
+        {
+            "targets": [
+                {
+                    "id": "remote-demo",
+                    "name": "Remote Demo",
+                    "base_url": "https://owned.example.test",
+                    "schemes": ["https"],
+                    "hosts": ["owned.example.test"],
+                    "ports": [443],
+                    "allowed_modes": list(allowed_modes),
+                    "max_redirects": 2,
+                    "local_demo": local_demo,
+                }
+            ]
+        }
+    )
 
 
 if __name__ == "__main__":
