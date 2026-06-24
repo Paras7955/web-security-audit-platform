@@ -16,10 +16,10 @@ export default function Home() {
           <p className="eyebrow">Defensive Web App Security Audit</p>
           <h1>Local-first security evidence, normalized findings, and clear reports.</h1>
         </div>
-        <div className="statusPanel" aria-label="Phase 9B Active Demo status">
-          <span>Phase 9B</span>
-          <strong>Active Demo ready</strong>
-          <small>Create allowlisted local demo targets, run passive or acknowledged Active Demo scans, and inspect normalized findings.</small>
+        <div className="statusPanel" aria-label="Phase 9C AJAX Short status">
+          <span>Phase 9C</span>
+          <strong>AJAX Short ready</strong>
+          <small>Create allowlisted local demo targets, run passive, Active Demo, or acknowledged AJAX Short scans, and inspect normalized findings.</small>
         </div>
       </section>
 

@@ -27,6 +27,7 @@ Do not use this platform for:
 - ZAP must be scoped to the exact allowlisted target/context.
 - ZAP passive URL submission must use only validated allowlisted URLs, pin submission URLs to the SSRF-validated destination IP, serialize shared daemon access, and disable automatic redirect following.
 - Active Demo scans require explicit user acknowledgement, must be limited to configured local/demo targets, and must use the same scoped ZAP context and destination-IP pinning controls.
+- AJAX Short scans require explicit user acknowledgement, must be limited to configured local/demo targets, and must use the same scoped ZAP context, destination-IP pinning controls, and shared daemon serialization.
 - Cloud demos must use sample data only and must not allow arbitrary active scans.
 
 ## Evidence And Secret Handling

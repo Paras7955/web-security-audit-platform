@@ -115,6 +115,7 @@ export function TargetSetup() {
   const [selectedTargetId, setSelectedTargetId] = useState("");
   const [scanMode, setScanMode] = useState("passive");
   const [activeDemoAcknowledged, setActiveDemoAcknowledged] = useState(false);
+  const [ajaxShortAcknowledged, setAjaxShortAcknowledged] = useState(false);
   const [selectedScanId, setSelectedScanId] = useState("");
   const [scanHistory, setScanHistory] = useState<Scan[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
@@ -137,7 +138,8 @@ export function TargetSetup() {
     selectedTarget &&
       selectedTarget.allowed_modes.includes(scanMode) &&
       !isBusy &&
-      (scanMode !== "active_demo" || activeDemoAcknowledged)
+      (scanMode !== "active_demo" || activeDemoAcknowledged) &&
+      (scanMode !== "ajax_short" || ajaxShortAcknowledged)
   );
   const filteredFindings = useMemo(() => {
     return findings
@@ -237,7 +239,7 @@ export function TargetSetup() {
     }
 
     setIsBusy(true);
-    setMessage(`Creating ${scanMode === "active_demo" ? "Active Demo" : "passive"} scan...`);
+    setMessage(`Creating ${formatScanModeLabel(scanMode)} scan...`);
 
     try {
       const response = await fetch(`${apiBaseUrl}/scans`, {
@@ -246,7 +248,8 @@ export function TargetSetup() {
         body: JSON.stringify({
           target_id: selectedTarget.id,
           mode: scanMode,
-          active_demo_acknowledged: activeDemoAcknowledged
+          active_demo_acknowledged: activeDemoAcknowledged,
+          ajax_short_acknowledged: ajaxShortAcknowledged
         })
       });
       const body = await response.json();
@@ -425,8 +428,8 @@ export function TargetSetup() {
     <section className="dashboard" aria-labelledby="dashboard-heading">
       <div className="sectionHeader">
         <div>
-          <p className="eyebrow">Phase 9B ZAP Active Demo</p>
-          <h2 id="dashboard-heading">Run passive and Active Demo scans, review normalized findings, and create passive reports</h2>
+          <p className="eyebrow">Phase 9C ZAP AJAX Short</p>
+          <h2 id="dashboard-heading">Run passive, Active Demo, and AJAX Short scans, review normalized findings, and create passive reports</h2>
         </div>
         <span className="phaseBadge">Local demo only</span>
       </div>
@@ -452,11 +455,13 @@ export function TargetSetup() {
             selectedTargetId={selectedTargetId}
             scanMode={scanMode}
             activeDemoAcknowledged={activeDemoAcknowledged}
+            ajaxShortAcknowledged={ajaxShortAcknowledged}
             canStartScan={canStartScan}
             isBusy={isBusy}
             onSelectTarget={setSelectedTargetId}
             onSelectScanMode={setScanMode}
             onActiveDemoAcknowledged={setActiveDemoAcknowledged}
+            onAjaxShortAcknowledged={setAjaxShortAcknowledged}
             onStartScan={startScan}
           />
         </div>
@@ -705,29 +710,33 @@ function ScanLauncher({
   selectedTargetId,
   scanMode,
   activeDemoAcknowledged,
+  ajaxShortAcknowledged,
   canStartScan,
   isBusy,
   onSelectTarget,
   onSelectScanMode,
   onActiveDemoAcknowledged,
+  onAjaxShortAcknowledged,
   onStartScan
 }: {
   targets: Target[];
   selectedTargetId: string;
   scanMode: string;
   activeDemoAcknowledged: boolean;
+  ajaxShortAcknowledged: boolean;
   canStartScan: boolean;
   isBusy: boolean;
   onSelectTarget: (targetId: string) => void;
   onSelectScanMode: (mode: string) => void;
   onActiveDemoAcknowledged: (acknowledged: boolean) => void;
+  onAjaxShortAcknowledged: (acknowledged: boolean) => void;
   onStartScan: () => void;
 }) {
   return (
     <div className="panel">
       <div className="panelHeader">
         <h3>Scan Mode</h3>
-        <span className="phaseBadge">Phase 9B</span>
+        <span className="phaseBadge">Phase 9C</span>
       </div>
 
       <label className="selectLabel">
@@ -759,14 +768,18 @@ function ScanLauncher({
           <strong>Active Demo</strong>
           <span>Bounded ZAP active scan for local demo targets</span>
         </button>
-        <div className="modeCard">
+        <button
+          type="button"
+          className={scanMode === "ajax_short" ? "modeCard modeCardActive" : "modeCard"}
+          onClick={() => onSelectScanMode("ajax_short")}
+        >
           <strong>AJAX Short</strong>
-          <span>Phase 9C gated</span>
-        </div>
+          <span>Bounded ZAP browser crawl for local demo targets</span>
+        </button>
       </div>
 
       {scanMode === "active_demo" ? (
-        <label className="checkboxRow activeDemoAck">
+        <label className="checkboxRow scanModeAck">
           <input
             type="checkbox"
             checked={activeDemoAcknowledged}
@@ -776,13 +789,34 @@ function ScanLauncher({
         </label>
       ) : null}
 
+      {scanMode === "ajax_short" ? (
+        <label className="checkboxRow scanModeAck">
+          <input
+            type="checkbox"
+            checked={ajaxShortAcknowledged}
+            onChange={(event) => onAjaxShortAcknowledged(event.target.checked)}
+          />
+          <span>I understand AJAX Short drives a bounded browser crawl only against the configured local/demo target.</span>
+        </label>
+      ) : null}
+
       <div className="actions">
         <button type="button" onClick={onStartScan} disabled={!canStartScan || isBusy}>
-          {scanMode === "active_demo" ? "Start Active Demo Scan" : "Start Passive Scan"}
+          Start {formatScanModeLabel(scanMode)} Scan
         </button>
       </div>
     </div>
   );
+}
+
+function formatScanModeLabel(mode: string): string {
+  if (mode === "active_demo") {
+    return "Active Demo";
+  }
+  if (mode === "ajax_short") {
+    return "AJAX Short";
+  }
+  return "Passive";
 }
 
 function ScanHistory({
