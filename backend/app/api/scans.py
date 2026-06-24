@@ -9,6 +9,8 @@ from app.api.schemas import ScanCreate, ScanRead
 from app.core.contracts import ScanMode, ScanStatus, ScanStep
 from app.models import Scan, Target
 from app.security.allowlist import ScanAllowlist
+from app.security.ssrf import SsrfGuardError, validate_destination
+from app.security.target_url import TargetUrlError, match_allowlisted_target
 
 router = APIRouter(prefix="/scans", tags=["scans"])
 
@@ -86,6 +88,7 @@ def validate_scan_mode(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Active Demo scans require explicit acknowledgement.",
             )
+        revalidate_target_record(target, allowlist)
         return mode
 
     if mode is ScanMode.AJAX_SHORT:
@@ -96,6 +99,7 @@ def validate_scan_mode(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="AJAX Short scans require explicit acknowledgement.",
             )
+        revalidate_target_record(target, allowlist)
         return mode
 
     if mode is not ScanMode.PASSIVE:
@@ -103,4 +107,15 @@ def validate_scan_mode(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only passive, Active Demo, and AJAX Short scans are available before Phase 10.",
         )
+    revalidate_target_record(target, allowlist)
     return mode
+
+
+def revalidate_target_record(target: Target, allowlist: ScanAllowlist) -> None:
+    try:
+        match = match_allowlisted_target(target.base_url, allowlist)
+        if match.allowlist_target.id != target.allowlist_id:
+            raise TargetUrlError("target record no longer matches its allowlist entry")
+        validate_destination(match.url, match.allowlist_target)
+    except (TargetUrlError, SsrfGuardError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

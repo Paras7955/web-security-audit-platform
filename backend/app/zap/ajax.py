@@ -69,15 +69,21 @@ def run_zap_ajax_short_scan(
 
 
 def wait_for_ajax_scan(client: ZapApiClient) -> None:
+    stopped = False
     try:
         for _attempt in range(ZAP_AJAX_POLL_LIMIT):
             if client.ajax_status().lower() == "stopped":
+                stopped = True
                 return
             time.sleep(ZAP_AJAX_POLL_INTERVAL_SECONDS)
         raise ZapPassiveError("ZAP AJAX Short scan did not finish within the poll limit.")
     finally:
-        if client.ajax_status().lower() != "stopped":
-            client.stop_ajax()
+        if not stopped:
+            try:
+                if client.ajax_status().lower() != "stopped":
+                    client.stop_ajax()
+            except ZapPassiveError:
+                client.stop_ajax()
 
 
 def rewrite_alert_origin(alert: dict[str, object], pinned_url: str, original_url: str) -> dict[str, object]:

@@ -72,6 +72,22 @@ class ZapAjaxShortTests(unittest.TestCase):
         self.assertIsNone(result.submitted_url)
         self.assertIn("local/demo", result.errors[0])
 
+    def test_ajax_short_does_not_recheck_status_after_stopped(self) -> None:
+        client = FakeAjaxZapClient()
+
+        result = run_zap_ajax_short_scan(
+            scan_id="scan-1",
+            target_url="http://juice-shop:3000/",
+            allowlist_target=ALLOWLIST_TARGET,
+            zap_base_url="http://zap:8080",
+            client=client,
+            resolver=resolver,
+        )
+
+        self.assertEqual(result.errors, ())
+        self.assertNotIn(("ajax_stop",), client.calls)
+        self.assertEqual([call for call in client.calls if call == ("ajax_status",)], [("ajax_status",)])
+
 
 class FakeAjaxZapClient:
     def __init__(self) -> None:

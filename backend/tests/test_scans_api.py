@@ -131,6 +131,17 @@ class ScanApiTests(unittest.TestCase):
         self.assertEqual(body["mode"], "ajax_short")
         self.assertEqual(body["status"], "queued")
 
+    def test_create_ajax_short_scan_revalidates_target_base_url(self) -> None:
+        target = self.create_db_target(allowlist_id="juice-shop", base_url="https://owned.example.test/")
+
+        response = self.client.post(
+            "/scans",
+            json={"target_id": target.id, "mode": "ajax_short", "ajax_short_acknowledged": True},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("allowlist", response.json()["detail"])
+
     def test_list_and_get_scan(self) -> None:
         target = self.create_target()
         created = self.client.post("/scans", json={"target_id": target["id"], "mode": "passive"}).json()

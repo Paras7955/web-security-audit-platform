@@ -181,9 +181,16 @@ export function TargetSetup() {
       return;
     }
     void loadFindings(selectedScanId, { onlyIfSelected: true });
-    void loadReports(selectedScanId, { onlyIfSelected: true });
-    void loadAiExplanation(selectedScanId, { onlyIfSelected: true });
-  }, [selectedScanId]);
+    if (selectedScan?.mode === "passive") {
+      void loadReports(selectedScanId, { onlyIfSelected: true });
+      void loadAiExplanation(selectedScanId, { onlyIfSelected: true });
+      return;
+    }
+    setReports([]);
+    setReportMessage("Reports remain available for passive scans in this phase.");
+    setAiExplanation(null);
+    setAiMessage("AI explanations remain available for passive scans in this phase.");
+  }, [selectedScanId, selectedScan?.mode]);
 
   async function validateTarget(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
