@@ -113,6 +113,8 @@ export function TargetSetup() {
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
   const [selectedTargetId, setSelectedTargetId] = useState("");
+  const [scanMode, setScanMode] = useState("passive");
+  const [activeDemoAcknowledged, setActiveDemoAcknowledged] = useState(false);
   const [selectedScanId, setSelectedScanId] = useState("");
   const [scanHistory, setScanHistory] = useState<Scan[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
@@ -131,7 +133,12 @@ export function TargetSetup() {
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
   const selectedScan = scanHistory.find((scan) => scan.id === selectedScanId) ?? null;
   const canCreate = useMemo(() => Boolean(validation && permissionConfirmed && !isBusy), [validation, permissionConfirmed, isBusy]);
-  const canStartScan = Boolean(selectedTarget && !isBusy);
+  const canStartScan = Boolean(
+    selectedTarget &&
+      selectedTarget.allowed_modes.includes(scanMode) &&
+      !isBusy &&
+      (scanMode !== "active_demo" || activeDemoAcknowledged)
+  );
   const filteredFindings = useMemo(() => {
     return findings
       .filter((finding) => severityFilter === "all" || finding.severity === severityFilter)
@@ -230,7 +237,7 @@ export function TargetSetup() {
     }
 
     setIsBusy(true);
-    setMessage("Creating passive scan...");
+    setMessage(`Creating ${scanMode === "active_demo" ? "Active Demo" : "passive"} scan...`);
 
     try {
       const response = await fetch(`${apiBaseUrl}/scans`, {
@@ -238,7 +245,8 @@ export function TargetSetup() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           target_id: selectedTarget.id,
-          mode: "passive"
+          mode: scanMode,
+          active_demo_acknowledged: activeDemoAcknowledged
         })
       });
       const body = await response.json();
@@ -417,8 +425,8 @@ export function TargetSetup() {
     <section className="dashboard" aria-labelledby="dashboard-heading">
       <div className="sectionHeader">
         <div>
-          <p className="eyebrow">Phase 9A ZAP Passive</p>
-          <h2 id="dashboard-heading">Run passive scans, review findings, explain risk, and generate reports</h2>
+          <p className="eyebrow">Phase 9B ZAP Active Demo</p>
+          <h2 id="dashboard-heading">Run passive and Active Demo scans, review normalized findings, and create passive reports</h2>
         </div>
         <span className="phaseBadge">Local demo only</span>
       </div>
@@ -442,9 +450,13 @@ export function TargetSetup() {
           <ScanLauncher
             targets={targets}
             selectedTargetId={selectedTargetId}
+            scanMode={scanMode}
+            activeDemoAcknowledged={activeDemoAcknowledged}
             canStartScan={canStartScan}
             isBusy={isBusy}
             onSelectTarget={setSelectedTargetId}
+            onSelectScanMode={setScanMode}
+            onActiveDemoAcknowledged={setActiveDemoAcknowledged}
             onStartScan={startScan}
           />
         </div>
@@ -492,20 +504,20 @@ function ReportsPanel({
   isGenerating: boolean;
   onGenerate: () => void;
 }) {
-  const canGenerate = Boolean(scan && reportableStatuses.has(scan.status) && !isGenerating);
+  const canGenerate = Boolean(scan && scan.mode === "passive" && reportableStatuses.has(scan.status) && !isGenerating);
 
   return (
     <div className="reportPanel">
       <div className="panelHeader">
         <h3>Reports</h3>
-        <span className="phaseBadge">Phase 9A</span>
+        <span className="phaseBadge">Passive</span>
       </div>
 
       <div className="reportActions">
         <button type="button" onClick={onGenerate} disabled={!canGenerate}>
           Generate Reports
         </button>
-        <p>{message}</p>
+        <p>{scan && scan.mode !== "passive" ? "Reports remain available for passive scans in this phase." : message}</p>
       </div>
 
       {reports.length > 0 ? (
@@ -691,23 +703,31 @@ function TargetForm({
 function ScanLauncher({
   targets,
   selectedTargetId,
+  scanMode,
+  activeDemoAcknowledged,
   canStartScan,
   isBusy,
   onSelectTarget,
+  onSelectScanMode,
+  onActiveDemoAcknowledged,
   onStartScan
 }: {
   targets: Target[];
   selectedTargetId: string;
+  scanMode: string;
+  activeDemoAcknowledged: boolean;
   canStartScan: boolean;
   isBusy: boolean;
   onSelectTarget: (targetId: string) => void;
+  onSelectScanMode: (mode: string) => void;
+  onActiveDemoAcknowledged: (acknowledged: boolean) => void;
   onStartScan: () => void;
 }) {
   return (
     <div className="panel">
       <div className="panelHeader">
         <h3>Scan Mode</h3>
-        <span className="phaseBadge">Passive only</span>
+        <span className="phaseBadge">Phase 9B</span>
       </div>
 
       <label className="selectLabel">
@@ -723,23 +743,42 @@ function ScanLauncher({
       </label>
 
       <div className="modeGrid" aria-label="Scan mode safety controls">
-        <div className="modeCard modeCardActive">
+        <button
+          type="button"
+          className={scanMode === "passive" ? "modeCard modeCardActive" : "modeCard"}
+          onClick={() => onSelectScanMode("passive")}
+        >
           <strong>Passive</strong>
           <span>Custom crawl plus ZAP passive analysis</span>
-        </div>
-        <div className="modeCard">
+        </button>
+        <button
+          type="button"
+          className={scanMode === "active_demo" ? "modeCard modeCardActive" : "modeCard"}
+          onClick={() => onSelectScanMode("active_demo")}
+        >
           <strong>Active Demo</strong>
-          <span>Phase 9B gated</span>
-        </div>
+          <span>Bounded ZAP active scan for local demo targets</span>
+        </button>
         <div className="modeCard">
           <strong>AJAX Short</strong>
           <span>Phase 9C gated</span>
         </div>
       </div>
 
+      {scanMode === "active_demo" ? (
+        <label className="checkboxRow activeDemoAck">
+          <input
+            type="checkbox"
+            checked={activeDemoAcknowledged}
+            onChange={(event) => onActiveDemoAcknowledged(event.target.checked)}
+          />
+          <span>I understand Active Demo sends bounded active test traffic only to the configured local/demo target.</span>
+        </label>
+      ) : null}
+
       <div className="actions">
         <button type="button" onClick={onStartScan} disabled={!canStartScan || isBusy}>
-          Start Passive Scan
+          {scanMode === "active_demo" ? "Start Active Demo Scan" : "Start Passive Scan"}
         </button>
       </div>
     </div>

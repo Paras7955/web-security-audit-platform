@@ -25,14 +25,14 @@ def create_scan(
     if not target.permission_confirmed:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target authorization is not confirmed.")
 
-    mode = validate_scan_mode(payload.mode, target, allowlist)
+    mode = validate_scan_mode(payload.mode, target, allowlist, active_demo_acknowledged=payload.active_demo_acknowledged)
     scan = Scan(
         id=str(uuid4()),
         target_id=target.id,
         mode=mode.value,
         status=ScanStatus.QUEUED.value,
         current_step=ScanStep.TARGET_VALIDATION.value,
-        status_message="Queued for passive scanner worker.",
+        status_message=f"Queued for {mode.value} scanner worker.",
         progress_percent=0,
     )
     db.add(scan)
@@ -54,7 +54,13 @@ def get_scan(scan_id: str, db: Session = Depends(get_db)) -> ScanRead:
     return scan
 
 
-def validate_scan_mode(raw_mode: str, target: Target, allowlist: ScanAllowlist) -> ScanMode:
+def validate_scan_mode(
+    raw_mode: str,
+    target: Target,
+    allowlist: ScanAllowlist,
+    *,
+    active_demo_acknowledged: bool,
+) -> ScanMode:
     try:
         mode = ScanMode(raw_mode)
     except ValueError as exc:
@@ -65,9 +71,19 @@ def validate_scan_mode(raw_mode: str, target: Target, allowlist: ScanAllowlist) 
     if mode not in allowed_modes:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan mode is not allowed for this target.")
 
+    if mode is ScanMode.ACTIVE_DEMO:
+        if allowlist_target is None or not allowlist_target.local_demo:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Active Demo scans are local/demo allowlist only.")
+        if not active_demo_acknowledged:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Active Demo scans require explicit acknowledgement.",
+            )
+        return mode
+
     if mode is not ScanMode.PASSIVE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only passive scans are available before Phase 9B.",
+            detail="Only passive and Active Demo scans are available before Phase 9C.",
         )
     return mode
