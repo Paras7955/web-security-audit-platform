@@ -42,6 +42,20 @@ class RepoScannerTests(unittest.TestCase):
             with self.assertRaises(RepoPathError):
                 validate_repo_path(str(parent_link / "repo"), repo_scan_root=repo_root)
 
+    def test_validate_repo_path_rejects_nested_symlinked_ancestor(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            real_parent = repo_root / "real-parent"
+            repo_path = real_parent / "repo"
+            repo_path.mkdir(parents=True)
+            nested_dir = repo_root / "nested"
+            nested_dir.mkdir()
+            parent_link = nested_dir / "parent-link"
+            parent_link.symlink_to(real_parent, target_is_directory=True)
+
+            with self.assertRaises(RepoPathError):
+                validate_repo_path(str(parent_link / "repo"), repo_scan_root=repo_root)
+
     def test_validate_repo_path_rejects_symlinked_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             real_root = Path(temp_dir) / "real-root"
