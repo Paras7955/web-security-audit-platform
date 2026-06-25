@@ -103,6 +103,20 @@ class TargetApiTests(unittest.TestCase):
         self.assertEqual(update.status_code, 400)
         self.assertIn("absolute", update.json()["detail"])
 
+    def test_update_target_repo_path_allows_browser_preflight(self) -> None:
+        response = self.client.options(
+            f"/targets/{uuid4()}/repo-path",
+            headers={
+                "Origin": "http://localhost:3001",
+                "Access-Control-Request-Method": "PATCH",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["access-control-allow-origin"], "http://localhost:3001")
+        self.assertIn("PATCH", response.headers["access-control-allow-methods"])
+
     def test_auth_profile_placeholder_is_not_enabled(self) -> None:
         response = self.client.post(
             "/targets",
