@@ -7,7 +7,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.service import AiExplanationResult, generate_ai_explanations
+from app.ai.service import AiExplanationResult, generate_ai_explanations, sanitize_provider_url
 from app.core.contracts import ScanMode, ScanStatus
 from app.models import Finding, ReportArtifact, Scan, Target
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
@@ -169,7 +169,7 @@ def list_report_artifacts(db: Session, *, scan_id: str) -> list[ReportArtifact]:
     scan = db.get(Scan, scan_id)
     if scan is None:
         raise ReportGenerationError("Scan not found.")
-    validate_report_scan_mode(scan)
+    validate_report_scan_eligibility(scan)
     return list(
         db.scalars(
             select(ReportArtifact)
@@ -184,7 +184,7 @@ def read_report_artifact(artifact: ReportArtifact, *, artifact_root: str | Path,
         scan = db.get(Scan, artifact.scan_id)
         if scan is None:
             raise ReportGenerationError("Scan not found.")
-        validate_report_scan_mode(scan)
+        validate_report_scan_eligibility(scan)
     path = validate_report_path(artifact.path, artifact_root, scan_id=artifact.scan_id, report_type=artifact.report_type)
     if path.is_symlink():
         raise ReportGenerationError("Report artifact file must not be a symlink.")
@@ -230,7 +230,9 @@ def write_report_file(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def validate_report_scan_mode(scan: Scan) -> None:
+def validate_report_scan_eligibility(scan: Scan) -> None:
+    if scan.status not in TERMINAL_REPORT_STATUSES:
+        raise ReportGenerationError("Reports can only be generated for completed scans.")
     if scan.mode not in REPORT_SCAN_MODES:
         raise ReportGenerationError("Reports can only be generated for passive and Active Demo scans in Phase 9D.")
 
@@ -242,7 +244,7 @@ def safe_report_finding(finding: Finding) -> ReportFinding:
         title=finding.title,
         severity=finding.severity,
         confidence=finding.confidence,
-        affected_url=finding.affected_url,
+        affected_url=sanitize_provider_url(finding.affected_url),
         affected_file=finding.affected_file,
         evidence=finding.evidence if redaction_confirmed else None,
         source_tool=finding.source_tool,
