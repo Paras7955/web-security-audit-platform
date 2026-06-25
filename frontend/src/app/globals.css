@@ -342,6 +342,40 @@ select {
   font-size: 0.9rem;
 }
 
+.repoPathNotice {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.repoPathNotice dl {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 10px 12px;
+}
+
+.repoPathNotice dd {
+  overflow-wrap: anywhere;
+}
+
+.inlineAction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #d7c896;
+  border-radius: 8px;
+  background: #fff9e8;
+  padding: 10px 12px;
+}
+
+.inlineAction p {
+  margin: 0;
+  color: #5f5130;
+  font-size: 0.9rem;
+}
+
 .scanPanel {
   margin-top: 14px;
   border: 1px solid var(--border);

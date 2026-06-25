@@ -286,6 +286,37 @@ export function TargetSetup() {
     }
   }
 
+  async function updateSelectedTargetRepoPath() {
+    if (!selectedTarget) {
+      return;
+    }
+
+    setIsBusy(true);
+    setMessage("Attaching repo path to selected target...");
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/targets/${selectedTarget.id}/repo-path`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repo_path: repoPath.trim() || null
+        })
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body.detail ?? "Repo path update failed.");
+      }
+      const updatedTarget = body as Target;
+      setTargets((current) => current.map((target) => (target.id === updatedTarget.id ? updatedTarget : target)));
+      setSelectedTargetId(updatedTarget.id);
+      setMessage("Repo path attached. Repo scans are available for this target.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Repo path update failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function refreshScan(scanId: string) {
     try {
       const response = await fetch(`${apiBaseUrl}/scans/${scanId}`);
@@ -476,6 +507,7 @@ export function TargetSetup() {
           <ScanLauncher
             targets={targets}
             selectedTargetId={selectedTargetId}
+            repoPath={repoPath}
             scanMode={scanMode}
             activeDemoAcknowledged={activeDemoAcknowledged}
             ajaxShortAcknowledged={ajaxShortAcknowledged}
@@ -483,6 +515,7 @@ export function TargetSetup() {
             isBusy={isBusy}
             onSelectTarget={setSelectedTargetId}
             onSelectScanMode={setScanMode}
+            onAttachRepoPath={updateSelectedTargetRepoPath}
             onActiveDemoAcknowledged={setActiveDemoAcknowledged}
             onAjaxShortAcknowledged={setAjaxShortAcknowledged}
             onStartScan={startScan}
@@ -731,6 +764,7 @@ function TargetForm({
 function ScanLauncher({
   targets,
   selectedTargetId,
+  repoPath,
   scanMode,
   activeDemoAcknowledged,
   ajaxShortAcknowledged,
@@ -738,12 +772,14 @@ function ScanLauncher({
   isBusy,
   onSelectTarget,
   onSelectScanMode,
+  onAttachRepoPath,
   onActiveDemoAcknowledged,
   onAjaxShortAcknowledged,
   onStartScan
 }: {
   targets: Target[];
   selectedTargetId: string;
+  repoPath: string;
   scanMode: string;
   activeDemoAcknowledged: boolean;
   ajaxShortAcknowledged: boolean;
@@ -751,10 +787,16 @@ function ScanLauncher({
   isBusy: boolean;
   onSelectTarget: (targetId: string) => void;
   onSelectScanMode: (mode: string) => void;
+  onAttachRepoPath: () => void;
   onActiveDemoAcknowledged: (acknowledged: boolean) => void;
   onAjaxShortAcknowledged: (acknowledged: boolean) => void;
   onStartScan: () => void;
 }) {
+  const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
+  const selectedTargetSupportsMode = selectedTarget?.allowed_modes.includes(scanMode) ?? false;
+  const repoPathMissing = scanMode === "repo" && Boolean(selectedTarget) && !selectedTarget?.repo_path;
+  const canAttachRepoPath = Boolean(selectedTarget && repoPath.trim() && !isBusy);
+
   return (
     <div className="panel">
       <div className="panelHeader">
@@ -832,9 +874,27 @@ function ScanLauncher({
       ) : null}
 
       {scanMode === "repo" ? (
-        <p className="formMessage">
-          Repo scans use the saved local repo path for this target and do not clone, install dependencies, or execute repo code.
-        </p>
+        <div className="repoPathNotice">
+          <p className="formMessage">
+            Repo scans use the saved local repo path for this target and do not clone, install dependencies, or execute repo code.
+          </p>
+          {selectedTarget ? (
+            <dl>
+              <div>
+                <dt>Saved repo path</dt>
+                <dd>{selectedTarget.repo_path ?? "None attached"}</dd>
+              </div>
+            </dl>
+          ) : null}
+          {repoPathMissing ? (
+            <div className="inlineAction">
+              <p>Attach the repo path from the target form before starting this repo scan.</p>
+              <button type="button" onClick={onAttachRepoPath} disabled={!canAttachRepoPath}>
+                Attach Repo Path
+              </button>
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="actions">
@@ -842,6 +902,9 @@ function ScanLauncher({
           Start {formatScanModeLabel(scanMode)} Scan
         </button>
       </div>
+      {selectedTarget && !selectedTargetSupportsMode ? (
+        <p className="formMessage">This scan mode is not allowed for the selected target.</p>
+      ) : null}
     </div>
   );
 }

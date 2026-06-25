@@ -1,4 +1,6 @@
 import unittest
+import tempfile
+from pathlib import Path
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -6,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
 from app.main import app
+from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models import Target
 
@@ -56,6 +59,49 @@ class TargetApiTests(unittest.TestCase):
 
         detail = self.client.get(f"/targets/{body['id']}")
         self.assertEqual(detail.status_code, 200)
+
+    def test_update_target_repo_path_validates_and_persists_path(self) -> None:
+        response = self.client.post(
+            "/targets",
+            json={"target_url": "http://juice-shop:3000", "permission_confirmed": True},
+        )
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.created_target_ids.append(body["id"])
+        self.assertIsNone(body["repo_path"])
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_path = Path(temp_dir) / "security-project"
+            repo_path.mkdir()
+            original_root = settings.repo_scan_root
+            settings.repo_scan_root = temp_dir
+            try:
+                update = self.client.patch(
+                    f"/targets/{body['id']}/repo-path",
+                    json={"repo_path": f"  {repo_path}  "},
+                )
+            finally:
+                settings.repo_scan_root = original_root
+
+        self.assertEqual(update.status_code, 200)
+        self.assertEqual(update.json()["repo_path"], str(repo_path))
+
+    def test_update_target_repo_path_rejects_invalid_path(self) -> None:
+        response = self.client.post(
+            "/targets",
+            json={"target_url": "http://juice-shop:3000", "permission_confirmed": True},
+        )
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.created_target_ids.append(body["id"])
+
+        update = self.client.patch(
+            f"/targets/{body['id']}/repo-path",
+            json={"repo_path": "relative/repo"},
+        )
+
+        self.assertEqual(update.status_code, 400)
+        self.assertIn("absolute", update.json()["detail"])
 
     def test_auth_profile_placeholder_is_not_enabled(self) -> None:
         response = self.client.post(

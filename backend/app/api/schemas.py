@@ -93,6 +93,10 @@ class TargetCreate(BaseModel):
     auth_profile_id: str | None = Field(default=None, max_length=64)
 
 
+class TargetRepoPathUpdate(BaseModel):
+    repo_path: str | None = Field(default=None, max_length=2048)
+
+
 class TargetRead(BaseModel):
     id: str
     allowlist_id: str

@@ -5,8 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_scan_allowlist
-from app.api.schemas import TargetCreate, TargetRead, TargetValidationRead
+from app.api.schemas import TargetCreate, TargetRead, TargetRepoPathUpdate, TargetValidationRead
+from app.core.config import settings
 from app.models import Target
+from app.repo_scanner.paths import RepoPathError, validate_repo_path
 from app.security.allowlist import ScanAllowlist
 from app.security.ssrf import SsrfGuardError, validate_destination
 from app.security.target_url import TargetUrlError, match_allowlisted_target
@@ -73,6 +75,31 @@ def list_targets(
 ) -> list[TargetRead]:
     targets = db.scalars(select(Target).order_by(Target.created_at.desc())).all()
     return [target_to_read(target, allowlist) for target in targets]
+
+
+@router.patch("/{target_id}/repo-path", response_model=TargetRead)
+def update_target_repo_path(
+    target_id: str,
+    payload: TargetRepoPathUpdate,
+    db: Session = Depends(get_db),
+    allowlist: ScanAllowlist = Depends(get_scan_allowlist),
+) -> TargetRead:
+    target = db.get(Target, target_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
+
+    repo_path = payload.repo_path.strip() if payload.repo_path else None
+    if repo_path is not None:
+        try:
+            validate_repo_path(repo_path, repo_scan_root=settings.repo_scan_root)
+        except RepoPathError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    target.repo_path = repo_path
+    db.add(target)
+    db.commit()
+    db.refresh(target)
+    return target_to_read(target, allowlist)
 
 
 @router.get("/{target_id}", response_model=TargetRead)
