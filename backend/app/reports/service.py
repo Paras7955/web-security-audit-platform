@@ -179,12 +179,15 @@ def list_report_artifacts(db: Session, *, scan_id: str) -> list[ReportArtifact]:
     )
 
 
-def read_report_artifact(artifact: ReportArtifact, *, artifact_root: str | Path, db: Session | None = None) -> str:
-    if db is not None:
-        scan = db.get(Scan, artifact.scan_id)
-        if scan is None:
-            raise ReportGenerationError("Scan not found.")
-        validate_report_scan_eligibility(scan)
+def read_report_artifact(db: Session, artifact: ReportArtifact, *, artifact_root: str | Path) -> str:
+    scan = db.get(Scan, artifact.scan_id)
+    if scan is None:
+        raise ReportGenerationError("Scan not found.")
+    validate_report_scan_eligibility(scan)
+    return read_report_artifact_file(artifact, artifact_root=artifact_root)
+
+
+def read_report_artifact_file(artifact: ReportArtifact, *, artifact_root: str | Path) -> str:
     path = validate_report_path(artifact.path, artifact_root, scan_id=artifact.scan_id, report_type=artifact.report_type)
     if path.is_symlink():
         raise ReportGenerationError("Report artifact file must not be a symlink.")

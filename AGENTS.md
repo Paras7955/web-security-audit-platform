@@ -49,12 +49,12 @@ V1 includes:
 - Markdown/HTML reports.
 - Template AI explanations with optional OpenAI provider later.
 
-Phase 9D is a planned hardening phase before repo scanning:
+Phase 9D has been implemented as a hardening phase before repo scanning:
 
-- Expand reports to support normalized findings from completed `passive` and `active_demo` scans.
-- Expand AI explanations to support normalized findings from completed `passive` and `active_demo` scans.
-- Keep OpenAI optional and default to the deterministic template provider.
-- Prove with tests that AI provider payloads and reports receive only normalized/redacted fields.
+- Reports support normalized findings from completed `passive` and `active_demo` scans.
+- AI explanations support normalized findings from completed `passive` and `active_demo` scans.
+- OpenAI remains optional and defaults to the deterministic template provider.
+- Tests prove that AI provider payloads and reports receive only normalized/redacted fields.
 - Do not send raw ZAP alerts, raw HTTP bodies, raw artifacts, unredacted evidence, or secrets to AI providers or reports.
 - Do not include repo-scan findings in Phase 9D; repo findings have separate leakage risks and belong after Phase 10 normalization/redaction exists.
 

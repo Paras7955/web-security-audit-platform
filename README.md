@@ -309,3 +309,15 @@ alembic upgrade head
 ```
 
 The backend readiness endpoint verifies that the initial schema exists before reporting ready.
+
+## Verification Notes
+
+The full verification path is Docker Compose based because backend tests expect the Compose database and service hostnames by default:
+
+```text
+docker compose build backend migrate
+docker compose run --rm backend python -m unittest discover tests
+docker compose run --rm frontend npm run build
+```
+
+Host-side backend tests require an explicit `DATABASE_URL` that points at a reachable Postgres instance with the migrated schema. Host-side frontend builds require local `node_modules`.
