@@ -58,6 +58,15 @@ Phase 9D has been implemented as a hardening phase before repo scanning:
 - Do not send raw ZAP alerts, raw HTTP bodies, raw artifacts, unredacted evidence, or secrets to AI providers or reports.
 - Do not include repo-scan findings in Phase 9D; repo findings have separate leakage risks and belong after Phase 10 normalization/redaction exists.
 
+Phase 10 repo scanning uses existing allowlisted targets with a configured local repo path:
+
+- Use Docker-contained deterministic scanner adapter stubs in Phase 10.
+- Validate repo paths as absolute existing directories under `REPO_SCAN_ROOT`.
+- Do not clone remote code, install dependencies, fetch remote repositories, run package scripts, run builds, or execute repository code.
+- Persist only normalized/redacted repo findings.
+- Reports may include completed repo scans after normalization/redaction.
+- Do not send repo-scan findings to AI providers in Phase 10.
+
 Post-v1 unless explicitly approved:
 
 - Playwright login/session workflows.

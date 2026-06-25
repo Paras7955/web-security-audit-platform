@@ -14,12 +14,12 @@ export default function Home() {
       <section className="hero">
         <div>
           <p className="eyebrow">Defensive Web App Security Audit</p>
-          <h1>Local-first security evidence, normalized findings, and clear reports.</h1>
+          <h1>Local-first web and repo security evidence with normalized findings.</h1>
         </div>
-        <div className="statusPanel" aria-label="Phase 9D multi-mode reports status">
-          <span>Phase 9D</span>
-          <strong>Multi-mode reports ready</strong>
-          <small>Create allowlisted local demo targets, run passive, Active Demo, or AJAX Short scans, and generate reports for passive and Active Demo findings.</small>
+        <div className="statusPanel" aria-label="Phase 10 repo scanning status">
+          <span>Phase 10</span>
+          <strong>Repo scanning ready</strong>
+          <small>Create allowlisted local demo targets, attach a mounted repo path, and run deterministic repo scanner adapters alongside web scan modes.</small>
         </div>
       </section>
 

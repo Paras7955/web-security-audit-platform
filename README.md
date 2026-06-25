@@ -10,7 +10,7 @@ The project is designed as a cybersecurity resume project. Tools collect evidenc
 - Backend: FastAPI.
 - Worker: Python worker for Postgres-backed scan jobs and bounded passive scanning.
 - Database: Postgres.
-- Security tooling: conservative custom passive scanning, with OWASP ZAP daemon/API integration in later phases.
+- Security tooling: conservative custom passive scanning, scoped ZAP integration, and deterministic repo scanner adapters.
 - Demo target: OWASP Juice Shop.
 - Deployment: local Docker Compose.
 
@@ -135,6 +135,7 @@ Relevant environment settings:
 AI_PROVIDER=template
 OPENAI_MODEL=
 OPENAI_API_KEY=
+REPO_SCAN_ROOT=/app/repositories
 ```
 
 Set `AI_PROVIDER=openai` only when an OpenAI API key and model are configured. If OpenAI configuration is missing or the provider request fails, the backend returns template explanations and discloses the fallback.
@@ -205,6 +206,21 @@ Implemented Phase 9D capabilities:
 - AJAX Short remains dashboard/findings-only for reports and AI in Phase 9D.
 - Repo-scan findings remain out of Phase 9D and should be handled only after Phase 10 normalization/redaction exists.
 
+## Phase 10 Status
+
+Phase 10 adds repo scanning for existing allowlisted targets with a configured local repo path. Repo scanning uses deterministic Docker-contained scanner adapter stubs in this phase; later work can replace the stub internals with real tools behind the same adapter interface.
+
+Implemented Phase 10 capabilities:
+
+- `POST /scans` accepts `mode: "repo"` only for saved allowlisted targets with a valid local repo path.
+- Repo paths must be absolute, exist as directories, stay under `REPO_SCAN_ROOT`, and must not be symlinks.
+- Docker Compose mounts this project read-only at `/app/repositories/security-project` for local demo repo scans.
+- Repo scans do not clone remote code, install dependencies, fetch remote repositories, run package scripts, run builds, or execute repository code.
+- Deterministic Gitleaks-style and dependency scanner adapter stubs emit normalized findings.
+- Repo findings pass through the same persistence redaction path as web findings.
+- Reports support completed `passive`, `active_demo`, and `repo` scans.
+- AI explanations remain limited to completed `passive` and `active_demo` scans; repo findings are not sent to AI providers in Phase 10.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.
@@ -227,6 +243,7 @@ Scan modes:
 - `passive`
 - `active_demo`
 - `ajax_short`
+- `repo`
 
 Scan statuses:
 
