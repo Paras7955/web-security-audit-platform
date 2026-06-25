@@ -14,7 +14,7 @@ ALLOWLIST = ScanAllowlist.model_validate(
                 "schemes": ["http"],
                 "hosts": ["juice-shop"],
                 "ports": [3000],
-                "allowed_modes": ["passive", "active_demo", "ajax_short"],
+                "allowed_modes": ["passive", "active_demo", "ajax_short", "repo"],
                 "max_redirects": 5,
                 "local_demo": True,
             }
@@ -35,7 +35,7 @@ class TargetUrlTests(unittest.TestCase):
         match = match_allowlisted_target("http://juice-shop:3000", ALLOWLIST)
 
         self.assertEqual(match.allowlist_target.id, "juice-shop")
-        self.assertEqual([mode.value for mode in match.allowed_modes], ["passive", "active_demo", "ajax_short"])
+        self.assertEqual([mode.value for mode in match.allowed_modes], ["passive", "active_demo", "ajax_short", "repo"])
 
     def test_wrong_port_is_rejected(self) -> None:
         with self.assertRaises(TargetUrlError):

@@ -16,7 +16,7 @@ VALID_CONFIG = {
             "schemes": ["http"],
             "hosts": ["juice-shop"],
             "ports": [3000],
-            "allowed_modes": ["passive", "active_demo", "ajax_short"],
+            "allowed_modes": ["passive", "active_demo", "ajax_short", "repo"],
             "max_redirects": 5,
             "local_demo": True,
             "notes": "Local Docker Compose demo target",

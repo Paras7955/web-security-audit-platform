@@ -1,34 +1,38 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+export const SCAN_MODES = ["passive", "active_demo", "ajax_short", "repo"] as const;
 
-type Contracts = {
-  scan_modes: string[];
-  scan_statuses: string[];
-  scan_steps: string[];
-  default_limits: Record<string, number>;
-};
+export const SCAN_STATUSES = [
+  "queued",
+  "validating",
+  "running",
+  "normalizing",
+  "completed",
+  "completed_with_warnings",
+  "failed",
+  "cancelled"
+] as const;
 
-function loadContracts(): Contracts {
-  const candidates = [
-    join(process.cwd(), "../shared/contracts.json"),
-    join(process.cwd(), "shared/contracts.json"),
-    join(process.cwd(), "../../shared/contracts.json")
-  ];
+export const SCAN_STEPS = [
+  "target_validation",
+  "custom_crawl",
+  "custom_checks",
+  "zap_spider",
+  "zap_passive",
+  "zap_active",
+  "zap_ajax",
+  "repo_secrets_scan",
+  "repo_dependency_scan",
+  "normalizing_findings",
+  "generating_reports",
+  "generating_ai_explanations"
+] as const;
 
-  for (const candidate of candidates) {
-    try {
-      return JSON.parse(readFileSync(candidate, "utf-8")) as Contracts;
-    } catch {
-      // Try the next known local/Docker layout.
-    }
-  }
-
-  throw new Error("Unable to locate shared/contracts.json");
-}
-
-const contracts = loadContracts();
-
-export const SCAN_MODES = contracts.scan_modes;
-export const SCAN_STATUSES = contracts.scan_statuses;
-export const SCAN_STEPS = contracts.scan_steps;
-export const DEFAULT_LIMITS = contracts.default_limits;
+export const DEFAULT_LIMITS = {
+  crawl_depth: 2,
+  page_cap: 100,
+  request_timeout_seconds: 10,
+  scan_timeout_seconds: 600,
+  zap_active_timeout_seconds: 600,
+  zap_ajax_timeout_seconds: 120,
+  evidence_snippet_bytes: 2048,
+  redirect_cap: 5
+} as const;

@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.core.contracts import ScanMode, ScanStatus, ScanStep
 from app.findings.service import persist_normalized_findings
 from app.models import Scan
+from app.repo_scanner.paths import validate_repo_path
+from app.repo_scanner.stubs import run_repo_stub_scan
 from app.scans.artifacts import ensure_scan_artifact_dir
 from app.scanner.passive import run_passive_scan
 from app.security.allowlist import ScanAllowlist
@@ -264,6 +266,88 @@ def run_passive_scan_job(
         mark_scan_failed(db, scan, exc)
 
 
+def run_repo_scan_job(
+    db: Session,
+    scan: Scan,
+    artifact_root: str,
+    repo_scan_root: str,
+    allowlist: ScanAllowlist,
+) -> None:
+    try:
+        validate_scan_job(scan)
+        if scan.mode != ScanMode.REPO.value:
+            raise ScanLifecycleError("Repo scan worker only supports repo scan jobs.")
+        if scan.target is None:
+            raise ScanLifecycleError("Scan target no longer exists.")
+        allowlist_target = allowlist.get_target(scan.target.allowlist_id)
+        if allowlist_target is None:
+            raise ScanLifecycleError("Scan target is not present in the allowlist.")
+        if scan.mode not in set(allowlist_target.allowed_modes):
+            raise ScanLifecycleError("Scan mode is no longer allowed for this target.")
+
+        update_scan_progress(
+            db,
+            scan,
+            status=ScanStatus.VALIDATING,
+            current_step=ScanStep.TARGET_VALIDATION,
+            status_message="Validating configured local repo path for repo scan.",
+            progress_percent=10,
+        )
+        repo_path = validate_repo_path(scan.target.repo_path, repo_scan_root=repo_scan_root)
+        ensure_scan_artifact_dir(artifact_root, scan.id)
+
+        update_scan_progress(
+            db,
+            scan,
+            status=ScanStatus.RUNNING,
+            current_step=ScanStep.REPO_SECRETS_SCAN,
+            status_message="Running deterministic secret scanner adapter stub.",
+            progress_percent=35,
+        )
+        result = run_repo_stub_scan(repo_path=repo_path)
+
+        update_scan_progress(
+            db,
+            scan,
+            status=ScanStatus.RUNNING,
+            current_step=ScanStep.REPO_DEPENDENCY_SCAN,
+            status_message="Running deterministic dependency scanner adapter stub.",
+            progress_percent=65,
+        )
+        update_scan_progress(
+            db,
+            scan,
+            status=ScanStatus.NORMALIZING,
+            current_step=ScanStep.NORMALIZING_FINDINGS,
+            status_message=f"Persisting {len(result.findings)} normalized repo findings.",
+            progress_percent=85,
+        )
+        persist_normalized_findings(
+            db,
+            scan_id=scan.id,
+            findings=list(result.findings),
+            artifact_root=artifact_root,
+        )
+
+        terminal_status = ScanStatus.COMPLETED_WITH_WARNINGS if result.errors else ScanStatus.COMPLETED
+        status_message = (
+            f"Repo scan completed with {len(result.findings)} findings and {len(result.errors)} warning(s)."
+            if result.errors
+            else f"Repo scan completed with {len(result.findings)} findings."
+        )
+        update_scan_progress(
+            db,
+            scan,
+            status=terminal_status,
+            current_step=ScanStep.NORMALIZING_FINDINGS,
+            status_message=status_message,
+            progress_percent=100,
+            completed_at=datetime.now(UTC),
+        )
+    except Exception as exc:
+        mark_scan_failed(db, scan, exc)
+
+
 def validate_phase3_lifecycle_scan(scan: Scan) -> None:
     validate_scan_job(scan)
 
@@ -278,8 +362,8 @@ def zap_daemon_lock(db: Session):
 
 
 def validate_scan_job(scan: Scan) -> None:
-    if scan.mode not in {ScanMode.PASSIVE.value, ScanMode.ACTIVE_DEMO.value, ScanMode.AJAX_SHORT.value}:
-        raise ScanLifecycleError("Worker only supports passive, Active Demo, and AJAX Short scan jobs in this phase.")
+    if scan.mode not in {ScanMode.PASSIVE.value, ScanMode.ACTIVE_DEMO.value, ScanMode.AJAX_SHORT.value, ScanMode.REPO.value}:
+        raise ScanLifecycleError("Worker only supports passive, Active Demo, AJAX Short, and Repo scan jobs in this phase.")
     if scan.target is None:
         raise ScanLifecycleError("Scan target no longer exists.")
     if not scan.target.permission_confirmed:
@@ -291,6 +375,8 @@ def format_scan_mode(mode: str) -> str:
         return "Active Demo"
     if mode == ScanMode.AJAX_SHORT.value:
         return "AJAX Short"
+    if mode == ScanMode.REPO.value:
+        return "Repo"
     return "Passive"
 
 

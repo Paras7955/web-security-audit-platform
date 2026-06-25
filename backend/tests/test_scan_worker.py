@@ -10,8 +10,9 @@ from app.core.contracts import Confidence, ScanStatus, ScanStep, Severity
 from app.db.session import SessionLocal
 from app.findings.schemas import NormalizedFindingInput
 from app.models import Finding, Scan, Target
+from app.repo_scanner.stubs import RepoScanResult
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
-from app.scans.lifecycle import claim_next_queued_scan, run_internal_lifecycle_job, run_passive_scan_job
+from app.scans.lifecycle import claim_next_queued_scan, run_internal_lifecycle_job, run_passive_scan_job, run_repo_scan_job
 from app.scanner.passive import PassiveScanResult
 from app.security.allowlist import ScanAllowlist
 from app.zap.active import ZapActiveDemoResult
@@ -121,7 +122,7 @@ class ScanWorkerTests(unittest.TestCase):
 
                 self.assertEqual(scan.status, "failed")
                 self.assertEqual(scan.error_code, "scan_worker_failed")
-                self.assertIn("only supports passive, Active Demo, and AJAX Short", scan.error_detail)
+                self.assertIn("only supports passive, Active Demo, AJAX Short, and Repo", scan.error_detail)
 
     def test_worker_fails_unconfirmed_target(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -412,6 +413,104 @@ class ScanWorkerTests(unittest.TestCase):
 
                 self.assertEqual(scan.status, "failed")
                 self.assertIn("require a configured ZAP daemon", scan.error_detail)
+
+    def test_repo_scan_job_persists_stub_findings(self) -> None:
+        repo_finding = NormalizedFindingInput(
+            title="Potential hardcoded secret detected by deterministic stub",
+            severity=Severity.HIGH,
+            confidence=Confidence.CONFIRMED,
+            affected_file=".env.example",
+            evidence="stub_secret=[REDACTED]",
+            source_tool="gitleaks-stub",
+            scanner_rule_id="stub-generic-secret",
+            cwe="CWE-798",
+            redaction_applied=True,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_path = Path(temp_dir) / "security-project"
+            repo_path.mkdir()
+            with SessionLocal() as db:
+                target = db.get(Target, self.target_id)
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(target)
+                self.assertIsNotNone(scan)
+                target.repo_path = str(repo_path)
+                scan.mode = "repo"
+                db.add(target)
+                db.add(scan)
+                db.commit()
+                db.refresh(scan)
+
+                fake_result = RepoScanResult(findings=(repo_finding,), errors=())
+                with patch("app.scans.lifecycle.run_repo_stub_scan", return_value=fake_result) as repo_scan:
+                    run_repo_scan_job(db, scan, temp_dir, temp_dir, build_test_allowlist(allowed_modes=("passive", "repo")))
+
+                repo_scan.assert_called_once_with(repo_path=repo_path.resolve())
+                self.assertEqual(scan.status, "completed")
+                self.assertEqual(scan.current_step, "normalizing_findings")
+                persisted = db.scalars(select(Finding).where(Finding.scan_id == self.scan_id)).all()
+                self.assertEqual(len(persisted), 1)
+                self.assertEqual(persisted[0].source_tool, "gitleaks-stub")
+                self.assertTrue(persisted[0].redaction_applied)
+
+    def test_repo_scan_job_fails_without_valid_repo_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with SessionLocal() as db:
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(scan)
+                scan.mode = "repo"
+                db.add(scan)
+                db.commit()
+                db.refresh(scan)
+
+                run_repo_scan_job(db, scan, temp_dir, temp_dir, build_test_allowlist(allowed_modes=("passive", "repo")))
+
+                self.assertEqual(scan.status, "failed")
+                self.assertIn("Repo scans require", scan.error_detail)
+
+    def test_repo_scan_job_fails_when_mode_removed_from_allowlist(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_path = Path(temp_dir) / "security-project"
+            repo_path.mkdir()
+            with SessionLocal() as db:
+                target = db.get(Target, self.target_id)
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(target)
+                self.assertIsNotNone(scan)
+                target.repo_path = str(repo_path)
+                scan.mode = "repo"
+                db.add(target)
+                db.add(scan)
+                db.commit()
+                db.refresh(scan)
+
+                run_repo_scan_job(db, scan, temp_dir, temp_dir, build_test_allowlist(allowed_modes=("passive",)))
+
+                self.assertEqual(scan.status, "failed")
+                self.assertIn("no longer allowed", scan.error_detail)
+
+    def test_repo_scan_job_fails_when_target_removed_from_allowlist(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_path = Path(temp_dir) / "security-project"
+            repo_path.mkdir()
+            with SessionLocal() as db:
+                target = db.get(Target, self.target_id)
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(target)
+                self.assertIsNotNone(scan)
+                target.repo_path = str(repo_path)
+                target.allowlist_id = "removed-target"
+                scan.mode = "repo"
+                db.add(target)
+                db.add(scan)
+                db.commit()
+                db.refresh(scan)
+
+                run_repo_scan_job(db, scan, temp_dir, temp_dir, build_test_allowlist(allowed_modes=("passive", "repo")))
+
+                self.assertEqual(scan.status, "failed")
+                self.assertIn("not present in the allowlist", scan.error_detail)
 
 
 def build_test_allowlist(allowed_modes: tuple[str, ...] = ("passive",)) -> ScanAllowlist:

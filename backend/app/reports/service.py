@@ -25,6 +25,7 @@ TERMINAL_REPORT_STATUSES = {
 REPORT_SCAN_MODES = {
     ScanMode.PASSIVE.value,
     ScanMode.ACTIVE_DEMO.value,
+    ScanMode.REPO.value,
 }
 SEVERITY_ORDER = {
     "critical": 0,
@@ -82,7 +83,7 @@ def build_report_data(
     if scan.status not in TERMINAL_REPORT_STATUSES:
         raise ReportGenerationError("Reports can only be generated for completed scans.")
     if scan.mode not in REPORT_SCAN_MODES:
-        raise ReportGenerationError("Reports can only be generated for passive and Active Demo scans in Phase 9D.")
+        raise ReportGenerationError("Reports can only be generated for passive, Active Demo, and Repo scans.")
 
     target = db.get(Target, scan.target_id)
     if target is None:
@@ -97,12 +98,16 @@ def build_report_data(
         safe_report_finding(finding)
         for finding in sorted(findings, key=lambda finding: (SEVERITY_ORDER.get(finding.severity, 99), finding.title.lower()))
     )
-    ai_explanations = generate_ai_explanations(
-        db,
-        scan_id=scan.id,
-        provider_name=ai_provider,
-        openai_api_key=openai_api_key,
-        openai_model=openai_model,
+    ai_explanations = (
+        disabled_ai_explanations(scan.id)
+        if scan.mode == ScanMode.REPO.value
+        else generate_ai_explanations(
+            db,
+            scan_id=scan.id,
+            provider_name=ai_provider,
+            openai_api_key=openai_api_key,
+            openai_model=openai_model,
+        )
     )
     return ReportData(
         scan=scan,
@@ -179,12 +184,15 @@ def list_report_artifacts(db: Session, *, scan_id: str) -> list[ReportArtifact]:
     )
 
 
-def read_report_artifact(artifact: ReportArtifact, *, artifact_root: str | Path, db: Session | None = None) -> str:
-    if db is not None:
-        scan = db.get(Scan, artifact.scan_id)
-        if scan is None:
-            raise ReportGenerationError("Scan not found.")
-        validate_report_scan_eligibility(scan)
+def read_report_artifact(db: Session, artifact: ReportArtifact, *, artifact_root: str | Path) -> str:
+    scan = db.get(Scan, artifact.scan_id)
+    if scan is None:
+        raise ReportGenerationError("Scan not found.")
+    validate_report_scan_eligibility(scan)
+    return read_report_artifact_file(artifact, artifact_root=artifact_root)
+
+
+def read_report_artifact_file(artifact: ReportArtifact, *, artifact_root: str | Path) -> str:
     path = validate_report_path(artifact.path, artifact_root, scan_id=artifact.scan_id, report_type=artifact.report_type)
     if path.is_symlink():
         raise ReportGenerationError("Report artifact file must not be a symlink.")
@@ -234,7 +242,19 @@ def validate_report_scan_eligibility(scan: Scan) -> None:
     if scan.status not in TERMINAL_REPORT_STATUSES:
         raise ReportGenerationError("Reports can only be generated for completed scans.")
     if scan.mode not in REPORT_SCAN_MODES:
-        raise ReportGenerationError("Reports can only be generated for passive and Active Demo scans in Phase 9D.")
+        raise ReportGenerationError("Reports can only be generated for passive, Active Demo, and Repo scans.")
+
+
+def disabled_ai_explanations(scan_id: str) -> AiExplanationResult:
+    return AiExplanationResult(
+        scan_id=scan_id,
+        provider="not_generated",
+        fallback_used=False,
+        provider_error=None,
+        summary="AI explanations are not generated for repo scans in Phase 10.",
+        groups=(),
+        explanations=(),
+    )
 
 
 def safe_report_finding(finding: Finding) -> ReportFinding:
@@ -276,12 +296,12 @@ def render_markdown_report(data: ReportData) -> str:
         "",
         "## Scope And Tooling",
         "",
-        "- Custom passive scanner: used.",
-        "- ZAP passive analysis: used for allowlisted URLs.",
+        f"- Custom passive scanner: {tooling_used_unless_repo(data.scan.mode)}.",
+        f"- ZAP passive analysis: {zap_passive_tooling(data.scan.mode)}.",
         f"- ZAP active scan: {tooling_used(data.scan.mode, ScanMode.ACTIVE_DEMO.value)}.",
-        "- AJAX crawl: not used.",
-        f"- AI explanations: generated with {data.ai_explanations.provider} provider.",
-        "- Repo scanning: not included.",
+        f"- AJAX crawl: {tooling_used(data.scan.mode, ScanMode.AJAX_SHORT.value)}.",
+        f"- AI explanations: {ai_tooling(data.ai_explanations)}.",
+        f"- Repo scanning: {tooling_used(data.scan.mode, ScanMode.REPO.value)}.",
         "- Authenticated workflows: not tested.",
         "- Business logic checks: not tested.",
         "- Arbitrary public scanning: unsupported.",
@@ -414,12 +434,12 @@ def render_html_report(data: ReportData) -> str:
 
   <h2>Scope And Tooling</h2>
   <ul>
-    <li>Custom passive scanner: used.</li>
-    <li>ZAP passive analysis: used for allowlisted URLs.</li>
+    <li>Custom passive scanner: {escape(tooling_used_unless_repo(data.scan.mode))}.</li>
+    <li>ZAP passive analysis: {escape(zap_passive_tooling(data.scan.mode))}.</li>
     <li>ZAP active scan: {escape(tooling_used(data.scan.mode, ScanMode.ACTIVE_DEMO.value))}.</li>
-    <li>AJAX crawl: not used.</li>
-    <li>AI explanations: generated with {escape(data.ai_explanations.provider)} provider.</li>
-    <li>Repo scanning: not included.</li>
+    <li>AJAX crawl: {escape(tooling_used(data.scan.mode, ScanMode.AJAX_SHORT.value))}.</li>
+    <li>AI explanations: {escape(ai_tooling(data.ai_explanations))}.</li>
+    <li>Repo scanning: {escape(tooling_used(data.scan.mode, ScanMode.REPO.value))}.</li>
     <li>Authenticated workflows: not tested.</li>
     <li>Business logic checks: not tested.</li>
     <li>Arbitrary public scanning: unsupported.</li>
@@ -509,11 +529,26 @@ def format_scan_mode(mode: str) -> str:
         "passive": "Passive",
         "active_demo": "Active Demo",
         "ajax_short": "AJAX Short",
+        "repo": "Repo",
     }.get(mode, mode)
 
 
 def tooling_used(scan_mode: str, expected_mode: str) -> str:
     return "used" if scan_mode == expected_mode else "not used"
+
+
+def tooling_used_unless_repo(scan_mode: str) -> str:
+    return "not used" if scan_mode == ScanMode.REPO.value else "used"
+
+
+def zap_passive_tooling(scan_mode: str) -> str:
+    return "not used" if scan_mode == ScanMode.REPO.value else "used for allowlisted URLs"
+
+
+def ai_tooling(explanations: AiExplanationResult) -> str:
+    if explanations.provider == "not_generated":
+        return "not generated for repo scans"
+    return f"generated with {explanations.provider} provider"
 
 
 def format_timestamp(value: datetime) -> str:

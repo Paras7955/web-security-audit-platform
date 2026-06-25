@@ -5,7 +5,8 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.db.session import engine
 from app.db.session import SessionLocal
-from app.scans.lifecycle import claim_next_queued_scan, run_passive_scan_job
+from app.core.contracts import ScanMode
+from app.scans.lifecycle import claim_next_queued_scan, run_passive_scan_job, run_repo_scan_job
 from app.security.allowlist import load_allowlist
 
 
@@ -30,7 +31,10 @@ def main() -> None:
             if scan is not None:
                 print(f"Processing scan {scan.id}", flush=True)
                 allowlist = load_allowlist(settings.allowlist_path)
-                run_passive_scan_job(db, scan, settings.artifact_root, allowlist, zap_base_url=settings.zap_base_url)
+                if scan.mode == ScanMode.REPO.value:
+                    run_repo_scan_job(db, scan, settings.artifact_root, settings.repo_scan_root, allowlist)
+                else:
+                    run_passive_scan_job(db, scan, settings.artifact_root, allowlist, zap_base_url=settings.zap_base_url)
                 continue
         time.sleep(5)
 

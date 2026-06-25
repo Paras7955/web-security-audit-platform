@@ -28,6 +28,9 @@ Do not use this platform for:
 - ZAP passive URL submission must use only validated allowlisted URLs, pin submission URLs to the SSRF-validated destination IP, serialize shared daemon access, and disable automatic redirect following.
 - Active Demo scans require explicit user acknowledgement, must be limited to configured local/demo targets, and must use the same scoped ZAP context and destination-IP pinning controls.
 - AJAX Short scans require explicit user acknowledgement, must be limited to configured local/demo targets, and must use the same scoped ZAP context, destination-IP pinning controls, and shared daemon serialization.
+- Repo scans require a saved allowlisted target with a configured local repo path.
+- Repo paths must be absolute, existing directories under the configured `REPO_SCAN_ROOT`, and must not be symlinks.
+- Repo scans must not clone remote code, install dependencies, fetch remote repositories, run package scripts, run builds, or execute repository code.
 - Cloud demos must use sample data only and must not allow arbitrary active scans.
 
 ## Evidence And Secret Handling
@@ -36,7 +39,8 @@ Do not use this platform for:
 - Store minimal evidence snippets only.
 - Redact sensitive values before database writes, reports, or AI processing.
 - Generate reports only from normalized persisted findings and redacted evidence snippets.
-- Reports and AI are available for completed passive and Active Demo scans only until AJAX/repo-scan normalization and redaction is explicitly expanded.
+- Reports are available for completed passive, Active Demo, and Repo scans after normalization and redaction.
+- AI is available for completed passive and Active Demo scans only; repo findings must not be sent to AI providers in Phase 10.
 - Secret scan results must be redacted.
 - Never send raw response bodies, raw ZAP output, raw secret scanner output, or unredacted evidence to AI providers.
 
@@ -47,6 +51,7 @@ Do not use this platform for:
 - Omit finding text fields from AI provider payloads when redaction has not been confirmed.
 - Strip query strings and fragments from URLs before including locations in AI provider payloads.
 - Do not send raw artifacts, raw HTTP bodies, raw ZAP output, secret scanner output, authorization material, cookies, or unredacted evidence to any AI provider.
+- Do not send repo-scan findings to AI providers in Phase 10.
 - AI explanations must describe only existing findings and must not invent vulnerabilities, affected assets, evidence, or scan coverage.
 - If an optional provider fails or is misconfigured, fall back to template explanations and disclose the fallback.
 

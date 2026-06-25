@@ -1,4 +1,7 @@
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -25,10 +28,10 @@ class ScanApiTests(unittest.TestCase):
                 db.execute(delete(Target).where(Target.id.in_(self.created_target_ids)))
             db.commit()
 
-    def create_target(self) -> dict[str, object]:
+    def create_target(self, *, repo_path: str | None = None) -> dict[str, object]:
         response = self.client.post(
             "/targets",
-            json={"target_url": "http://juice-shop:3000", "permission_confirmed": True},
+            json={"target_url": "http://juice-shop:3000", "permission_confirmed": True, "repo_path": repo_path},
         )
         self.assertEqual(response.status_code, 201)
         body = response.json()
@@ -129,6 +132,28 @@ class ScanApiTests(unittest.TestCase):
         body = response.json()
         self.created_scan_ids.append(body["id"])
         self.assertEqual(body["mode"], "ajax_short")
+        self.assertEqual(body["status"], "queued")
+
+    def test_create_repo_scan_requires_configured_repo_path(self) -> None:
+        target = self.create_target()
+
+        response = self.client.post("/scans", json={"target_id": target["id"], "mode": "repo"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Repo scans require", response.json()["detail"])
+
+    def test_create_repo_scan_queues_for_valid_repo_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_path = Path(temp_dir) / "security-project"
+            repo_path.mkdir()
+            with patch("app.api.scans.settings.repo_scan_root", temp_dir):
+                target = self.create_target(repo_path=str(repo_path))
+                response = self.client.post("/scans", json={"target_id": target["id"], "mode": "repo"})
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.created_scan_ids.append(body["id"])
+        self.assertEqual(body["mode"], "repo")
         self.assertEqual(body["status"], "queued")
 
     def test_create_ajax_short_scan_revalidates_target_base_url(self) -> None:

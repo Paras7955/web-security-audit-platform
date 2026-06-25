@@ -97,7 +97,8 @@ type AiExplanation = {
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const terminalStatuses = new Set(["completed", "completed_with_warnings", "failed", "cancelled"]);
 const reportableStatuses = new Set(["completed", "completed_with_warnings"]);
-const reportAndAiModes = new Set(["passive", "active_demo"]);
+const reportableModes = new Set(["passive", "active_demo", "repo"]);
+const aiModes = new Set(["passive", "active_demo"]);
 const severityFilters = ["all", "info", "low", "medium", "high", "critical"];
 const severityRank: Record<string, number> = {
   critical: 5,
@@ -110,7 +111,7 @@ const severityRank: Record<string, number> = {
 export function TargetSetup() {
   const [targetUrl, setTargetUrl] = useState("http://juice-shop:3000");
   const [permissionConfirmed, setPermissionConfirmed] = useState(false);
-  const [repoPath, setRepoPath] = useState("");
+  const [repoPath, setRepoPath] = useState("/app/repositories/security-project");
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
   const [selectedTargetId, setSelectedTargetId] = useState("");
@@ -125,7 +126,7 @@ export function TargetSetup() {
   const [selectedFindingId, setSelectedFindingId] = useState("");
   const [severityFilter, setSeverityFilter] = useState("all");
   const [message, setMessage] = useState<string>("Enter an allowlisted local/demo target.");
-  const [reportMessage, setReportMessage] = useState<string>("Reports are available after a passive or Active Demo scan completes.");
+  const [reportMessage, setReportMessage] = useState<string>("Reports are available after a passive, Active Demo, or Repo scan completes.");
   const [aiMessage, setAiMessage] = useState<string>("AI explanations are available after a passive or Active Demo scan completes.");
   const [isBusy, setIsBusy] = useState(false);
   const [isGeneratingReports, setIsGeneratingReports] = useState(false);
@@ -136,9 +137,10 @@ export function TargetSetup() {
   const selectedScan = scanHistory.find((scan) => scan.id === selectedScanId) ?? null;
   const canCreate = useMemo(() => Boolean(validation && permissionConfirmed && !isBusy), [validation, permissionConfirmed, isBusy]);
   const canStartScan = Boolean(
-    selectedTarget &&
+      selectedTarget &&
       selectedTarget.allowed_modes.includes(scanMode) &&
       !isBusy &&
+      (scanMode !== "repo" || Boolean(selectedTarget.repo_path)) &&
       (scanMode !== "active_demo" || activeDemoAcknowledged) &&
       (scanMode !== "ajax_short" || ajaxShortAcknowledged)
   );
@@ -182,15 +184,18 @@ export function TargetSetup() {
       return;
     }
     void loadFindings(selectedScanId, { onlyIfSelected: true });
-    if (selectedScan && canUseReportsAndAi(selectedScan)) {
+    if (selectedScan && canUseReports(selectedScan)) {
       void loadReports(selectedScanId, { onlyIfSelected: true });
+    } else {
+      setReports([]);
+      setReportMessage("Reports remain available for passive, Active Demo, and Repo scans.");
+    }
+    if (selectedScan && canUseAi(selectedScan)) {
       void loadAiExplanation(selectedScanId, { onlyIfSelected: true });
       return;
     }
-    setReports([]);
-    setReportMessage("Reports remain available for passive and Active Demo scans in this phase.");
     setAiExplanation(null);
-    setAiMessage("AI explanations remain available for passive and Active Demo scans in this phase.");
+    setAiMessage("AI explanations remain available for passive and Active Demo scans.");
   }, [selectedScanId, selectedScan?.mode]);
 
   async function validateTarget(event: FormEvent<HTMLFormElement>) {
@@ -233,7 +238,7 @@ export function TargetSetup() {
         throw new Error(body.detail ?? "Target creation failed.");
       }
       await loadTargets(body.id);
-      setMessage("Target saved. Passive scans are available for this allowlisted target.");
+      setMessage("Target saved. Available scan modes are shown below.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Target creation failed.");
     } finally {
@@ -270,7 +275,7 @@ export function TargetSetup() {
       setReports([]);
       setAiExplanation(null);
       setSelectedFindingId("");
-      setReportMessage("Reports are available after this passive or Active Demo scan completes.");
+      setReportMessage("Reports are available after this passive, Active Demo, or Repo scan completes.");
       setAiMessage("AI explanations are available after this passive or Active Demo scan completes.");
       setMessage("Scan queued. Worker status will update below.");
       await loadScanHistory(scan.id);
@@ -292,14 +297,17 @@ export function TargetSetup() {
       setScanHistory((current) => mergeScan(current, scan));
       if (terminalStatuses.has(scan.status)) {
         await loadFindings(scan.id, { onlyIfSelected: true });
-        if (canUseReportsAndAi(scan)) {
+        if (canUseReports(scan)) {
           await loadReports(scan.id, { onlyIfSelected: true });
-          await loadAiExplanation(scan.id, { onlyIfSelected: true });
         } else if (selectedScanIdRef.current === scan.id) {
           setReports([]);
-          setReportMessage("Reports remain available for passive and Active Demo scans in this phase.");
+          setReportMessage("Reports remain available for passive, Active Demo, and Repo scans.");
+        }
+        if (canUseAi(scan)) {
+          await loadAiExplanation(scan.id, { onlyIfSelected: true });
+        } else if (selectedScanIdRef.current === scan.id) {
           setAiExplanation(null);
-          setAiMessage("AI explanations remain available for passive and Active Demo scans in this phase.");
+          setAiMessage("AI explanations remain available for passive and Active Demo scans.");
         }
       }
     } catch (error) {
@@ -443,8 +451,8 @@ export function TargetSetup() {
     <section className="dashboard" aria-labelledby="dashboard-heading">
       <div className="sectionHeader">
         <div>
-          <p className="eyebrow">Phase 9D Multi-Mode Reports</p>
-          <h2 id="dashboard-heading">Run passive, Active Demo, and AJAX Short scans, review normalized findings, and create reports</h2>
+          <p className="eyebrow">Phase 10 Repo Scanning</p>
+          <h2 id="dashboard-heading">Run web and repo scans, review normalized findings, and create reports for reportable modes</h2>
         </div>
         <span className="phaseBadge">Local demo only</span>
       </div>
@@ -524,20 +532,20 @@ function ReportsPanel({
   isGenerating: boolean;
   onGenerate: () => void;
 }) {
-  const canGenerate = Boolean(scan && canUseReportsAndAi(scan) && reportableStatuses.has(scan.status) && !isGenerating);
+  const canGenerate = Boolean(scan && canUseReports(scan) && reportableStatuses.has(scan.status) && !isGenerating);
 
   return (
     <div className="reportPanel">
       <div className="panelHeader">
         <h3>Reports</h3>
-        <span className="phaseBadge">Passive + Active Demo</span>
+        <span className="phaseBadge">Passive + Active Demo + Repo</span>
       </div>
 
       <div className="reportActions">
         <button type="button" onClick={onGenerate} disabled={!canGenerate}>
           Generate Reports
         </button>
-        <p>{scan && !canUseReportsAndAi(scan) ? "Reports remain available for passive and Active Demo scans in this phase." : message}</p>
+        <p>{scan && !canUseReports(scan) ? "Reports remain available for passive, Active Demo, and Repo scans." : message}</p>
       </div>
 
       {reports.length > 0 ? (
@@ -567,7 +575,7 @@ function AiExplanationsPanel({ explanation, message }: { explanation: AiExplanat
     <div className="aiPanel">
       <div className="panelHeader">
         <h3>AI Explanations</h3>
-        <span className="phaseBadge">{explanation?.provider ?? "Phase 9D"}</span>
+        <span className="phaseBadge">{explanation?.provider ?? "Phase 10"}</span>
       </div>
 
       {explanation ? (
@@ -667,7 +675,7 @@ function TargetForm({
 
         <label>
           <span>Optional local repo path</span>
-          <input value={repoPath} onChange={(event) => onRepoPathChange(event.target.value)} placeholder="/repos/example" />
+          <input value={repoPath} onChange={(event) => onRepoPathChange(event.target.value)} placeholder="/app/repositories/security-project" />
         </label>
 
         <label className="checkboxRow">
@@ -751,7 +759,7 @@ function ScanLauncher({
     <div className="panel">
       <div className="panelHeader">
         <h3>Scan Mode</h3>
-        <span className="phaseBadge">Phase 9D</span>
+        <span className="phaseBadge">Phase 10</span>
       </div>
 
       <label className="selectLabel">
@@ -791,6 +799,14 @@ function ScanLauncher({
           <strong>AJAX Short</strong>
           <span>Bounded ZAP browser crawl for local demo targets</span>
         </button>
+        <button
+          type="button"
+          className={scanMode === "repo" ? "modeCard modeCardActive" : "modeCard"}
+          onClick={() => onSelectScanMode("repo")}
+        >
+          <strong>Repo</strong>
+          <span>Deterministic secret and dependency scanner adapters</span>
+        </button>
       </div>
 
       {scanMode === "active_demo" ? (
@@ -815,6 +831,12 @@ function ScanLauncher({
         </label>
       ) : null}
 
+      {scanMode === "repo" ? (
+        <p className="formMessage">
+          Repo scans use the saved local repo path for this target and do not clone, install dependencies, or execute repo code.
+        </p>
+      ) : null}
+
       <div className="actions">
         <button type="button" onClick={onStartScan} disabled={!canStartScan || isBusy}>
           Start {formatScanModeLabel(scanMode)} Scan
@@ -831,11 +853,18 @@ function formatScanModeLabel(mode: string): string {
   if (mode === "ajax_short") {
     return "AJAX Short";
   }
+  if (mode === "repo") {
+    return "Repo";
+  }
   return "Passive";
 }
 
-function canUseReportsAndAi(scan: Scan): boolean {
-  return reportAndAiModes.has(scan.mode);
+function canUseReports(scan: Scan): boolean {
+  return reportableModes.has(scan.mode);
+}
+
+function canUseAi(scan: Scan): boolean {
+  return aiModes.has(scan.mode);
 }
 
 function ScanHistory({

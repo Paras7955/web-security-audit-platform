@@ -153,6 +153,19 @@ class AiExplanationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("passive and Active Demo scans", response.json()["detail"])
 
+    def test_repo_scan_is_not_eligible_for_ai_explanations(self) -> None:
+        with SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            scan.mode = "repo"
+            db.add(scan)
+            db.commit()
+
+        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("passive and Active Demo scans", response.json()["detail"])
+
     def test_openai_without_configuration_falls_back_to_template(self) -> None:
         with SessionLocal() as db:
             result = generate_ai_explanations(

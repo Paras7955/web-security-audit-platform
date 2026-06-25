@@ -11,7 +11,7 @@ from sqlalchemy import delete, select
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import Finding, ReportArtifact, Scan, Target
-from app.reports.service import generate_report_artifacts, read_report_artifact
+from app.reports.service import generate_report_artifacts, read_report_artifact_file
 
 
 class ReportsTests(unittest.TestCase):
@@ -80,8 +80,8 @@ class ReportsTests(unittest.TestCase):
                 self.assertEqual({artifact.report_type for artifact in artifacts}, {"markdown", "html"})
                 markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
                 html = next(artifact for artifact in artifacts if artifact.report_type == "html")
-                markdown_content = read_report_artifact(markdown, artifact_root=temp_dir)
-                html_content = read_report_artifact(html, artifact_root=temp_dir)
+                markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
+                html_content = read_report_artifact_file(html, artifact_root=temp_dir)
 
             self.assertIn("Target allowlist ID: juice-shop", markdown_content)
             self.assertNotIn("+00:00Z", markdown_content)
@@ -157,7 +157,7 @@ class ReportsTests(unittest.TestCase):
             with SessionLocal() as db:
                 artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
                 markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
-                markdown_content = read_report_artifact(markdown, artifact_root=temp_dir)
+                markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
 
         self.assertIn("Scan mode: Active Demo", markdown_content)
         self.assertIn("ZAP active scan: used.", markdown_content)
@@ -175,7 +175,35 @@ class ReportsTests(unittest.TestCase):
             response = self.client.post(f"/scans/{self.scan_id}/reports")
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("passive and Active Demo scans", response.json()["detail"])
+        self.assertIn("passive, Active Demo, and Repo scans", response.json()["detail"])
+
+    def test_reports_support_repo_scan_without_ai_provider_payload(self) -> None:
+        with SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            scan.mode = "repo"
+            finding = db.get(Finding, self.finding_id)
+            self.assertIsNotNone(finding)
+            finding.source_tool = "gitleaks-stub"
+            finding.affected_url = None
+            finding.affected_file = ".env.example"
+            finding.evidence = "stub_secret=[REDACTED]"
+            db.add(scan)
+            db.add(finding)
+            db.commit()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("app.reports.service.generate_ai_explanations") as ai_provider:
+                with SessionLocal() as db:
+                    artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                    markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
+                    markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
+
+        ai_provider.assert_not_called()
+        self.assertIn("Scan mode: Repo", markdown_content)
+        self.assertIn("Repo scanning: used.", markdown_content)
+        self.assertIn("AI explanations: not generated for repo scans.", markdown_content)
+        self.assertIn("Source tool: gitleaks-stub", markdown_content)
 
     def test_reports_omit_unredacted_finding_text(self) -> None:
         unsafe_secret = "raw-secret-token"
@@ -196,8 +224,8 @@ class ReportsTests(unittest.TestCase):
                 artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
                 markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
                 html = next(artifact for artifact in artifacts if artifact.report_type == "html")
-                markdown_content = read_report_artifact(markdown, artifact_root=temp_dir)
-                html_content = read_report_artifact(html, artifact_root=temp_dir)
+                markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
+                html_content = read_report_artifact_file(html, artifact_root=temp_dir)
 
         self.assertNotIn(unsafe_secret, markdown_content)
         self.assertNotIn(unsafe_secret, html_content)
@@ -219,7 +247,7 @@ class ReportsTests(unittest.TestCase):
             )
 
             with self.assertRaises(ValueError):
-                read_report_artifact(artifact, artifact_root=temp_dir)
+                read_report_artifact_file(artifact, artifact_root=temp_dir)
 
     def test_report_artifact_api_rejects_excluded_scan_modes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
@@ -275,7 +303,7 @@ class ReportsTests(unittest.TestCase):
             )
 
             with self.assertRaises(ValueError):
-                read_report_artifact(artifact, artifact_root=temp_dir)
+                read_report_artifact_file(artifact, artifact_root=temp_dir)
 
     def test_report_generation_rejects_symlinked_report_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
@@ -303,7 +331,7 @@ class ReportsTests(unittest.TestCase):
             )
 
             with self.assertRaises(ValueError):
-                read_report_artifact(artifact, artifact_root=temp_dir)
+                read_report_artifact_file(artifact, artifact_root=temp_dir)
 
     def test_report_generation_rejects_symlinked_report_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
@@ -334,7 +362,7 @@ class ReportsTests(unittest.TestCase):
             )
 
             with self.assertRaises(ValueError):
-                read_report_artifact(artifact, artifact_root=temp_dir)
+                read_report_artifact_file(artifact, artifact_root=temp_dir)
 
     def test_report_reader_rejects_symlinked_html_report_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
@@ -352,7 +380,7 @@ class ReportsTests(unittest.TestCase):
             )
 
             with self.assertRaises(ValueError):
-                read_report_artifact(artifact, artifact_root=temp_dir)
+                read_report_artifact_file(artifact, artifact_root=temp_dir)
 
     def test_report_generation_rejects_symlinked_scan_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -383,18 +411,18 @@ class ReportsTests(unittest.TestCase):
             )
 
             with self.assertRaises(ValueError):
-                read_report_artifact(artifact, artifact_root=temp_dir)
+                read_report_artifact_file(artifact, artifact_root=temp_dir)
 
     def test_regeneration_reuses_rows_and_keeps_report_content_stable(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with SessionLocal() as db:
                 first_artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
                 first_markdown = next(artifact for artifact in first_artifacts if artifact.report_type == "markdown")
-                first_content = read_report_artifact(first_markdown, artifact_root=temp_dir)
+                first_content = read_report_artifact_file(first_markdown, artifact_root=temp_dir)
 
                 second_artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
                 second_markdown = next(artifact for artifact in second_artifacts if artifact.report_type == "markdown")
-                second_content = read_report_artifact(second_markdown, artifact_root=temp_dir)
+                second_content = read_report_artifact_file(second_markdown, artifact_root=temp_dir)
                 artifacts = db.scalars(select(ReportArtifact).where(ReportArtifact.scan_id == self.scan_id)).all()
 
             self.assertEqual(len(artifacts), 2)
