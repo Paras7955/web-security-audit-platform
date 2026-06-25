@@ -444,7 +444,7 @@ class ScanWorkerTests(unittest.TestCase):
 
                 fake_result = RepoScanResult(findings=(repo_finding,), errors=())
                 with patch("app.scans.lifecycle.run_repo_stub_scan", return_value=fake_result) as repo_scan:
-                    run_repo_scan_job(db, scan, temp_dir, temp_dir)
+                    run_repo_scan_job(db, scan, temp_dir, temp_dir, build_test_allowlist(allowed_modes=("passive", "repo")))
 
                 repo_scan.assert_called_once_with(repo_path=repo_path.resolve())
                 self.assertEqual(scan.status, "completed")
@@ -464,10 +464,53 @@ class ScanWorkerTests(unittest.TestCase):
                 db.commit()
                 db.refresh(scan)
 
-                run_repo_scan_job(db, scan, temp_dir, temp_dir)
+                run_repo_scan_job(db, scan, temp_dir, temp_dir, build_test_allowlist(allowed_modes=("passive", "repo")))
 
                 self.assertEqual(scan.status, "failed")
                 self.assertIn("Repo scans require", scan.error_detail)
+
+    def test_repo_scan_job_fails_when_mode_removed_from_allowlist(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_path = Path(temp_dir) / "security-project"
+            repo_path.mkdir()
+            with SessionLocal() as db:
+                target = db.get(Target, self.target_id)
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(target)
+                self.assertIsNotNone(scan)
+                target.repo_path = str(repo_path)
+                scan.mode = "repo"
+                db.add(target)
+                db.add(scan)
+                db.commit()
+                db.refresh(scan)
+
+                run_repo_scan_job(db, scan, temp_dir, temp_dir, build_test_allowlist(allowed_modes=("passive",)))
+
+                self.assertEqual(scan.status, "failed")
+                self.assertIn("no longer allowed", scan.error_detail)
+
+    def test_repo_scan_job_fails_when_target_removed_from_allowlist(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_path = Path(temp_dir) / "security-project"
+            repo_path.mkdir()
+            with SessionLocal() as db:
+                target = db.get(Target, self.target_id)
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(target)
+                self.assertIsNotNone(scan)
+                target.repo_path = str(repo_path)
+                target.allowlist_id = "removed-target"
+                scan.mode = "repo"
+                db.add(target)
+                db.add(scan)
+                db.commit()
+                db.refresh(scan)
+
+                run_repo_scan_job(db, scan, temp_dir, temp_dir, build_test_allowlist(allowed_modes=("passive", "repo")))
+
+                self.assertEqual(scan.status, "failed")
+                self.assertIn("not present in the allowlist", scan.error_detail)
 
 
 def build_test_allowlist(allowed_modes: tuple[str, ...] = ("passive",)) -> ScanAllowlist:

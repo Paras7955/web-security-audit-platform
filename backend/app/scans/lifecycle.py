@@ -266,13 +266,24 @@ def run_passive_scan_job(
         mark_scan_failed(db, scan, exc)
 
 
-def run_repo_scan_job(db: Session, scan: Scan, artifact_root: str, repo_scan_root: str) -> None:
+def run_repo_scan_job(
+    db: Session,
+    scan: Scan,
+    artifact_root: str,
+    repo_scan_root: str,
+    allowlist: ScanAllowlist,
+) -> None:
     try:
         validate_scan_job(scan)
         if scan.mode != ScanMode.REPO.value:
             raise ScanLifecycleError("Repo scan worker only supports repo scan jobs.")
         if scan.target is None:
             raise ScanLifecycleError("Scan target no longer exists.")
+        allowlist_target = allowlist.get_target(scan.target.allowlist_id)
+        if allowlist_target is None:
+            raise ScanLifecycleError("Scan target is not present in the allowlist.")
+        if scan.mode not in set(allowlist_target.allowed_modes):
+            raise ScanLifecycleError("Scan mode is no longer allowed for this target.")
 
         update_scan_progress(
             db,

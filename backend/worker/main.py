@@ -32,7 +32,7 @@ def main() -> None:
                 print(f"Processing scan {scan.id}", flush=True)
                 allowlist = load_allowlist(settings.allowlist_path)
                 if scan.mode == ScanMode.REPO.value:
-                    run_repo_scan_job(db, scan, settings.artifact_root, settings.repo_scan_root)
+                    run_repo_scan_job(db, scan, settings.artifact_root, settings.repo_scan_root, allowlist)
                 else:
                     run_passive_scan_job(db, scan, settings.artifact_root, allowlist, zap_base_url=settings.zap_base_url)
                 continue
