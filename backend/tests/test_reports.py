@@ -177,6 +177,32 @@ class ReportsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("passive and Active Demo scans", response.json()["detail"])
 
+    def test_reports_omit_unredacted_finding_text(self) -> None:
+        unsafe_secret = "raw-secret-token"
+        with SessionLocal() as db:
+            finding = db.get(Finding, self.finding_id)
+            self.assertIsNotNone(finding)
+            finding.evidence = f"authorization: bearer {unsafe_secret}"
+            finding.reproduction_steps = f"Visit /callback?token={unsafe_secret}"
+            finding.remediation = f"Remove {unsafe_secret}."
+            finding.false_positive_notes = f"Validate {unsafe_secret} manually."
+            finding.redaction_applied = False
+            db.add(finding)
+            db.commit()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with SessionLocal() as db:
+                artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
+                html = next(artifact for artifact in artifacts if artifact.report_type == "html")
+                markdown_content = read_report_artifact(markdown, artifact_root=temp_dir)
+                html_content = read_report_artifact(html, artifact_root=temp_dir)
+
+        self.assertNotIn(unsafe_secret, markdown_content)
+        self.assertNotIn(unsafe_secret, html_content)
+        self.assertIn("No evidence snippet recorded.", markdown_content)
+        self.assertIn("No reproduction steps recorded.", markdown_content)
+
     def test_report_reader_rejects_paths_outside_artifact_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
             outside_path = Path(outside_dir) / "report.md"
@@ -190,6 +216,26 @@ class ReportsTests(unittest.TestCase):
 
             with self.assertRaises(ValueError):
                 read_report_artifact(artifact, artifact_root=temp_dir)
+
+    def test_report_artifact_api_rejects_excluded_scan_modes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
+            with SessionLocal() as db:
+                artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
+                artifact_id = markdown.id
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(scan)
+                scan.mode = "ajax_short"
+                db.add(scan)
+                db.commit()
+
+            list_response = self.client.get(f"/scans/{self.scan_id}/reports")
+            view_response = self.client.get(f"/reports/{artifact_id}")
+            download_response = self.client.get(f"/reports/{artifact_id}/download")
+
+        self.assertEqual(list_response.status_code, 400)
+        self.assertEqual(view_response.status_code, 400)
+        self.assertEqual(download_response.status_code, 400)
 
     def test_report_reader_rejects_unexpected_paths_inside_artifact_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

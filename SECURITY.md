@@ -36,7 +36,7 @@ Do not use this platform for:
 - Store minimal evidence snippets only.
 - Redact sensitive values before database writes, reports, or AI processing.
 - Generate reports only from normalized persisted findings and redacted evidence snippets.
-- Reports and AI are available for completed passive and Active Demo scans only until repo-scan normalization and redaction is implemented.
+- Reports and AI are available for completed passive and Active Demo scans only until AJAX/repo-scan normalization and redaction is explicitly expanded.
 - Secret scan results must be redacted.
 - Never send raw response bodies, raw ZAP output, raw secret scanner output, or unredacted evidence to AI providers.
 

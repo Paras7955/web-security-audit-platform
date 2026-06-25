@@ -47,7 +47,7 @@ def view_report(report_id: str, db: Session = Depends(get_db)) -> Response:
     if artifact is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found.")
     try:
-        content = read_report_artifact(artifact, artifact_root=settings.artifact_root)
+        content = read_report_artifact(artifact, artifact_root=settings.artifact_root, db=db)
     except ReportGenerationError as exc:
         raise report_error(exc) from exc
     media_type = "text/html; charset=utf-8" if artifact.report_type == "html" else "text/markdown; charset=utf-8"
@@ -60,7 +60,7 @@ def download_report(report_id: str, db: Session = Depends(get_db)) -> PlainTextR
     if artifact is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found.")
     try:
-        content = read_report_artifact(artifact, artifact_root=settings.artifact_root)
+        content = read_report_artifact(artifact, artifact_root=settings.artifact_root, db=db)
     except ReportGenerationError as exc:
         raise report_error(exc) from exc
     extension = "html" if artifact.report_type == "html" else "md"

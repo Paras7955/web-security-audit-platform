@@ -40,10 +40,30 @@ class ReportGenerationError(ValueError):
 
 
 @dataclass(frozen=True)
+class ReportFinding:
+    id: str
+    title: str
+    severity: str
+    confidence: str
+    affected_url: str | None
+    affected_file: str | None
+    evidence: str | None
+    source_tool: str
+    scanner_rule_id: str | None
+    cwe: str | None
+    owasp_category: str | None
+    reproduction_steps: str | None
+    remediation: str | None
+    false_positive_notes: str | None
+    redaction_applied: bool
+    created_at: datetime
+
+
+@dataclass(frozen=True)
 class ReportData:
     scan: Scan
     target: Target
-    findings: tuple[Finding, ...]
+    findings: tuple[ReportFinding, ...]
     generated_at: datetime
     ai_explanations: AiExplanationResult
 
@@ -73,7 +93,10 @@ def build_report_data(
         .where(Finding.scan_id == scan.id)
         .order_by(Finding.severity.asc(), Finding.created_at.asc())
     ).all()
-    sorted_findings = tuple(sorted(findings, key=lambda finding: (SEVERITY_ORDER.get(finding.severity, 99), finding.title.lower())))
+    sorted_findings = tuple(
+        safe_report_finding(finding)
+        for finding in sorted(findings, key=lambda finding: (SEVERITY_ORDER.get(finding.severity, 99), finding.title.lower()))
+    )
     ai_explanations = generate_ai_explanations(
         db,
         scan_id=scan.id,
@@ -143,8 +166,10 @@ def get_or_create_report_artifact(db: Session, *, scan_id: str, report_type: str
 
 
 def list_report_artifacts(db: Session, *, scan_id: str) -> list[ReportArtifact]:
-    if db.get(Scan, scan_id) is None:
+    scan = db.get(Scan, scan_id)
+    if scan is None:
         raise ReportGenerationError("Scan not found.")
+    validate_report_scan_mode(scan)
     return list(
         db.scalars(
             select(ReportArtifact)
@@ -154,7 +179,12 @@ def list_report_artifacts(db: Session, *, scan_id: str) -> list[ReportArtifact]:
     )
 
 
-def read_report_artifact(artifact: ReportArtifact, *, artifact_root: str | Path) -> str:
+def read_report_artifact(artifact: ReportArtifact, *, artifact_root: str | Path, db: Session | None = None) -> str:
+    if db is not None:
+        scan = db.get(Scan, artifact.scan_id)
+        if scan is None:
+            raise ReportGenerationError("Scan not found.")
+        validate_report_scan_mode(scan)
     path = validate_report_path(artifact.path, artifact_root, scan_id=artifact.scan_id, report_type=artifact.report_type)
     if path.is_symlink():
         raise ReportGenerationError("Report artifact file must not be a symlink.")
@@ -198,6 +228,33 @@ def write_report_file(path: Path, content: str) -> None:
     if path.is_symlink():
         raise ReportGenerationError("Report artifact file must not be a symlink.")
     path.write_text(content, encoding="utf-8")
+
+
+def validate_report_scan_mode(scan: Scan) -> None:
+    if scan.mode not in REPORT_SCAN_MODES:
+        raise ReportGenerationError("Reports can only be generated for passive and Active Demo scans in Phase 9D.")
+
+
+def safe_report_finding(finding: Finding) -> ReportFinding:
+    redaction_confirmed = bool(finding.redaction_applied)
+    return ReportFinding(
+        id=finding.id,
+        title=finding.title,
+        severity=finding.severity,
+        confidence=finding.confidence,
+        affected_url=finding.affected_url,
+        affected_file=finding.affected_file,
+        evidence=finding.evidence if redaction_confirmed else None,
+        source_tool=finding.source_tool,
+        scanner_rule_id=finding.scanner_rule_id,
+        cwe=finding.cwe,
+        owasp_category=finding.owasp_category,
+        reproduction_steps=finding.reproduction_steps if redaction_confirmed else None,
+        remediation=finding.remediation if redaction_confirmed else None,
+        false_positive_notes=finding.false_positive_notes if redaction_confirmed else None,
+        redaction_applied=redaction_confirmed,
+        created_at=finding.created_at,
+    )
 
 
 def render_markdown_report(data: ReportData) -> str:

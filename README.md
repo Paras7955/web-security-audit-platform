@@ -202,6 +202,7 @@ Implemented Phase 9D capabilities:
 - OpenAI remains optional; the default provider remains deterministic `template`.
 - Provider payload tests prove AI receives only normalized/redacted fields from Active Demo findings.
 - Reports and AI do not receive raw ZAP alerts, raw HTTP bodies, raw artifacts, unredacted evidence, or secrets.
+- AJAX Short remains dashboard/findings-only for reports and AI in Phase 9D.
 - Repo-scan findings remain out of Phase 9D and should be handled only after Phase 10 normalization/redaction exists.
 
 ## Responsible Use

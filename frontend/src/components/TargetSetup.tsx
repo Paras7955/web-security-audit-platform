@@ -443,7 +443,7 @@ export function TargetSetup() {
     <section className="dashboard" aria-labelledby="dashboard-heading">
       <div className="sectionHeader">
         <div>
-          <p className="eyebrow">Phase 9C ZAP AJAX Short</p>
+          <p className="eyebrow">Phase 9D Multi-Mode Reports</p>
           <h2 id="dashboard-heading">Run passive, Active Demo, and AJAX Short scans, review normalized findings, and create reports</h2>
         </div>
         <span className="phaseBadge">Local demo only</span>
@@ -567,7 +567,7 @@ function AiExplanationsPanel({ explanation, message }: { explanation: AiExplanat
     <div className="aiPanel">
       <div className="panelHeader">
         <h3>AI Explanations</h3>
-        <span className="phaseBadge">{explanation?.provider ?? "Phase 9A"}</span>
+        <span className="phaseBadge">{explanation?.provider ?? "Phase 9D"}</span>
       </div>
 
       {explanation ? (
@@ -751,7 +751,7 @@ function ScanLauncher({
     <div className="panel">
       <div className="panelHeader">
         <h3>Scan Mode</h3>
-        <span className="phaseBadge">Phase 9C</span>
+        <span className="phaseBadge">Phase 9D</span>
       </div>
 
       <label className="selectLabel">
