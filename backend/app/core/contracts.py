@@ -22,6 +22,7 @@ class ScanMode(StrEnum):
     PASSIVE = "passive"
     ACTIVE_DEMO = "active_demo"
     AJAX_SHORT = "ajax_short"
+    REPO = "repo"
 
 
 class ScanStatus(StrEnum):

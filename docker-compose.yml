@@ -71,11 +71,13 @@ services:
       DATABASE_URL: postgresql+psycopg://security_audit:security_audit@postgres:5432/security_audit
       ALLOWLIST_PATH: /app/config/scan-allowlist.yml
       ARTIFACT_ROOT: /app/artifacts
+      REPO_SCAN_ROOT: /app/repositories
       ZAP_BASE_URL: http://zap:8080
     ports:
       - "8000:8000"
     volumes:
       - ./config:/app/config:ro
+      - ./:/app/repositories/security-project:ro
       - app-artifacts:/app/artifacts
     depends_on:
       postgres:
@@ -99,9 +101,11 @@ services:
       DATABASE_URL: postgresql+psycopg://security_audit:security_audit@postgres:5432/security_audit
       ALLOWLIST_PATH: /app/config/scan-allowlist.yml
       ARTIFACT_ROOT: /app/artifacts
+      REPO_SCAN_ROOT: /app/repositories
       ZAP_BASE_URL: http://zap:8080
     volumes:
       - ./config:/app/config:ro
+      - ./:/app/repositories/security-project:ro
       - app-artifacts:/app/artifacts
     depends_on:
       postgres:

@@ -1,5 +1,5 @@
 {
-  "scan_modes": ["passive", "active_demo", "ajax_short"],
+  "scan_modes": ["passive", "active_demo", "ajax_short", "repo"],
   "scan_statuses": [
     "queued",
     "validating",

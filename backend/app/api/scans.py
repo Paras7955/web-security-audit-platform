@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, get_scan_allowlist
 from app.api.schemas import ScanCreate, ScanRead
 from app.core.contracts import ScanMode, ScanStatus, ScanStep
+from app.core.config import settings
 from app.models import Scan, Target
+from app.repo_scanner.paths import RepoPathError, validate_repo_path
 from app.security.allowlist import ScanAllowlist
 from app.security.ssrf import SsrfGuardError, validate_destination
 from app.security.target_url import TargetUrlError, match_allowlisted_target
@@ -102,10 +104,18 @@ def validate_scan_mode(
         revalidate_target_record(target, allowlist)
         return mode
 
+    if mode is ScanMode.REPO:
+        revalidate_target_record(target, allowlist)
+        try:
+            validate_repo_path(target.repo_path, repo_scan_root=settings.repo_scan_root)
+        except RepoPathError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return mode
+
     if mode is not ScanMode.PASSIVE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only passive, Active Demo, and AJAX Short scans are available before Phase 10.",
+            detail="Only passive, Active Demo, AJAX Short, and Repo scans are available.",
         )
     revalidate_target_record(target, allowlist)
     return mode

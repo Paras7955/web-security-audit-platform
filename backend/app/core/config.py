@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://security_audit:security_audit@postgres:5432/security_audit"
     allowlist_path: str = default_allowlist_path()
     artifact_root: str = "/app/artifacts"
+    repo_scan_root: str = "/app/repositories"
     ai_provider: str = "template"
     openai_model: str | None = None
     openai_api_key: str | None = None

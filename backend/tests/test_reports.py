@@ -175,7 +175,35 @@ class ReportsTests(unittest.TestCase):
             response = self.client.post(f"/scans/{self.scan_id}/reports")
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("passive and Active Demo scans", response.json()["detail"])
+        self.assertIn("passive, Active Demo, and Repo scans", response.json()["detail"])
+
+    def test_reports_support_repo_scan_without_ai_provider_payload(self) -> None:
+        with SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            scan.mode = "repo"
+            finding = db.get(Finding, self.finding_id)
+            self.assertIsNotNone(finding)
+            finding.source_tool = "gitleaks-stub"
+            finding.affected_url = None
+            finding.affected_file = ".env.example"
+            finding.evidence = "stub_secret=[REDACTED]"
+            db.add(scan)
+            db.add(finding)
+            db.commit()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("app.reports.service.generate_ai_explanations") as ai_provider:
+                with SessionLocal() as db:
+                    artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                    markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
+                    markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
+
+        ai_provider.assert_not_called()
+        self.assertIn("Scan mode: Repo", markdown_content)
+        self.assertIn("Repo scanning: used.", markdown_content)
+        self.assertIn("AI explanations: not generated for repo scans.", markdown_content)
+        self.assertIn("Source tool: gitleaks-stub", markdown_content)
 
     def test_reports_omit_unredacted_finding_text(self) -> None:
         unsafe_secret = "raw-secret-token"
