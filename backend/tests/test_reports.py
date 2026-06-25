@@ -134,11 +134,40 @@ class ReportsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("completed scans", response.json()["detail"])
 
-    def test_reports_require_passive_scan(self) -> None:
+    def test_reports_support_active_demo_scan(self) -> None:
         with SessionLocal() as db:
             scan = db.get(Scan, self.scan_id)
             self.assertIsNotNone(scan)
             scan.mode = "active_demo"
+            finding = db.get(Finding, self.finding_id)
+            self.assertIsNotNone(finding)
+            finding.source_tool = "zap-active"
+            finding.evidence = "ZAP active alert metadata with api_key=[REDACTED]"
+            db.add(scan)
+            db.add(finding)
+            db.commit()
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
+            response = self.client.post(f"/scans/{self.scan_id}/reports")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.json()), 2)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with SessionLocal() as db:
+                artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
+                markdown_content = read_report_artifact(markdown, artifact_root=temp_dir)
+
+        self.assertIn("Scan mode: Active Demo", markdown_content)
+        self.assertIn("ZAP active scan: used.", markdown_content)
+        self.assertIn("Source tool: zap-active", markdown_content)
+
+    def test_reports_reject_ajax_short_scan(self) -> None:
+        with SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            scan.mode = "ajax_short"
             db.add(scan)
             db.commit()
 
@@ -146,7 +175,37 @@ class ReportsTests(unittest.TestCase):
             response = self.client.post(f"/scans/{self.scan_id}/reports")
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("passive scans", response.json()["detail"])
+        self.assertIn("passive and Active Demo scans", response.json()["detail"])
+
+    def test_reports_omit_unredacted_finding_text(self) -> None:
+        unsafe_secret = "raw-secret-token"
+        with SessionLocal() as db:
+            finding = db.get(Finding, self.finding_id)
+            self.assertIsNotNone(finding)
+            finding.affected_url = f"http://user:pass@juice-shop:3000/callback?token={unsafe_secret}#secret"
+            finding.evidence = f"authorization: bearer {unsafe_secret}"
+            finding.reproduction_steps = f"Visit /callback?token={unsafe_secret}"
+            finding.remediation = f"Remove {unsafe_secret}."
+            finding.false_positive_notes = f"Validate {unsafe_secret} manually."
+            finding.redaction_applied = False
+            db.add(finding)
+            db.commit()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with SessionLocal() as db:
+                artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
+                html = next(artifact for artifact in artifacts if artifact.report_type == "html")
+                markdown_content = read_report_artifact(markdown, artifact_root=temp_dir)
+                html_content = read_report_artifact(html, artifact_root=temp_dir)
+
+        self.assertNotIn(unsafe_secret, markdown_content)
+        self.assertNotIn(unsafe_secret, html_content)
+        self.assertNotIn("user:pass", markdown_content)
+        self.assertNotIn("user:pass", html_content)
+        self.assertIn("http://juice-shop:3000/callback", markdown_content)
+        self.assertIn("No evidence snippet recorded.", markdown_content)
+        self.assertIn("No reproduction steps recorded.", markdown_content)
 
     def test_report_reader_rejects_paths_outside_artifact_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
@@ -161,6 +220,47 @@ class ReportsTests(unittest.TestCase):
 
             with self.assertRaises(ValueError):
                 read_report_artifact(artifact, artifact_root=temp_dir)
+
+    def test_report_artifact_api_rejects_excluded_scan_modes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
+            with SessionLocal() as db:
+                artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
+                artifact_id = markdown.id
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(scan)
+                scan.mode = "ajax_short"
+                db.add(scan)
+                db.commit()
+
+            list_response = self.client.get(f"/scans/{self.scan_id}/reports")
+            view_response = self.client.get(f"/reports/{artifact_id}")
+            download_response = self.client.get(f"/reports/{artifact_id}/download")
+
+        self.assertEqual(list_response.status_code, 400)
+        self.assertEqual(view_response.status_code, 400)
+        self.assertEqual(download_response.status_code, 400)
+
+    def test_report_artifact_api_rejects_non_completed_scans(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
+            with SessionLocal() as db:
+                artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
+                artifact_id = markdown.id
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(scan)
+                scan.status = "running"
+                db.add(scan)
+                db.commit()
+
+            list_response = self.client.get(f"/scans/{self.scan_id}/reports")
+            view_response = self.client.get(f"/reports/{artifact_id}")
+            download_response = self.client.get(f"/reports/{artifact_id}/download")
+
+        self.assertEqual(list_response.status_code, 400)
+        self.assertEqual(view_response.status_code, 400)
+        self.assertEqual(download_response.status_code, 400)
+        self.assertIn("completed scans", list_response.json()["detail"])
 
     def test_report_reader_rejects_unexpected_paths_inside_artifact_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

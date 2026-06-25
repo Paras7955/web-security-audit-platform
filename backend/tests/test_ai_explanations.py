@@ -127,7 +127,7 @@ class AiExplanationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("completed scans", response.json()["detail"])
 
-    def test_non_passive_scan_is_not_eligible_for_ai_explanations(self) -> None:
+    def test_active_demo_scan_is_eligible_for_ai_explanations(self) -> None:
         with SessionLocal() as db:
             scan = db.get(Scan, self.scan_id)
             self.assertIsNotNone(scan)
@@ -137,8 +137,21 @@ class AiExplanationTests(unittest.TestCase):
 
         response = self.client.get(f"/scans/{self.scan_id}/ai-explanations")
 
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["provider"], "template")
+
+    def test_ajax_short_scan_is_not_eligible_for_ai_explanations(self) -> None:
+        with SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            scan.mode = "ajax_short"
+            db.add(scan)
+            db.commit()
+
+        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations")
+
         self.assertEqual(response.status_code, 400)
-        self.assertIn("passive scans", response.json()["detail"])
+        self.assertIn("passive and Active Demo scans", response.json()["detail"])
 
     def test_openai_without_configuration_falls_back_to_template(self) -> None:
         with SessionLocal() as db:
@@ -166,6 +179,18 @@ class AiExplanationTests(unittest.TestCase):
 
     def test_provider_receives_only_safe_finding_projection(self) -> None:
         provider = CapturingProvider()
+        with SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            scan.mode = "active_demo"
+            finding = db.get(Finding, self.finding_id)
+            self.assertIsNotNone(finding)
+            finding.source_tool = "zap-active"
+            finding.evidence = "set-cookie: session=[REDACTED]"
+            db.add(scan)
+            db.add(finding)
+            db.commit()
+
         with SessionLocal() as db, patch("app.ai.service.build_provider", return_value=provider):
             generate_ai_explanations(
                 db,
@@ -180,6 +205,7 @@ class AiExplanationTests(unittest.TestCase):
         self.assertNotIn("raw_artifact_ref", payload)
         self.assertNotIn("dedupe_key", payload)
         self.assertIn("[REDACTED]", str(payload["evidence"]))
+        self.assertEqual(payload["source_tool"], "zap-active")
         self.assertNotIn("raw-artifact-id", str(payload))
 
     def test_provider_payload_strips_query_strings_and_unredacted_text(self) -> None:

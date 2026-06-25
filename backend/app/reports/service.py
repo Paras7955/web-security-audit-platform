@@ -7,7 +7,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.service import AiExplanationResult, generate_ai_explanations
+from app.ai.service import AiExplanationResult, generate_ai_explanations, sanitize_provider_url
 from app.core.contracts import ScanMode, ScanStatus
 from app.models import Finding, ReportArtifact, Scan, Target
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
@@ -21,6 +21,10 @@ REPORT_FILENAMES = {
 TERMINAL_REPORT_STATUSES = {
     ScanStatus.COMPLETED.value,
     ScanStatus.COMPLETED_WITH_WARNINGS.value,
+}
+REPORT_SCAN_MODES = {
+    ScanMode.PASSIVE.value,
+    ScanMode.ACTIVE_DEMO.value,
 }
 SEVERITY_ORDER = {
     "critical": 0,
@@ -36,10 +40,30 @@ class ReportGenerationError(ValueError):
 
 
 @dataclass(frozen=True)
+class ReportFinding:
+    id: str
+    title: str
+    severity: str
+    confidence: str
+    affected_url: str | None
+    affected_file: str | None
+    evidence: str | None
+    source_tool: str
+    scanner_rule_id: str | None
+    cwe: str | None
+    owasp_category: str | None
+    reproduction_steps: str | None
+    remediation: str | None
+    false_positive_notes: str | None
+    redaction_applied: bool
+    created_at: datetime
+
+
+@dataclass(frozen=True)
 class ReportData:
     scan: Scan
     target: Target
-    findings: tuple[Finding, ...]
+    findings: tuple[ReportFinding, ...]
     generated_at: datetime
     ai_explanations: AiExplanationResult
 
@@ -57,8 +81,8 @@ def build_report_data(
         raise ReportGenerationError("Scan not found.")
     if scan.status not in TERMINAL_REPORT_STATUSES:
         raise ReportGenerationError("Reports can only be generated for completed scans.")
-    if scan.mode != ScanMode.PASSIVE.value:
-        raise ReportGenerationError("Reports can only be generated for passive scans in Phase 7.")
+    if scan.mode not in REPORT_SCAN_MODES:
+        raise ReportGenerationError("Reports can only be generated for passive and Active Demo scans in Phase 9D.")
 
     target = db.get(Target, scan.target_id)
     if target is None:
@@ -69,7 +93,10 @@ def build_report_data(
         .where(Finding.scan_id == scan.id)
         .order_by(Finding.severity.asc(), Finding.created_at.asc())
     ).all()
-    sorted_findings = tuple(sorted(findings, key=lambda finding: (SEVERITY_ORDER.get(finding.severity, 99), finding.title.lower())))
+    sorted_findings = tuple(
+        safe_report_finding(finding)
+        for finding in sorted(findings, key=lambda finding: (SEVERITY_ORDER.get(finding.severity, 99), finding.title.lower()))
+    )
     ai_explanations = generate_ai_explanations(
         db,
         scan_id=scan.id,
@@ -139,8 +166,10 @@ def get_or_create_report_artifact(db: Session, *, scan_id: str, report_type: str
 
 
 def list_report_artifacts(db: Session, *, scan_id: str) -> list[ReportArtifact]:
-    if db.get(Scan, scan_id) is None:
+    scan = db.get(Scan, scan_id)
+    if scan is None:
         raise ReportGenerationError("Scan not found.")
+    validate_report_scan_eligibility(scan)
     return list(
         db.scalars(
             select(ReportArtifact)
@@ -150,7 +179,12 @@ def list_report_artifacts(db: Session, *, scan_id: str) -> list[ReportArtifact]:
     )
 
 
-def read_report_artifact(artifact: ReportArtifact, *, artifact_root: str | Path) -> str:
+def read_report_artifact(artifact: ReportArtifact, *, artifact_root: str | Path, db: Session | None = None) -> str:
+    if db is not None:
+        scan = db.get(Scan, artifact.scan_id)
+        if scan is None:
+            raise ReportGenerationError("Scan not found.")
+        validate_report_scan_eligibility(scan)
     path = validate_report_path(artifact.path, artifact_root, scan_id=artifact.scan_id, report_type=artifact.report_type)
     if path.is_symlink():
         raise ReportGenerationError("Report artifact file must not be a symlink.")
@@ -196,6 +230,35 @@ def write_report_file(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def validate_report_scan_eligibility(scan: Scan) -> None:
+    if scan.status not in TERMINAL_REPORT_STATUSES:
+        raise ReportGenerationError("Reports can only be generated for completed scans.")
+    if scan.mode not in REPORT_SCAN_MODES:
+        raise ReportGenerationError("Reports can only be generated for passive and Active Demo scans in Phase 9D.")
+
+
+def safe_report_finding(finding: Finding) -> ReportFinding:
+    redaction_confirmed = bool(finding.redaction_applied)
+    return ReportFinding(
+        id=finding.id,
+        title=finding.title,
+        severity=finding.severity,
+        confidence=finding.confidence,
+        affected_url=sanitize_provider_url(finding.affected_url),
+        affected_file=finding.affected_file,
+        evidence=finding.evidence if redaction_confirmed else None,
+        source_tool=finding.source_tool,
+        scanner_rule_id=finding.scanner_rule_id,
+        cwe=finding.cwe,
+        owasp_category=finding.owasp_category,
+        reproduction_steps=finding.reproduction_steps if redaction_confirmed else None,
+        remediation=finding.remediation if redaction_confirmed else None,
+        false_positive_notes=finding.false_positive_notes if redaction_confirmed else None,
+        redaction_applied=redaction_confirmed,
+        created_at=finding.created_at,
+    )
+
+
 def render_markdown_report(data: ReportData) -> str:
     lines = [
         "# Defensive Web App Security Audit Report",
@@ -215,7 +278,7 @@ def render_markdown_report(data: ReportData) -> str:
         "",
         "- Custom passive scanner: used.",
         "- ZAP passive analysis: used for allowlisted URLs.",
-        "- ZAP active scan: not used.",
+        f"- ZAP active scan: {tooling_used(data.scan.mode, ScanMode.ACTIVE_DEMO.value)}.",
         "- AJAX crawl: not used.",
         f"- AI explanations: generated with {data.ai_explanations.provider} provider.",
         "- Repo scanning: not included.",
@@ -227,7 +290,7 @@ def render_markdown_report(data: ReportData) -> str:
         "",
         "This report is for local defensive learning and explicitly authorized testing only.",
         "It is not a professional penetration test, compliance audit, or guarantee that the target is secure.",
-        "Findings are based on bounded passive checks against allowlisted targets.",
+        "Findings are based on bounded checks against allowlisted targets.",
         "",
         "## Redaction Notice",
         "",
@@ -353,7 +416,7 @@ def render_html_report(data: ReportData) -> str:
   <ul>
     <li>Custom passive scanner: used.</li>
     <li>ZAP passive analysis: used for allowlisted URLs.</li>
-    <li>ZAP active scan: not used.</li>
+    <li>ZAP active scan: {escape(tooling_used(data.scan.mode, ScanMode.ACTIVE_DEMO.value))}.</li>
     <li>AJAX crawl: not used.</li>
     <li>AI explanations: generated with {escape(data.ai_explanations.provider)} provider.</li>
     <li>Repo scanning: not included.</li>
@@ -365,7 +428,7 @@ def render_html_report(data: ReportData) -> str:
   <h2>Responsible Use And Limitations</h2>
   <p>This report is for local defensive learning and explicitly authorized testing only.</p>
   <p>It is not a professional penetration test, compliance audit, or guarantee that the target is secure.</p>
-  <p>Findings are based on bounded passive checks against allowlisted targets.</p>
+  <p>Findings are based on bounded checks against allowlisted targets.</p>
 
   <h2>Redaction Notice</h2>
   <p>Evidence is normalized and redacted before persistence and reporting. Full HTTP response bodies are not stored by default.</p>
@@ -447,6 +510,10 @@ def format_scan_mode(mode: str) -> str:
         "active_demo": "Active Demo",
         "ajax_short": "AJAX Short",
     }.get(mode, mode)
+
+
+def tooling_used(scan_mode: str, expected_mode: str) -> str:
+    return "used" if scan_mode == expected_mode else "not used"
 
 
 def format_timestamp(value: datetime) -> str:

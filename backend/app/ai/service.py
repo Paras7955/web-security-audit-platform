@@ -29,6 +29,10 @@ ELIGIBLE_SCAN_STATUSES = {
     ScanStatus.COMPLETED.value,
     ScanStatus.COMPLETED_WITH_WARNINGS.value,
 }
+AI_EXPLANATION_SCAN_MODES = {
+    ScanMode.PASSIVE.value,
+    ScanMode.ACTIVE_DEMO.value,
+}
 
 
 class AiExplanationError(ValueError):
@@ -201,8 +205,8 @@ def generate_ai_explanations(
     scan = db.get(Scan, scan_id)
     if scan is None:
         raise AiExplanationError("Scan not found.")
-    if scan.mode != ScanMode.PASSIVE.value:
-        raise AiExplanationError("AI explanations can only be generated for passive scans.")
+    if scan.mode not in AI_EXPLANATION_SCAN_MODES:
+        raise AiExplanationError("AI explanations can only be generated for passive and Active Demo scans.")
     if scan.status not in ELIGIBLE_SCAN_STATUSES:
         raise AiExplanationError("AI explanations can only be generated for completed scans.")
 

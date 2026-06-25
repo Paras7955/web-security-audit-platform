@@ -97,6 +97,7 @@ type AiExplanation = {
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const terminalStatuses = new Set(["completed", "completed_with_warnings", "failed", "cancelled"]);
 const reportableStatuses = new Set(["completed", "completed_with_warnings"]);
+const reportAndAiModes = new Set(["passive", "active_demo"]);
 const severityFilters = ["all", "info", "low", "medium", "high", "critical"];
 const severityRank: Record<string, number> = {
   critical: 5,
@@ -124,8 +125,8 @@ export function TargetSetup() {
   const [selectedFindingId, setSelectedFindingId] = useState("");
   const [severityFilter, setSeverityFilter] = useState("all");
   const [message, setMessage] = useState<string>("Enter an allowlisted local/demo target.");
-  const [reportMessage, setReportMessage] = useState<string>("Reports are available after a passive scan completes.");
-  const [aiMessage, setAiMessage] = useState<string>("AI explanations are available after a passive scan completes.");
+  const [reportMessage, setReportMessage] = useState<string>("Reports are available after a passive or Active Demo scan completes.");
+  const [aiMessage, setAiMessage] = useState<string>("AI explanations are available after a passive or Active Demo scan completes.");
   const [isBusy, setIsBusy] = useState(false);
   const [isGeneratingReports, setIsGeneratingReports] = useState(false);
   const selectedScanIdRef = useRef("");
@@ -181,15 +182,15 @@ export function TargetSetup() {
       return;
     }
     void loadFindings(selectedScanId, { onlyIfSelected: true });
-    if (selectedScan?.mode === "passive") {
+    if (selectedScan && canUseReportsAndAi(selectedScan)) {
       void loadReports(selectedScanId, { onlyIfSelected: true });
       void loadAiExplanation(selectedScanId, { onlyIfSelected: true });
       return;
     }
     setReports([]);
-    setReportMessage("Reports remain available for passive scans in this phase.");
+    setReportMessage("Reports remain available for passive and Active Demo scans in this phase.");
     setAiExplanation(null);
-    setAiMessage("AI explanations remain available for passive scans in this phase.");
+    setAiMessage("AI explanations remain available for passive and Active Demo scans in this phase.");
   }, [selectedScanId, selectedScan?.mode]);
 
   async function validateTarget(event: FormEvent<HTMLFormElement>) {
@@ -269,8 +270,8 @@ export function TargetSetup() {
       setReports([]);
       setAiExplanation(null);
       setSelectedFindingId("");
-      setReportMessage("Reports are available after this passive scan completes.");
-      setAiMessage("AI explanations are available after this passive scan completes.");
+      setReportMessage("Reports are available after this passive or Active Demo scan completes.");
+      setAiMessage("AI explanations are available after this passive or Active Demo scan completes.");
       setMessage("Scan queued. Worker status will update below.");
       await loadScanHistory(scan.id);
     } catch (error) {
@@ -291,14 +292,14 @@ export function TargetSetup() {
       setScanHistory((current) => mergeScan(current, scan));
       if (terminalStatuses.has(scan.status)) {
         await loadFindings(scan.id, { onlyIfSelected: true });
-        if (scan.mode === "passive") {
+        if (canUseReportsAndAi(scan)) {
           await loadReports(scan.id, { onlyIfSelected: true });
           await loadAiExplanation(scan.id, { onlyIfSelected: true });
         } else if (selectedScanIdRef.current === scan.id) {
           setReports([]);
-          setReportMessage("Reports remain available for passive scans in this phase.");
+          setReportMessage("Reports remain available for passive and Active Demo scans in this phase.");
           setAiExplanation(null);
-          setAiMessage("AI explanations remain available for passive scans in this phase.");
+          setAiMessage("AI explanations remain available for passive and Active Demo scans in this phase.");
         }
       }
     } catch (error) {
@@ -396,7 +397,7 @@ export function TargetSetup() {
           return;
         }
         setAiExplanation(null);
-        setAiMessage("AI explanations are available after this passive scan completes.");
+        setAiMessage("AI explanations are available after this passive or Active Demo scan completes.");
         return;
       }
       const body = (await response.json()) as AiExplanation;
@@ -442,8 +443,8 @@ export function TargetSetup() {
     <section className="dashboard" aria-labelledby="dashboard-heading">
       <div className="sectionHeader">
         <div>
-          <p className="eyebrow">Phase 9C ZAP AJAX Short</p>
-          <h2 id="dashboard-heading">Run passive, Active Demo, and AJAX Short scans, review normalized findings, and create passive reports</h2>
+          <p className="eyebrow">Phase 9D Multi-Mode Reports</p>
+          <h2 id="dashboard-heading">Run passive, Active Demo, and AJAX Short scans, review normalized findings, and create reports</h2>
         </div>
         <span className="phaseBadge">Local demo only</span>
       </div>
@@ -523,20 +524,20 @@ function ReportsPanel({
   isGenerating: boolean;
   onGenerate: () => void;
 }) {
-  const canGenerate = Boolean(scan && scan.mode === "passive" && reportableStatuses.has(scan.status) && !isGenerating);
+  const canGenerate = Boolean(scan && canUseReportsAndAi(scan) && reportableStatuses.has(scan.status) && !isGenerating);
 
   return (
     <div className="reportPanel">
       <div className="panelHeader">
         <h3>Reports</h3>
-        <span className="phaseBadge">Passive</span>
+        <span className="phaseBadge">Passive + Active Demo</span>
       </div>
 
       <div className="reportActions">
         <button type="button" onClick={onGenerate} disabled={!canGenerate}>
           Generate Reports
         </button>
-        <p>{scan && scan.mode !== "passive" ? "Reports remain available for passive scans in this phase." : message}</p>
+        <p>{scan && !canUseReportsAndAi(scan) ? "Reports remain available for passive and Active Demo scans in this phase." : message}</p>
       </div>
 
       {reports.length > 0 ? (
@@ -566,7 +567,7 @@ function AiExplanationsPanel({ explanation, message }: { explanation: AiExplanat
     <div className="aiPanel">
       <div className="panelHeader">
         <h3>AI Explanations</h3>
-        <span className="phaseBadge">{explanation?.provider ?? "Phase 9A"}</span>
+        <span className="phaseBadge">{explanation?.provider ?? "Phase 9D"}</span>
       </div>
 
       {explanation ? (
@@ -750,7 +751,7 @@ function ScanLauncher({
     <div className="panel">
       <div className="panelHeader">
         <h3>Scan Mode</h3>
-        <span className="phaseBadge">Phase 9C</span>
+        <span className="phaseBadge">Phase 9D</span>
       </div>
 
       <label className="selectLabel">
@@ -831,6 +832,10 @@ function formatScanModeLabel(mode: string): string {
     return "AJAX Short";
   }
   return "Passive";
+}
+
+function canUseReportsAndAi(scan: Scan): boolean {
+  return reportAndAiModes.has(scan.mode);
 }
 
 function ScanHistory({
