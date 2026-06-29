@@ -183,6 +183,7 @@ Phase 12 commits so far:
 - `691302c docs: update phase 12 handoff`
 - `4511d94 fix: align app shell review findings`
 - `041331d fix: avoid session claims in app shell`
+- `f377954 docs: close phase 12 handoff`
 
 Verification so far:
 
@@ -194,22 +195,26 @@ Verification so far:
 
 Phase 12 close status:
 
-- Phase review completed.
-- Accepted review findings were fixed in separate commits.
-- Follow-up review confirmed the findings were resolved.
-- Phase 12 is ready for the user to merge back into the base branch.
+- An additional fresh review loop was requested after the initial close-out.
+- Accepted review findings from that loop are being fixed before Phase 12 is marked ready to merge again.
 
 Review decision:
 - Finding: The app shell displayed hard-coded local/dev workspace and auth labels.
 - Decision: Accepted.
 - Rationale: Phase 12 should present a provider-agnostic authenticated workspace shell and avoid implying the real provider/workspace can be inferred in frontend-only state.
-- Follow-up: Replaced the local/dev labels with invariant workspace-scoped data access and bearer-token API boundary language instead of runtime/session claims.
+- Follow-up: Replaced the local/dev labels with invariant workspace-scoped data access language and changed auth-related shell copy to describe protected API routes rather than a credential mechanism or runtime session state.
 
 Review decision:
 - Finding: App shell navigation links were mostly decorative and the first item was always styled as active.
 - Decision: Accepted.
 - Rationale: Operational navigation should point to real sections and avoid misleading active state without route/state tracking.
 - Follow-up: Added stable section anchors for targets, scans, reports, and findings; changed nav items to those anchors; removed the permanent first-item active style.
+
+Review decision:
+- Finding: The overview metric grid stayed four columns on narrow viewports.
+- Decision: Accepted.
+- Rationale: The new first-screen app shell must remain readable on mobile and should follow the existing single-column breakpoint behavior.
+- Follow-up: Added `.metricStrip` to the existing `900px` single-column responsive breakpoint.
 
 ## Current API Surface
 

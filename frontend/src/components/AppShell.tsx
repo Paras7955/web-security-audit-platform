@@ -48,8 +48,8 @@ export function AppShell() {
             <strong>{SCAN_STATUSES.length}</strong>
           </div>
           <div>
-            <span>API auth</span>
-            <strong>Bearer token</strong>
+            <span>API boundary</span>
+            <strong>Protected routes</strong>
           </div>
           <div>
             <span>Target scope</span>

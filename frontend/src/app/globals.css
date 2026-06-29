@@ -895,6 +895,7 @@ select {
 @media (max-width: 900px) {
   .hero,
   .grid,
+  .metricStrip,
   .dashboardGrid,
   .findingsLayout {
     grid-template-columns: 1fr;
