@@ -87,8 +87,9 @@ a {
 }
 
 .appNav a {
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   border-radius: 8px;
+  background: var(--panel);
   color: var(--muted);
   font-size: 0.9rem;
   font-weight: 700;
@@ -96,9 +97,9 @@ a {
   text-decoration: none;
 }
 
-.appNav a:first-child {
-  border-color: var(--border);
-  background: var(--panel);
+.appNav a:hover,
+.appNav a:focus-visible {
+  border-color: #9ccfbd;
   color: var(--foreground);
 }
 

@@ -413,7 +413,7 @@ export function TargetSetup() {
         <span className="phaseBadge">Phase 12 shell</span>
       </div>
 
-      <div className="dashboardGrid">
+      <div className="dashboardGrid" id="targets">
         <div className="workflowPanel">
           <TargetForm
             targetUrl={targetUrl}
@@ -447,30 +447,36 @@ export function TargetSetup() {
           />
         </div>
 
-        <ScanHistory scans={scanHistory} selectedScanId={selectedScanId} onSelectScan={setSelectedScanId} />
+        <div id="scans">
+          <ScanHistory scans={scanHistory} selectedScanId={selectedScanId} onSelectScan={setSelectedScanId} />
+        </div>
       </div>
 
       {selectedScan ? <ScanProgress scan={selectedScan} /> : null}
 
-      <ReportsPanel
-        scan={selectedScan}
-        reports={reports}
-        message={reportMessage}
-        isGenerating={isGeneratingReports}
-        onGenerate={generateReports}
-        onViewReport={viewReport}
-        onDownloadReport={downloadReport}
-      />
+      <div id="reports">
+        <ReportsPanel
+          scan={selectedScan}
+          reports={reports}
+          message={reportMessage}
+          isGenerating={isGeneratingReports}
+          onGenerate={generateReports}
+          onViewReport={viewReport}
+          onDownloadReport={downloadReport}
+        />
+      </div>
 
       <AiExplanationsPanel explanation={aiExplanation} message={aiMessage} />
 
-      <FindingsDashboard
-        findings={filteredFindings}
-        selectedFinding={selectedFinding}
-        severityFilter={severityFilter}
-        onSeverityFilter={setSeverityFilter}
-        onSelectFinding={setSelectedFindingId}
-      />
+      <div id="findings">
+        <FindingsDashboard
+          findings={filteredFindings}
+          selectedFinding={selectedFinding}
+          severityFilter={severityFilter}
+          onSeverityFilter={setSeverityFilter}
+          onSelectFinding={setSelectedFindingId}
+        />
+      </div>
     </section>
   );
 }

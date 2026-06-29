@@ -180,18 +180,32 @@ Phase 12 commits so far:
 
 - `b977d1b refactor: split dashboard workflow components`
 - `46a4bda feat: add authenticated workspace app shell`
+- `691302c docs: update phase 12 handoff`
 
 Verification so far:
 
 - `docker compose build frontend`
 - `docker compose run --rm frontend npm run build`
   - Result: passed after each Phase 12 subdivision.
+- `docker compose run --rm backend python -m unittest discover tests`
+  - Result: 153 tests OK after starting the `juice-shop` Compose service required by allowlist validation tests.
 
 Known verification still needed before Phase 12 close:
 
-- Full backend test suite.
 - Final frontend production build.
-- Phase review and any accepted review-fix commit.
+- Review-fix commit and follow-up review.
+
+Review decision:
+- Finding: The app shell displayed hard-coded local/dev workspace and auth labels.
+- Decision: Accepted.
+- Rationale: Phase 12 should present a provider-agnostic authenticated workspace shell and avoid implying the real provider/workspace can be inferred in frontend-only state.
+- Follow-up: Replaced the local/dev labels with generic workspace isolation and required-auth boundary language.
+
+Review decision:
+- Finding: App shell navigation links were mostly decorative and the first item was always styled as active.
+- Decision: Accepted.
+- Rationale: Operational navigation should point to real sections and avoid misleading active state without route/state tracking.
+- Follow-up: Added stable section anchors for targets, scans, reports, and findings; changed nav items to those anchors; removed the permanent first-item active style.
 
 ## Current API Surface
 

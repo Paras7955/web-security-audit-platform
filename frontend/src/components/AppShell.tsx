@@ -1,7 +1,13 @@
 import { TargetSetup } from "@/components/TargetSetup";
 import { SCAN_MODES, SCAN_STATUSES } from "@/lib/contracts";
 
-const navItems = ["Overview", "Targets", "Scans", "Findings", "Reports"];
+const navItems = [
+  { label: "Overview", href: "#overview" },
+  { label: "Targets", href: "#targets" },
+  { label: "Scans", href: "#scans" },
+  { label: "Reports", href: "#reports" },
+  { label: "Findings", href: "#findings" }
+];
 const safetyRules = [
   "Allowlisted targets only",
   "Workspace-scoped data",
@@ -17,16 +23,16 @@ export function AppShell() {
           <p className="eyebrow">Defensive Web App Security Audit</p>
           <h1>Workspace Security Console</h1>
         </div>
-        <div className="workspaceBadge" aria-label="Current workspace">
+        <div className="workspaceBadge" aria-label="Workspace isolation status">
           <span>Workspace</span>
-          <strong>Local Dev</strong>
+          <strong>Isolated</strong>
         </div>
       </header>
 
       <nav className="appNav" aria-label="Workspace navigation">
         {navItems.map((item) => (
-          <a href={item === "Overview" ? "#overview" : "#workspace-console"} key={item}>
-            {item}
+          <a href={item.href} key={item.href}>
+            {item.label}
           </a>
         ))}
       </nav>
@@ -42,12 +48,12 @@ export function AppShell() {
             <strong>{SCAN_STATUSES.length}</strong>
           </div>
           <div>
-            <span>Auth mode</span>
-            <strong>Bearer</strong>
+            <span>Auth boundary</span>
+            <strong>Required</strong>
           </div>
           <div>
-            <span>Scope</span>
-            <strong>Local</strong>
+            <span>Target scope</span>
+            <strong>Allowlist</strong>
           </div>
         </div>
 
