@@ -12,6 +12,7 @@ from app.db.session import SessionLocal
 from app.main import app
 from app.models import Scan, Target
 from app.security.allowlist import ScanAllowlist
+from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
 class ScanApiTests(unittest.TestCase):
@@ -32,6 +33,7 @@ class ScanApiTests(unittest.TestCase):
         response = self.client.post(
             "/targets",
             json={"target_url": "http://juice-shop:3000", "permission_confirmed": True, "repo_path": repo_path},
+            headers=DEV_AUTH_HEADERS,
         )
         self.assertEqual(response.status_code, 201)
         body = response.json()
@@ -41,7 +43,7 @@ class ScanApiTests(unittest.TestCase):
     def test_create_passive_scan_queues_job(self) -> None:
         target = self.create_target()
 
-        response = self.client.post("/scans", json={"target_id": target["id"], "mode": "passive"})
+        response = self.client.post("/scans", json={"target_id": target["id"], "mode": "passive"}, headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 201)
         body = response.json()
@@ -54,14 +56,14 @@ class ScanApiTests(unittest.TestCase):
         self.assertIn("passive scanner worker", body["status_message"])
 
     def test_create_scan_rejects_missing_target(self) -> None:
-        response = self.client.post("/scans", json={"target_id": str(uuid4()), "mode": "passive"})
+        response = self.client.post("/scans", json={"target_id": str(uuid4()), "mode": "passive"}, headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 404)
 
     def test_create_active_demo_scan_requires_acknowledgement(self) -> None:
         target = self.create_target()
 
-        response = self.client.post("/scans", json={"target_id": target["id"], "mode": "active_demo"})
+        response = self.client.post("/scans", json={"target_id": target["id"], "mode": "active_demo"}, headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("acknowledgement", response.json()["detail"])
@@ -75,6 +77,7 @@ class ScanApiTests(unittest.TestCase):
             response = self.client.post(
                 "/scans",
                 json={"target_id": target.id, "mode": "active_demo", "active_demo_acknowledged": True},
+                headers=DEV_AUTH_HEADERS,
             )
         finally:
             app.dependency_overrides.pop(get_scan_allowlist, None)
@@ -88,6 +91,7 @@ class ScanApiTests(unittest.TestCase):
         response = self.client.post(
             "/scans",
             json={"target_id": target["id"], "mode": "active_demo", "active_demo_acknowledged": True},
+            headers=DEV_AUTH_HEADERS,
         )
 
         self.assertEqual(response.status_code, 201)
@@ -99,7 +103,7 @@ class ScanApiTests(unittest.TestCase):
     def test_create_ajax_short_scan_requires_acknowledgement(self) -> None:
         target = self.create_target()
 
-        response = self.client.post("/scans", json={"target_id": target["id"], "mode": "ajax_short"})
+        response = self.client.post("/scans", json={"target_id": target["id"], "mode": "ajax_short"}, headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("acknowledgement", response.json()["detail"])
@@ -113,6 +117,7 @@ class ScanApiTests(unittest.TestCase):
             response = self.client.post(
                 "/scans",
                 json={"target_id": target.id, "mode": "ajax_short", "ajax_short_acknowledged": True},
+                headers=DEV_AUTH_HEADERS,
             )
         finally:
             app.dependency_overrides.pop(get_scan_allowlist, None)
@@ -126,6 +131,7 @@ class ScanApiTests(unittest.TestCase):
         response = self.client.post(
             "/scans",
             json={"target_id": target["id"], "mode": "ajax_short", "ajax_short_acknowledged": True},
+            headers=DEV_AUTH_HEADERS,
         )
 
         self.assertEqual(response.status_code, 201)
@@ -137,7 +143,7 @@ class ScanApiTests(unittest.TestCase):
     def test_create_repo_scan_requires_configured_repo_path(self) -> None:
         target = self.create_target()
 
-        response = self.client.post("/scans", json={"target_id": target["id"], "mode": "repo"})
+        response = self.client.post("/scans", json={"target_id": target["id"], "mode": "repo"}, headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("Repo scans require", response.json()["detail"])
@@ -148,7 +154,7 @@ class ScanApiTests(unittest.TestCase):
             repo_path.mkdir()
             with patch("app.api.scans.settings.repo_scan_root", temp_dir):
                 target = self.create_target(repo_path=str(repo_path))
-                response = self.client.post("/scans", json={"target_id": target["id"], "mode": "repo"})
+                response = self.client.post("/scans", json={"target_id": target["id"], "mode": "repo"}, headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 201)
         body = response.json()
@@ -162,6 +168,7 @@ class ScanApiTests(unittest.TestCase):
         response = self.client.post(
             "/scans",
             json={"target_id": target.id, "mode": "ajax_short", "ajax_short_acknowledged": True},
+            headers=DEV_AUTH_HEADERS,
         )
 
         self.assertEqual(response.status_code, 400)
@@ -169,11 +176,11 @@ class ScanApiTests(unittest.TestCase):
 
     def test_list_and_get_scan(self) -> None:
         target = self.create_target()
-        created = self.client.post("/scans", json={"target_id": target["id"], "mode": "passive"}).json()
+        created = self.client.post("/scans", json={"target_id": target["id"], "mode": "passive"}, headers=DEV_AUTH_HEADERS).json()
         self.created_scan_ids.append(created["id"])
 
-        detail = self.client.get(f"/scans/{created['id']}")
-        scan_list = self.client.get("/scans")
+        detail = self.client.get(f"/scans/{created['id']}", headers=DEV_AUTH_HEADERS)
+        scan_list = self.client.get("/scans", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.json()["id"], created["id"])
@@ -183,12 +190,15 @@ class ScanApiTests(unittest.TestCase):
     def create_db_target(self, *, allowlist_id: str, base_url: str) -> Target:
         target = Target(
             id=str(uuid4()),
+            workspace_id=DEV_WORKSPACE_ID,
+            created_by_user_id=DEV_USER_ID,
             allowlist_id=allowlist_id,
             name="Remote demo",
             base_url=base_url,
             permission_confirmed=True,
         )
         with SessionLocal() as db:
+            ensure_dev_principal(db)
             db.add(target)
             db.commit()
             db.refresh(target)

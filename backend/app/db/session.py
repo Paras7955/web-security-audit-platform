@@ -10,7 +10,16 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 def check_database_ready() -> bool:
     with engine.connect() as connection:
         connection.execute(text("SELECT 1"))
-        required_tables = {"targets", "scans", "findings", "evidence_artifacts", "report_artifacts"}
+        required_tables = {
+            "platform_users",
+            "auth_identities",
+            "workspaces",
+            "targets",
+            "scans",
+            "findings",
+            "evidence_artifacts",
+            "report_artifacts",
+        }
         existing_tables = set(inspect(connection).get_table_names())
         missing_tables = required_tables - existing_tables
         if missing_tables:

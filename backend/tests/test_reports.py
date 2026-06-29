@@ -12,6 +12,7 @@ from app.db.session import SessionLocal
 from app.main import app
 from app.models import Finding, ReportArtifact, Scan, Target
 from app.reports.service import generate_report_artifacts, read_report_artifact_file
+from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
 class ReportsTests(unittest.TestCase):
@@ -21,9 +22,12 @@ class ReportsTests(unittest.TestCase):
         self.scan_id = str(uuid4())
         self.finding_id = str(uuid4())
         with SessionLocal() as db:
+            ensure_dev_principal(db)
             db.add(
                 Target(
                     id=self.target_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    created_by_user_id=DEV_USER_ID,
                     allowlist_id="juice-shop",
                     name="OWASP Juice Shop",
                     base_url="http://juice-shop:3000/",
@@ -33,6 +37,8 @@ class ReportsTests(unittest.TestCase):
             db.add(
                 Scan(
                     id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    created_by_user_id=DEV_USER_ID,
                     target_id=self.target_id,
                     mode="passive",
                     status="completed",
@@ -46,6 +52,7 @@ class ReportsTests(unittest.TestCase):
             db.add(
                 Finding(
                     id=self.finding_id,
+                    workspace_id=DEV_WORKSPACE_ID,
                     scan_id=self.scan_id,
                     title="<script>alert('xss')</script>",
                     severity="high",
@@ -102,21 +109,21 @@ class ReportsTests(unittest.TestCase):
     def test_generate_reports_api_lists_and_serves_reports(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("app.api.reports.settings.artifact_root", temp_dir):
-                generate_response = self.client.post(f"/scans/{self.scan_id}/reports")
+                generate_response = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
                 self.assertEqual(generate_response.status_code, 201)
                 generated = generate_response.json()
                 self.assertEqual(len(generated), 2)
 
-                list_response = self.client.get(f"/scans/{self.scan_id}/reports")
+                list_response = self.client.get(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
                 self.assertEqual(list_response.status_code, 200)
                 self.assertEqual(len(list_response.json()), 2)
 
                 markdown = next(report for report in generated if report["report_type"] == "markdown")
-                view_response = self.client.get(markdown["view_url"])
+                view_response = self.client.get(markdown["view_url"], headers=DEV_AUTH_HEADERS)
                 self.assertEqual(view_response.status_code, 200)
                 self.assertIn("Defensive Web App Security Audit Report", view_response.text)
 
-                download_response = self.client.get(markdown["download_url"])
+                download_response = self.client.get(markdown["download_url"], headers=DEV_AUTH_HEADERS)
                 self.assertEqual(download_response.status_code, 200)
                 self.assertIn("attachment;", download_response.headers["content-disposition"])
 
@@ -129,7 +136,7 @@ class ReportsTests(unittest.TestCase):
             db.commit()
 
         with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
-            response = self.client.post(f"/scans/{self.scan_id}/reports")
+            response = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("completed scans", response.json()["detail"])
@@ -148,7 +155,7 @@ class ReportsTests(unittest.TestCase):
             db.commit()
 
         with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
-            response = self.client.post(f"/scans/{self.scan_id}/reports")
+            response = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(len(response.json()), 2)
@@ -172,7 +179,7 @@ class ReportsTests(unittest.TestCase):
             db.commit()
 
         with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
-            response = self.client.post(f"/scans/{self.scan_id}/reports")
+            response = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("passive, Active Demo, and Repo scans", response.json()["detail"])
@@ -261,9 +268,9 @@ class ReportsTests(unittest.TestCase):
                 db.add(scan)
                 db.commit()
 
-            list_response = self.client.get(f"/scans/{self.scan_id}/reports")
-            view_response = self.client.get(f"/reports/{artifact_id}")
-            download_response = self.client.get(f"/reports/{artifact_id}/download")
+            list_response = self.client.get(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+            view_response = self.client.get(f"/reports/{artifact_id}", headers=DEV_AUTH_HEADERS)
+            download_response = self.client.get(f"/reports/{artifact_id}/download", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(list_response.status_code, 400)
         self.assertEqual(view_response.status_code, 400)
@@ -281,9 +288,9 @@ class ReportsTests(unittest.TestCase):
                 db.add(scan)
                 db.commit()
 
-            list_response = self.client.get(f"/scans/{self.scan_id}/reports")
-            view_response = self.client.get(f"/reports/{artifact_id}")
-            download_response = self.client.get(f"/reports/{artifact_id}/download")
+            list_response = self.client.get(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+            view_response = self.client.get(f"/reports/{artifact_id}", headers=DEV_AUTH_HEADERS)
+            download_response = self.client.get(f"/reports/{artifact_id}/download", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(list_response.status_code, 400)
         self.assertEqual(view_response.status_code, 400)

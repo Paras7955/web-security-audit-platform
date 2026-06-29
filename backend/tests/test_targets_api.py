@@ -11,6 +11,7 @@ from app.main import app
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models import Target
+from tests.helpers import DEV_AUTH_HEADERS
 
 
 class TargetApiTests(unittest.TestCase):
@@ -26,7 +27,10 @@ class TargetApiTests(unittest.TestCase):
             db.commit()
 
     def test_validate_allowed_target(self) -> None:
-        response = self.client.get(f"/targets/validate?{urlencode({'target_url': 'http://juice-shop:3000'})}")
+        response = self.client.get(
+            f"/targets/validate?{urlencode({'target_url': 'http://juice-shop:3000'})}",
+            headers=DEV_AUTH_HEADERS,
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["allowlist_id"], "juice-shop")
@@ -36,6 +40,7 @@ class TargetApiTests(unittest.TestCase):
         response = self.client.post(
             "/targets",
             json={"target_url": "http://juice-shop:3000", "permission_confirmed": False},
+            headers=DEV_AUTH_HEADERS,
         )
 
         self.assertEqual(response.status_code, 400)
@@ -48,6 +53,7 @@ class TargetApiTests(unittest.TestCase):
                 "permission_confirmed": True,
                 "repo_path": "/repos/example",
             },
+            headers=DEV_AUTH_HEADERS,
         )
 
         self.assertEqual(response.status_code, 201)
@@ -57,13 +63,14 @@ class TargetApiTests(unittest.TestCase):
         self.assertEqual(body["repo_path"], "/repos/example")
         self.assertIsNone(body["auth_profile_id"])
 
-        detail = self.client.get(f"/targets/{body['id']}")
+        detail = self.client.get(f"/targets/{body['id']}", headers=DEV_AUTH_HEADERS)
         self.assertEqual(detail.status_code, 200)
 
     def test_update_target_repo_path_validates_and_persists_path(self) -> None:
         response = self.client.post(
             "/targets",
             json={"target_url": "http://juice-shop:3000", "permission_confirmed": True},
+            headers=DEV_AUTH_HEADERS,
         )
         self.assertEqual(response.status_code, 201)
         body = response.json()
@@ -79,6 +86,7 @@ class TargetApiTests(unittest.TestCase):
                 update = self.client.patch(
                     f"/targets/{body['id']}/repo-path",
                     json={"repo_path": f"  {repo_path}  "},
+                    headers=DEV_AUTH_HEADERS,
                 )
             finally:
                 settings.repo_scan_root = original_root
@@ -90,6 +98,7 @@ class TargetApiTests(unittest.TestCase):
         response = self.client.post(
             "/targets",
             json={"target_url": "http://juice-shop:3000", "permission_confirmed": True},
+            headers=DEV_AUTH_HEADERS,
         )
         self.assertEqual(response.status_code, 201)
         body = response.json()
@@ -98,6 +107,7 @@ class TargetApiTests(unittest.TestCase):
         update = self.client.patch(
             f"/targets/{body['id']}/repo-path",
             json={"repo_path": "relative/repo"},
+            headers=DEV_AUTH_HEADERS,
         )
 
         self.assertEqual(update.status_code, 400)
@@ -125,6 +135,7 @@ class TargetApiTests(unittest.TestCase):
                 "permission_confirmed": True,
                 "auth_profile_id": str(uuid4()),
             },
+            headers=DEV_AUTH_HEADERS,
         )
 
         self.assertEqual(response.status_code, 400)
@@ -133,12 +144,13 @@ class TargetApiTests(unittest.TestCase):
         response = self.client.post(
             "/targets",
             json={"target_url": "https://example.com", "permission_confirmed": True},
+            headers=DEV_AUTH_HEADERS,
         )
 
         self.assertEqual(response.status_code, 400)
 
     def test_missing_target_returns_404(self) -> None:
-        response = self.client.get(f"/targets/{uuid4()}")
+        response = self.client.get(f"/targets/{uuid4()}", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 404)
 

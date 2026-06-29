@@ -160,6 +160,12 @@ def ensure_user_workspace_identity(
     user = db.get(PlatformUser, user_id)
     if user is None:
         db.add(PlatformUser(id=user_id, display_name=display_name))
+        db.flush()
+
+    workspace = db.get(Workspace, workspace_id)
+    if workspace is None:
+        db.add(Workspace(id=workspace_id, owner_user_id=user_id, name=workspace_name))
+        db.flush()
 
     identity = db.scalar(
         select(AuthIdentity).where(
@@ -176,10 +182,6 @@ def ensure_user_workspace_identity(
                 provider_subject=provider_subject,
             )
         )
-
-    workspace = db.get(Workspace, workspace_id)
-    if workspace is None:
-        db.add(Workspace(id=workspace_id, owner_user_id=user_id, name=workspace_name))
     db.commit()
 
 
