@@ -2,112 +2,31 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-type ValidationResult = {
-  allowlist_id: string;
-  name: string;
-  base_url: string;
-  allowed_modes: string[];
-  max_redirects: number;
-  local_demo: boolean;
-};
-
-type Target = {
-  id: string;
-  allowlist_id: string;
-  name: string;
-  base_url: string;
-  allowed_modes: string[];
-  repo_path: string | null;
-  auth_profile_id: string | null;
-  created_at: string;
-};
-
-type Scan = {
-  id: string;
-  target_id: string;
-  mode: string;
-  status: string;
-  current_step: string | null;
-  status_message: string | null;
-  progress_percent: number;
-  started_at: string | null;
-  completed_at: string | null;
-  error_code: string | null;
-  error_detail: string | null;
-  created_at: string;
-};
-
-type Finding = {
-  id: string;
-  scan_id: string;
-  title: string;
-  severity: string;
-  confidence: string;
-  affected_url: string | null;
-  affected_file: string | null;
-  evidence: string | null;
-  source_tool: string;
-  scanner_rule_id: string | null;
-  dedupe_key: string;
-  owasp_category: string | null;
-  cwe: string | null;
-  reproduction_steps: string | null;
-  remediation: string | null;
-  false_positive_notes: string | null;
-  redaction_applied: boolean;
-  raw_artifact_ref: string | null;
-  created_at: string;
-};
-
-type ReportArtifact = {
-  id: string;
-  scan_id: string;
-  report_type: string;
-  view_url: string;
-  download_url: string;
-  created_at: string;
-};
-
-type AiExplanationGroup = {
-  label: string;
-  count: number;
-  finding_ids: string[];
-};
-
-type FindingExplanation = {
-  finding_id: string;
-  priority: number;
-  summary: string;
-  why_it_matters: string;
-  recommended_action: string;
-  owasp_mapping: string;
-  limitations: string;
-};
-
-type AiExplanation = {
-  scan_id: string;
-  provider: string;
-  fallback_used: boolean;
-  provider_error: string | null;
-  summary: string;
-  groups: AiExplanationGroup[];
-  explanations: FindingExplanation[];
-};
-
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-const devAuthToken = process.env.NEXT_PUBLIC_DEV_AUTH_TOKEN ?? "";
-const terminalStatuses = new Set(["completed", "completed_with_warnings", "failed", "cancelled"]);
-const reportableStatuses = new Set(["completed", "completed_with_warnings"]);
-const reportableModes = new Set(["passive", "active_demo", "repo"]);
-const aiModes = new Set(["passive", "active_demo"]);
-const severityFilters = ["all", "info", "low", "medium", "high", "critical"];
-const severityRank: Record<string, number> = {
-  critical: 5,
-  high: 4,
-  medium: 3,
-  low: 2,
-  info: 1
-};
+import { AiExplanationsPanel } from "@/components/dashboard/AiExplanationsPanel";
+import { FindingsDashboard, severityRank } from "@/components/dashboard/FindingsDashboard";
+import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
+import {
+  ScanHistory,
+  ScanLauncher,
+  ScanProgress,
+  canUseAi,
+  canUseReports,
+  formatScanModeLabel,
+  mergeScan,
+  terminalStatuses
+} from "@/components/dashboard/ScanControls";
+import { TargetForm } from "@/components/dashboard/TargetForm";
+import {
+  AiExplanation,
+  Finding,
+  ReportArtifact,
+  Scan,
+  Target,
+  ValidationResult,
+  apiBaseUrl,
+  apiFetch,
+  readJson
+} from "@/lib/securityAuditApi";
 
 export function TargetSetup() {
   const [targetUrl, setTargetUrl] = useState("http://juice-shop:3000");
@@ -126,9 +45,10 @@ export function TargetSetup() {
   const [aiExplanation, setAiExplanation] = useState<AiExplanation | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState("");
   const [severityFilter, setSeverityFilter] = useState("all");
-  const [message, setMessage] = useState<string>("Enter an allowlisted local/demo target.");
-  const [reportMessage, setReportMessage] = useState<string>("Reports are available after a passive, Active Demo, or Repo scan completes.");
-  const [aiMessage, setAiMessage] = useState<string>("AI explanations are available after a passive or Active Demo scan completes.");
+  const [message, setMessage] = useState("Enter an allowlisted local/demo target.");
+  const [reportMessage, setReportMessage] = useState("Reports are available after a passive, Active Demo, or Repo scan completes.");
+  const [aiMessage, setAiMessage] = useState("AI explanations are available after a passive or Active Demo scan completes.");
+  const [bootstrapError, setBootstrapError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [isGeneratingReports, setIsGeneratingReports] = useState(false);
   const selectedScanIdRef = useRef("");
@@ -138,7 +58,7 @@ export function TargetSetup() {
   const selectedScan = scanHistory.find((scan) => scan.id === selectedScanId) ?? null;
   const canCreate = useMemo(() => Boolean(validation && permissionConfirmed && !isBusy), [validation, permissionConfirmed, isBusy]);
   const canStartScan = Boolean(
-      selectedTarget &&
+    selectedTarget &&
       selectedTarget.allowed_modes.includes(scanMode) &&
       !isBusy &&
       (scanMode !== "repo" || Boolean(selectedTarget.repo_path)) &&
@@ -153,8 +73,7 @@ export function TargetSetup() {
   const selectedFinding = filteredFindings.find((finding) => finding.id === selectedFindingId) ?? filteredFindings[0] ?? null;
 
   useEffect(() => {
-    void loadTargets();
-    void loadScanHistory();
+    void loadInitialData();
   }, []);
 
   useEffect(() => {
@@ -199,6 +118,17 @@ export function TargetSetup() {
     setAiMessage("AI explanations remain available for passive and Active Demo scans.");
   }, [selectedScanId, selectedScan?.mode]);
 
+  async function loadInitialData() {
+    setBootstrapError("");
+    const results = await Promise.allSettled([loadTargets(), loadScanHistory()]);
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") {
+      const error = failed.reason;
+      const detail = error instanceof Error ? error.message : "Workspace data could not be loaded.";
+      setBootstrapError(`Workspace data could not be loaded. ${detail}`);
+    }
+  }
+
   async function validateTarget(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsBusy(true);
@@ -207,11 +137,7 @@ export function TargetSetup() {
 
     try {
       const response = await apiFetch(`${apiBaseUrl}/targets/validate?target_url=${encodeURIComponent(targetUrl)}`);
-      const body = await response.json();
-      if (!response.ok) {
-        throw new Error(body.detail ?? "Target validation failed.");
-      }
-      setValidation(body as ValidationResult);
+      setValidation(await readJson<ValidationResult>(response, "Target validation failed."));
       setMessage("Target is allowlisted. Confirm authorization before saving it.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Target validation failed.");
@@ -234,10 +160,7 @@ export function TargetSetup() {
           repo_path: repoPath.trim() || null
         })
       });
-      const body = await response.json();
-      if (!response.ok) {
-        throw new Error(body.detail ?? "Target creation failed.");
-      }
+      const body = await readJson<Target>(response, "Target creation failed.");
       await loadTargets(body.id);
       setMessage("Target saved. Available scan modes are shown below.");
     } catch (error) {
@@ -266,11 +189,7 @@ export function TargetSetup() {
           ajax_short_acknowledged: ajaxShortAcknowledged
         })
       });
-      const body = await response.json();
-      if (!response.ok) {
-        throw new Error(body.detail ?? "Scan creation failed.");
-      }
-      const scan = body as Scan;
+      const scan = await readJson<Scan>(response, "Scan creation failed.");
       setSelectedScanId(scan.id);
       setFindings([]);
       setReports([]);
@@ -299,15 +218,9 @@ export function TargetSetup() {
       const response = await apiFetch(`${apiBaseUrl}/targets/${selectedTarget.id}/repo-path`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          repo_path: repoPath.trim() || null
-        })
+        body: JSON.stringify({ repo_path: repoPath.trim() || null })
       });
-      const body = await response.json();
-      if (!response.ok) {
-        throw new Error(body.detail ?? "Repo path update failed.");
-      }
-      const updatedTarget = body as Target;
+      const updatedTarget = await readJson<Target>(response, "Repo path update failed.");
       setTargets((current) => current.map((target) => (target.id === updatedTarget.id ? updatedTarget : target)));
       setSelectedTargetId(updatedTarget.id);
       setMessage("Repo path attached. Repo scans are available for this target.");
@@ -321,11 +234,7 @@ export function TargetSetup() {
   async function refreshScan(scanId: string) {
     try {
       const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}`);
-      const body = await response.json();
-      if (!response.ok) {
-        throw new Error(body.detail ?? "Scan status refresh failed.");
-      }
-      const scan = body as Scan;
+      const scan = await readJson<Scan>(response, "Scan status refresh failed.");
       setScanHistory((current) => mergeScan(current, scan));
       if (terminalStatuses.has(scan.status)) {
         await loadFindings(scan.id, { onlyIfSelected: true });
@@ -348,33 +257,19 @@ export function TargetSetup() {
   }
 
   async function loadTargets(preferredTargetId?: string) {
-    try {
-      const response = await apiFetch(`${apiBaseUrl}/targets`);
-      if (!response.ok) {
-        return;
-      }
-      const body = (await response.json()) as Target[];
-      setTargets(body);
-      const nextTargetId = preferredTargetId ?? selectedTargetId ?? body[0]?.id ?? "";
-      setSelectedTargetId(nextTargetId);
-    } catch {
-      // Target list is optional until the backend is running locally.
-    }
+    const response = await apiFetch(`${apiBaseUrl}/targets`);
+    const body = await readJson<Target[]>(response, "Target list load failed.");
+    setTargets(body);
+    setSelectedTargetId(preferredTargetId ?? selectedTargetId ?? body[0]?.id ?? "");
+    setBootstrapError("");
   }
 
   async function loadScanHistory(preferredScanId?: string) {
-    try {
-      const response = await apiFetch(`${apiBaseUrl}/scans`);
-      if (!response.ok) {
-        return;
-      }
-      const body = (await response.json()) as Scan[];
-      setScanHistory(body);
-      const nextScanId = preferredScanId ?? selectedScanId ?? body[0]?.id ?? "";
-      setSelectedScanId(nextScanId);
-    } catch {
-      // Scan history is optional until the backend is running locally.
-    }
+    const response = await apiFetch(`${apiBaseUrl}/scans`);
+    const body = await readJson<Scan[]>(response, "Scan history load failed.");
+    setScanHistory(body);
+    setSelectedScanId(preferredScanId ?? selectedScanId ?? body[0]?.id ?? "");
+    setBootstrapError("");
   }
 
   async function loadFindings(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
@@ -463,14 +358,8 @@ export function TargetSetup() {
     setReportMessage("Generating Markdown and HTML reports...");
 
     try {
-      const response = await apiFetch(`${apiBaseUrl}/scans/${selectedScan.id}/reports`, {
-        method: "POST"
-      });
-      const body = await response.json();
-      if (!response.ok) {
-        throw new Error(body.detail ?? "Report generation failed.");
-      }
-      setReports(body as ReportArtifact[]);
+      const response = await apiFetch(`${apiBaseUrl}/scans/${selectedScan.id}/reports`, { method: "POST" });
+      setReports(await readJson<ReportArtifact[]>(response, "Report generation failed."));
       setReportMessage("Reports are ready.");
     } catch (error) {
       setReportMessage(error instanceof Error ? error.message : "Report generation failed.");
@@ -483,8 +372,7 @@ export function TargetSetup() {
     try {
       const response = await apiFetch(`${apiBaseUrl}${report.view_url}`);
       if (!response.ok) {
-        const body = await response.json();
-        throw new Error(body.detail ?? "Report view failed.");
+        await readJson<never>(response, "Report view failed.");
       }
       const content = await response.text();
       const mediaType = report.report_type === "html" ? "text/html" : "text/markdown";
@@ -499,8 +387,7 @@ export function TargetSetup() {
     try {
       const response = await apiFetch(`${apiBaseUrl}${report.download_url}`);
       if (!response.ok) {
-        const body = await response.json();
-        throw new Error(body.detail ?? "Report download failed.");
+        await readJson<never>(response, "Report download failed.");
       }
       const content = await response.text();
       const extension = report.report_type === "html" ? "html" : "md";
@@ -519,13 +406,19 @@ export function TargetSetup() {
     <section className="dashboard" aria-labelledby="dashboard-heading">
       <div className="sectionHeader">
         <div>
-          <p className="eyebrow">Phase 10 Repo Scanning</p>
-          <h2 id="dashboard-heading">Run web and repo scans, review normalized findings, and create reports for reportable modes</h2>
+          <p className="eyebrow">Workspace Console</p>
+          <h2 id="dashboard-heading">Run authorized scans, review normalized findings, and manage reportable evidence</h2>
         </div>
-        <span className="phaseBadge">Local demo only</span>
+        <span className="phaseBadge">Phase 12 shell</span>
       </div>
 
-      <div className="dashboardGrid">
+      {bootstrapError ? (
+        <div className="statusBanner statusBannerError" role="alert">
+          {bootstrapError}
+        </div>
+      ) : null}
+
+      <div className="dashboardGrid" id="targets">
         <div className="workflowPanel">
           <TargetForm
             targetUrl={targetUrl}
@@ -559,630 +452,36 @@ export function TargetSetup() {
           />
         </div>
 
-        <ScanHistory
-          scans={scanHistory}
-          selectedScanId={selectedScanId}
-          onSelectScan={setSelectedScanId}
-        />
+        <div id="scans">
+          <ScanHistory scans={scanHistory} selectedScanId={selectedScanId} onSelectScan={setSelectedScanId} />
+        </div>
       </div>
 
       {selectedScan ? <ScanProgress scan={selectedScan} /> : null}
 
-      <ReportsPanel
-        scan={selectedScan}
-        reports={reports}
-        message={reportMessage}
-        isGenerating={isGeneratingReports}
-        onGenerate={generateReports}
-        onViewReport={viewReport}
-        onDownloadReport={downloadReport}
-      />
+      <div id="reports">
+        <ReportsPanel
+          scan={selectedScan}
+          reports={reports}
+          message={reportMessage}
+          isGenerating={isGeneratingReports}
+          onGenerate={generateReports}
+          onViewReport={viewReport}
+          onDownloadReport={downloadReport}
+        />
+      </div>
 
       <AiExplanationsPanel explanation={aiExplanation} message={aiMessage} />
 
-      <FindingsDashboard
-        findings={filteredFindings}
-        selectedFinding={selectedFinding}
-        severityFilter={severityFilter}
-        onSeverityFilter={setSeverityFilter}
-        onSelectFinding={setSelectedFindingId}
-      />
+      <div id="findings">
+        <FindingsDashboard
+          findings={filteredFindings}
+          selectedFinding={selectedFinding}
+          severityFilter={severityFilter}
+          onSeverityFilter={setSeverityFilter}
+          onSelectFinding={setSelectedFindingId}
+        />
+      </div>
     </section>
   );
-}
-
-function ReportsPanel({
-  scan,
-  reports,
-  message,
-  isGenerating,
-  onGenerate,
-  onViewReport,
-  onDownloadReport
-}: {
-  scan: Scan | null;
-  reports: ReportArtifact[];
-  message: string;
-  isGenerating: boolean;
-  onGenerate: () => void;
-  onViewReport: (report: ReportArtifact) => void;
-  onDownloadReport: (report: ReportArtifact) => void;
-}) {
-  const canGenerate = Boolean(scan && canUseReports(scan) && reportableStatuses.has(scan.status) && !isGenerating);
-
-  return (
-    <div className="reportPanel">
-      <div className="panelHeader">
-        <h3>Reports</h3>
-        <span className="phaseBadge">Passive + Active Demo + Repo</span>
-      </div>
-
-      <div className="reportActions">
-        <button type="button" onClick={onGenerate} disabled={!canGenerate}>
-          Generate Reports
-        </button>
-        <p>{scan && !canUseReports(scan) ? "Reports remain available for passive, Active Demo, and Repo scans." : message}</p>
-      </div>
-
-      {reports.length > 0 ? (
-        <ul className="reportList">
-          {reports.map((report) => (
-            <li key={report.id}>
-              <strong>{report.report_type}</strong>
-              <span>{new Date(report.created_at).toLocaleString()}</span>
-              <button type="button" onClick={() => onViewReport(report)}>
-                View
-              </button>
-              <button type="button" onClick={() => onDownloadReport(report)}>
-                Download
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="emptyState">No report artifacts yet.</p>
-      )}
-    </div>
-  );
-}
-
-async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
-  const headers = new Headers(init.headers);
-  if (devAuthToken) {
-    headers.set("Authorization", `Bearer ${devAuthToken}`);
-  }
-  return fetch(input, { ...init, headers });
-}
-
-function AiExplanationsPanel({ explanation, message }: { explanation: AiExplanation | null; message: string }) {
-  return (
-    <div className="aiPanel">
-      <div className="panelHeader">
-        <h3>AI Explanations</h3>
-        <span className="phaseBadge">{explanation?.provider ?? "Phase 10"}</span>
-      </div>
-
-      {explanation ? (
-        <>
-          <dl className="aiMeta">
-            <div>
-              <dt>Provider</dt>
-              <dd>{explanation.provider}</dd>
-            </div>
-            <div>
-              <dt>Fallback</dt>
-              <dd>{explanation.fallback_used ? "used" : "not used"}</dd>
-            </div>
-            <div>
-              <dt>Groups</dt>
-              <dd>{explanation.groups.length}</dd>
-            </div>
-          </dl>
-          <p>{explanation.summary}</p>
-          {explanation.provider_error ? <p className="errorText">{explanation.provider_error}</p> : null}
-
-          {explanation.groups.length > 0 ? (
-            <ul className="aiGroupList">
-              {explanation.groups.map((group) => (
-                <li key={group.label}>
-                  <strong>{group.label}</strong>
-                  <span>{group.count} finding(s)</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-
-          {explanation.explanations.length > 0 ? (
-            <div className="aiFindingGrid">
-              {explanation.explanations.map((item) => (
-                <div className="aiFinding" key={item.finding_id}>
-                  <div className="aiFindingHeader">
-                    <strong>Priority {item.priority}</strong>
-                    <small>{item.owasp_mapping}</small>
-                  </div>
-                  <p>{item.summary}</p>
-                  <h4>Recommended action</h4>
-                  <p>{item.recommended_action}</p>
-                  <h4>Limitations</h4>
-                  <p>{item.limitations}</p>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </>
-      ) : (
-        <p className="emptyState">{message}</p>
-      )}
-    </div>
-  );
-}
-
-function TargetForm({
-  targetUrl,
-  repoPath,
-  permissionConfirmed,
-  validation,
-  message,
-  isBusy,
-  canCreate,
-  onTargetUrlChange,
-  onRepoPathChange,
-  onPermissionChange,
-  onValidate,
-  onCreateTarget
-}: {
-  targetUrl: string;
-  repoPath: string;
-  permissionConfirmed: boolean;
-  validation: ValidationResult | null;
-  message: string;
-  isBusy: boolean;
-  canCreate: boolean;
-  onTargetUrlChange: (value: string) => void;
-  onRepoPathChange: (value: string) => void;
-  onPermissionChange: (value: boolean) => void;
-  onValidate: (event: FormEvent<HTMLFormElement>) => void;
-  onCreateTarget: () => void;
-}) {
-  return (
-    <div className="panel">
-      <div className="panelHeader">
-        <h3>Target</h3>
-        <span className="phaseBadge">Allowlisted</span>
-      </div>
-
-      <form onSubmit={onValidate} className="targetForm">
-        <label>
-          <span>Target URL</span>
-          <input value={targetUrl} onChange={(event) => onTargetUrlChange(event.target.value)} placeholder="http://juice-shop:3000" />
-        </label>
-
-        <label>
-          <span>Optional local repo path</span>
-          <input value={repoPath} onChange={(event) => onRepoPathChange(event.target.value)} placeholder="/app/repositories/security-project" />
-        </label>
-
-        <label className="checkboxRow">
-          <input
-            type="checkbox"
-            checked={permissionConfirmed}
-            onChange={(event) => onPermissionChange(event.target.checked)}
-          />
-          <span>I own this app, run it locally, or am explicitly authorized to test it.</span>
-        </label>
-
-        <div className="actions">
-          <button type="submit" disabled={isBusy}>
-            Validate
-          </button>
-          <button type="button" onClick={onCreateTarget} disabled={!canCreate}>
-            Save Target
-          </button>
-        </div>
-      </form>
-
-      <p className="formMessage" role="status">
-        {message}
-      </p>
-
-      {validation ? (
-        <div className="validationPanel">
-          <h3>{validation.name}</h3>
-          <dl>
-            <div>
-              <dt>Allowlist ID</dt>
-              <dd>{validation.allowlist_id}</dd>
-            </div>
-            <div>
-              <dt>Canonical URL</dt>
-              <dd>{validation.base_url}</dd>
-            </div>
-            <div>
-              <dt>Allowed Modes</dt>
-              <dd>{validation.allowed_modes.join(", ")}</dd>
-            </div>
-            <div>
-              <dt>Redirect Cap</dt>
-              <dd>{validation.max_redirects}</dd>
-            </div>
-          </dl>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ScanLauncher({
-  targets,
-  selectedTargetId,
-  repoPath,
-  scanMode,
-  activeDemoAcknowledged,
-  ajaxShortAcknowledged,
-  canStartScan,
-  isBusy,
-  onSelectTarget,
-  onSelectScanMode,
-  onAttachRepoPath,
-  onActiveDemoAcknowledged,
-  onAjaxShortAcknowledged,
-  onStartScan
-}: {
-  targets: Target[];
-  selectedTargetId: string;
-  repoPath: string;
-  scanMode: string;
-  activeDemoAcknowledged: boolean;
-  ajaxShortAcknowledged: boolean;
-  canStartScan: boolean;
-  isBusy: boolean;
-  onSelectTarget: (targetId: string) => void;
-  onSelectScanMode: (mode: string) => void;
-  onAttachRepoPath: () => void;
-  onActiveDemoAcknowledged: (acknowledged: boolean) => void;
-  onAjaxShortAcknowledged: (acknowledged: boolean) => void;
-  onStartScan: () => void;
-}) {
-  const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
-  const selectedTargetSupportsMode = selectedTarget?.allowed_modes.includes(scanMode) ?? false;
-  const repoPathMissing = scanMode === "repo" && Boolean(selectedTarget) && !selectedTarget?.repo_path;
-  const canAttachRepoPath = Boolean(selectedTarget && repoPath.trim() && !isBusy);
-
-  return (
-    <div className="panel">
-      <div className="panelHeader">
-        <h3>Scan Mode</h3>
-        <span className="phaseBadge">Phase 10</span>
-      </div>
-
-      <label className="selectLabel">
-        <span>Saved target</span>
-        <select value={selectedTargetId} onChange={(event) => onSelectTarget(event.target.value)}>
-          <option value="">No saved targets</option>
-          {targets.map((target) => (
-            <option key={target.id} value={target.id}>
-              {target.name} - {target.base_url}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <div className="modeGrid" aria-label="Scan mode safety controls">
-        <button
-          type="button"
-          className={scanMode === "passive" ? "modeCard modeCardActive" : "modeCard"}
-          onClick={() => onSelectScanMode("passive")}
-        >
-          <strong>Passive</strong>
-          <span>Custom crawl plus ZAP passive analysis</span>
-        </button>
-        <button
-          type="button"
-          className={scanMode === "active_demo" ? "modeCard modeCardActive" : "modeCard"}
-          onClick={() => onSelectScanMode("active_demo")}
-        >
-          <strong>Active Demo</strong>
-          <span>Bounded ZAP active scan for local demo targets</span>
-        </button>
-        <button
-          type="button"
-          className={scanMode === "ajax_short" ? "modeCard modeCardActive" : "modeCard"}
-          onClick={() => onSelectScanMode("ajax_short")}
-        >
-          <strong>AJAX Short</strong>
-          <span>Bounded ZAP browser crawl for local demo targets</span>
-        </button>
-        <button
-          type="button"
-          className={scanMode === "repo" ? "modeCard modeCardActive" : "modeCard"}
-          onClick={() => onSelectScanMode("repo")}
-        >
-          <strong>Repo</strong>
-          <span>Deterministic secret and dependency scanner adapters</span>
-        </button>
-      </div>
-
-      {scanMode === "active_demo" ? (
-        <label className="checkboxRow scanModeAck">
-          <input
-            type="checkbox"
-            checked={activeDemoAcknowledged}
-            onChange={(event) => onActiveDemoAcknowledged(event.target.checked)}
-          />
-          <span>I understand Active Demo sends bounded active test traffic only to the configured local/demo target.</span>
-        </label>
-      ) : null}
-
-      {scanMode === "ajax_short" ? (
-        <label className="checkboxRow scanModeAck">
-          <input
-            type="checkbox"
-            checked={ajaxShortAcknowledged}
-            onChange={(event) => onAjaxShortAcknowledged(event.target.checked)}
-          />
-          <span>I understand AJAX Short drives a bounded browser crawl only against the configured local/demo target.</span>
-        </label>
-      ) : null}
-
-      {scanMode === "repo" ? (
-        <div className="repoPathNotice">
-          <p className="formMessage">
-            Repo scans use the saved local repo path for this target and do not clone, install dependencies, or execute repo code.
-          </p>
-          {selectedTarget ? (
-            <dl>
-              <div>
-                <dt>Saved repo path</dt>
-                <dd>{selectedTarget.repo_path ?? "None attached"}</dd>
-              </div>
-            </dl>
-          ) : null}
-          {repoPathMissing ? (
-            <div className="inlineAction">
-              <p>Attach the repo path from the target form before starting this repo scan.</p>
-              <button type="button" onClick={onAttachRepoPath} disabled={!canAttachRepoPath}>
-                Attach Repo Path
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="actions">
-        <button type="button" onClick={onStartScan} disabled={!canStartScan || isBusy}>
-          Start {formatScanModeLabel(scanMode)} Scan
-        </button>
-      </div>
-      {selectedTarget && !selectedTargetSupportsMode ? (
-        <p className="formMessage">This scan mode is not allowed for the selected target.</p>
-      ) : null}
-    </div>
-  );
-}
-
-function formatScanModeLabel(mode: string): string {
-  if (mode === "active_demo") {
-    return "Active Demo";
-  }
-  if (mode === "ajax_short") {
-    return "AJAX Short";
-  }
-  if (mode === "repo") {
-    return "Repo";
-  }
-  return "Passive";
-}
-
-function canUseReports(scan: Scan): boolean {
-  return reportableModes.has(scan.mode);
-}
-
-function canUseAi(scan: Scan): boolean {
-  return aiModes.has(scan.mode);
-}
-
-function ScanHistory({
-  scans,
-  selectedScanId,
-  onSelectScan
-}: {
-  scans: Scan[];
-  selectedScanId: string;
-  onSelectScan: (scanId: string) => void;
-}) {
-  return (
-    <div className="panel historyPanel">
-      <div className="panelHeader">
-        <h3>Scan History</h3>
-        <span className="phaseBadge">{scans.length}</span>
-      </div>
-
-      {scans.length > 0 ? (
-        <ul className="scanTimeline">
-          {scans.slice(0, 10).map((scan) => (
-            <li key={scan.id}>
-              <button
-                type="button"
-                className={scan.id === selectedScanId ? "scanRow scanRowSelected" : "scanRow"}
-                onClick={() => onSelectScan(scan.id)}
-              >
-                <span className={`statusDot status-${scan.status}`} />
-                <span>
-                  <strong>{scan.status}</strong>
-                  <small>{scan.current_step ?? "no current step"}</small>
-                </span>
-                <em>{scan.progress_percent}%</em>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="emptyState">No scans yet.</p>
-      )}
-    </div>
-  );
-}
-
-function ScanProgress({ scan }: { scan: Scan }) {
-  return (
-    <div className="scanPanel">
-      <div className="scanHeader">
-        <div>
-          <h3>Selected scan</h3>
-          <small>{scan.id}</small>
-        </div>
-        <span className={`statusPill status-${scan.status}`}>{scan.status}</span>
-      </div>
-      <div className="progressTrack" aria-label="Scan progress">
-        <span style={{ width: `${scan.progress_percent}%` }} />
-      </div>
-      <dl className="scanMeta">
-        <div>
-          <dt>Mode</dt>
-          <dd>{scan.mode}</dd>
-        </div>
-        <div>
-          <dt>Current Step</dt>
-          <dd>{scan.current_step ?? "none"}</dd>
-        </div>
-        <div>
-          <dt>Progress</dt>
-          <dd>{scan.progress_percent}%</dd>
-        </div>
-      </dl>
-      <p>{scan.status_message}</p>
-      {scan.error_detail ? <p className="errorText">{scan.error_detail}</p> : null}
-    </div>
-  );
-}
-
-function FindingsDashboard({
-  findings,
-  selectedFinding,
-  severityFilter,
-  onSeverityFilter,
-  onSelectFinding
-}: {
-  findings: Finding[];
-  selectedFinding: Finding | null;
-  severityFilter: string;
-  onSeverityFilter: (severity: string) => void;
-  onSelectFinding: (findingId: string) => void;
-}) {
-  return (
-    <div className="findingsLayout">
-      <div className="panel findingsPanel">
-        <div className="panelHeader">
-          <h3>Findings</h3>
-          <span className="phaseBadge">{findings.length}</span>
-        </div>
-
-        <div className="filterBar" role="tablist" aria-label="Severity filter">
-          {severityFilters.map((severity) => (
-            <button
-              key={severity}
-              type="button"
-              className={severityFilter === severity ? "filterButton filterButtonActive" : "filterButton"}
-              onClick={() => onSeverityFilter(severity)}
-            >
-              {severity}
-            </button>
-          ))}
-        </div>
-
-        {findings.length > 0 ? (
-          <table className="findingsTable">
-            <thead>
-              <tr>
-                <th>Severity</th>
-                <th>Finding</th>
-                <th>Tool</th>
-                <th>Location</th>
-              </tr>
-            </thead>
-            <tbody>
-              {findings.map((finding) => (
-                <tr key={finding.id} onClick={() => onSelectFinding(finding.id)}>
-                  <td>
-                    <span className={`severity severity-${finding.severity}`}>{finding.severity}</span>
-                  </td>
-                  <td>{finding.title}</td>
-                  <td>{finding.source_tool}</td>
-                  <td>{finding.affected_url ?? finding.affected_file ?? "global"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="emptyState">No findings for this scan/filter.</p>
-        )}
-      </div>
-
-      <FindingDetail finding={selectedFinding} />
-    </div>
-  );
-}
-
-function FindingDetail({ finding }: { finding: Finding | null }) {
-  if (!finding) {
-    return (
-      <div className="panel findingDetail">
-        <div className="panelHeader">
-          <h3>Finding Detail</h3>
-          <span className="phaseBadge">Empty</span>
-        </div>
-        <p className="emptyState">Select a completed scan with findings.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="panel findingDetail">
-      <div className="panelHeader">
-        <h3>{finding.title}</h3>
-        <span className={`severity severity-${finding.severity}`}>{finding.severity}</span>
-      </div>
-
-      <dl>
-        <div>
-          <dt>Confidence</dt>
-          <dd>{finding.confidence}</dd>
-        </div>
-        <div>
-          <dt>Rule ID</dt>
-          <dd>{finding.scanner_rule_id ?? "not provided"}</dd>
-        </div>
-        <div>
-          <dt>CWE</dt>
-          <dd>{finding.cwe ?? "not mapped"}</dd>
-        </div>
-        <div>
-          <dt>OWASP</dt>
-          <dd>{finding.owasp_category ?? "not mapped"}</dd>
-        </div>
-        <div>
-          <dt>Location</dt>
-          <dd>{finding.affected_url ?? finding.affected_file ?? "global"}</dd>
-        </div>
-        <div>
-          <dt>Redaction</dt>
-          <dd>{finding.redaction_applied ? "applied" : "not needed"}</dd>
-        </div>
-      </dl>
-
-      <h4>Evidence</h4>
-      <pre>{finding.evidence ?? "No evidence snippet stored."}</pre>
-
-      <h4>Remediation</h4>
-      <p>{finding.remediation ?? "Remediation guidance is added in later reporting phases."}</p>
-    </div>
-  );
-}
-
-function mergeScan(scans: Scan[], updatedScan: Scan): Scan[] {
-  const found = scans.some((scan) => scan.id === updatedScan.id);
-  if (!found) {
-    return [updatedScan, ...scans];
-  }
-  return scans.map((scan) => (scan.id === updatedScan.id ? updatedScan : scan));
 }

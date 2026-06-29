@@ -151,6 +151,7 @@ Rules:
 - Prefer more commits when it improves reviewability, preserves a clear history, or separates risky safety/security behavior from mechanical wiring.
 - Prefer one commit when splitting would create tiny artificial commits that do not improve understanding.
 - After each commit, report the commit hash, commit message, what changed, what verification ran, and what comes next.
+- Do not update `HANDOFF.md` after each commit-sized subdivision. Treat `HANDOFF.md` as a phase-boundary handoff document: update it at the end of a phase after implementation, verification, review decisions, and accepted review fixes are complete, unless the user explicitly requests an out-of-band instruction/documentation update.
 - The user will push and merge commits after the phase is complete and reviewed.
 - Do not push unless the user explicitly asks.
 - If review-agent changes are accepted, commit those changes separately after the review.

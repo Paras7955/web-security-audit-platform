@@ -264,6 +264,19 @@ AUTH_OIDC_JWKS_URL=
 
 Phase 11 does not add target-application authentication profiles. Those remain planned for Phase 14.
 
+## Phase 12 Status
+
+Phase 12 decomposes the frontend dashboard and replaces the old phase-oriented landing page with an authenticated workspace console. The phase branch has completed implementation and review and is awaiting merge.
+
+Implemented Phase 12 capabilities:
+
+- Split the large `TargetSetup.tsx` dashboard into focused frontend modules for API types/client helpers, target setup, scan launch/history/progress, reports, AI explanations, and findings.
+- Preserved existing target creation, repo path attachment, scan launch, scan polling, findings, reports, and AI explanation behavior.
+- Added an authenticated workspace app shell with top navigation, workspace indicator, overview metrics, and safety status chips.
+- Replaced the landing/contract overview page with the operational workspace console as the first screen.
+
+Phase 12 does not add scan profiles, finding management, risk scoring, or target-application authentication profiles. Those remain planned for later phases.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.
