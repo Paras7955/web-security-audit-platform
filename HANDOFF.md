@@ -184,6 +184,7 @@ Phase 12 commits so far:
 - `4511d94 fix: align app shell review findings`
 - `041331d fix: avoid session claims in app shell`
 - `f377954 docs: close phase 12 handoff`
+- `2458515 fix: resolve app shell review loop findings`
 
 Verification so far:
 
@@ -196,7 +197,9 @@ Verification so far:
 Phase 12 close status:
 
 - An additional fresh review loop was requested after the initial close-out.
-- Accepted review findings from that loop are being fixed before Phase 12 is marked ready to merge again.
+- Accepted review findings from that loop were fixed in `2458515`.
+- Follow-up review confirmed both fresh-loop findings were resolved.
+- Phase 12 is ready for the user to merge back into the base branch.
 
 Review decision:
 - Finding: The app shell displayed hard-coded local/dev workspace and auth labels.
