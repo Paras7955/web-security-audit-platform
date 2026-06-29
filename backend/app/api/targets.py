@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, get_scan_allowlist
+from app.api.deps import get_current_principal, get_db, get_scan_allowlist
 from app.api.schemas import TargetCreate, TargetRead, TargetRepoPathUpdate, TargetValidationRead
 from app.core.config import settings
 from app.models import Target
+from app.security.auth import AuthenticatedPrincipal
 from app.repo_scanner.paths import RepoPathError, validate_repo_path
 from app.security.allowlist import ScanAllowlist
 from app.security.ssrf import SsrfGuardError, validate_destination
@@ -19,6 +20,7 @@ router = APIRouter(prefix="/targets", tags=["targets"])
 @router.get("/validate", response_model=TargetValidationRead)
 def validate_target(
     target_url: str,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
     allowlist: ScanAllowlist = Depends(get_scan_allowlist),
 ) -> TargetValidationRead:
     match = validate_allowed_target_url(target_url, allowlist)
@@ -36,6 +38,7 @@ def validate_target(
 @router.post("", response_model=TargetRead, status_code=status.HTTP_201_CREATED)
 def create_target(
     payload: TargetCreate,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
     allowlist: ScanAllowlist = Depends(get_scan_allowlist),
 ) -> TargetRead:
@@ -55,6 +58,8 @@ def create_target(
 
     target = Target(
         id=str(uuid4()),
+        workspace_id=principal.workspace_id,
+        created_by_user_id=principal.user_id,
         allowlist_id=allowlist_target.id,
         name=allowlist_target.name,
         base_url=match.url.normalized_url,
@@ -70,10 +75,15 @@ def create_target(
 
 @router.get("", response_model=list[TargetRead])
 def list_targets(
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
     allowlist: ScanAllowlist = Depends(get_scan_allowlist),
 ) -> list[TargetRead]:
-    targets = db.scalars(select(Target).order_by(Target.created_at.desc())).all()
+    targets = db.scalars(
+        select(Target)
+        .where(Target.workspace_id == principal.workspace_id)
+        .order_by(Target.created_at.desc())
+    ).all()
     return [target_to_read(target, allowlist) for target in targets]
 
 
@@ -81,10 +91,11 @@ def list_targets(
 def update_target_repo_path(
     target_id: str,
     payload: TargetRepoPathUpdate,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
     allowlist: ScanAllowlist = Depends(get_scan_allowlist),
 ) -> TargetRead:
-    target = db.get(Target, target_id)
+    target = db.scalar(select(Target).where(Target.id == target_id, Target.workspace_id == principal.workspace_id))
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
 
@@ -105,10 +116,11 @@ def update_target_repo_path(
 @router.get("/{target_id}", response_model=TargetRead)
 def get_target(
     target_id: str,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
     allowlist: ScanAllowlist = Depends(get_scan_allowlist),
 ) -> TargetRead:
-    target = db.get(Target, target_id)
+    target = db.scalar(select(Target).where(Target.id == target_id, Target.workspace_id == principal.workspace_id))
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
     return target_to_read(target, allowlist)

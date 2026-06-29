@@ -4,13 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, get_scan_allowlist
+from app.api.deps import get_current_principal, get_db, get_scan_allowlist
 from app.api.schemas import ScanCreate, ScanRead
 from app.core.contracts import ScanMode, ScanStatus, ScanStep
 from app.core.config import settings
 from app.models import Scan, Target
 from app.repo_scanner.paths import RepoPathError, validate_repo_path
 from app.security.allowlist import ScanAllowlist
+from app.security.auth import AuthenticatedPrincipal
 from app.security.ssrf import SsrfGuardError, validate_destination
 from app.security.target_url import TargetUrlError, match_allowlisted_target
 
@@ -20,10 +21,11 @@ router = APIRouter(prefix="/scans", tags=["scans"])
 @router.post("", response_model=ScanRead, status_code=status.HTTP_201_CREATED)
 def create_scan(
     payload: ScanCreate,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
     allowlist: ScanAllowlist = Depends(get_scan_allowlist),
 ) -> ScanRead:
-    target = db.get(Target, payload.target_id)
+    target = db.scalar(select(Target).where(Target.id == payload.target_id, Target.workspace_id == principal.workspace_id))
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
     if not target.permission_confirmed:
@@ -38,6 +40,8 @@ def create_scan(
     )
     scan = Scan(
         id=str(uuid4()),
+        workspace_id=principal.workspace_id,
+        created_by_user_id=principal.user_id,
         target_id=target.id,
         mode=mode.value,
         status=ScanStatus.QUEUED.value,
@@ -52,13 +56,26 @@ def create_scan(
 
 
 @router.get("", response_model=list[ScanRead])
-def list_scans(db: Session = Depends(get_db)) -> list[ScanRead]:
-    return list(db.scalars(select(Scan).order_by(Scan.created_at.desc())).all())
+def list_scans(
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> list[ScanRead]:
+    return list(
+        db.scalars(
+            select(Scan)
+            .where(Scan.workspace_id == principal.workspace_id)
+            .order_by(Scan.created_at.desc())
+        ).all()
+    )
 
 
 @router.get("/{scan_id}", response_model=ScanRead)
-def get_scan(scan_id: str, db: Session = Depends(get_db)) -> ScanRead:
-    scan = db.get(Scan, scan_id)
+def get_scan(
+    scan_id: str,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> ScanRead:
+    scan = db.scalar(select(Scan).where(Scan.id == scan_id, Scan.workspace_id == principal.workspace_id))
     if scan is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
     return scan

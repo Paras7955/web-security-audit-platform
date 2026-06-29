@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.findings.redaction import prepare_evidence_snippet, redact_text
 from app.findings.schemas import EvidenceArtifactInput, NormalizedFindingInput
-from app.models import EvidenceArtifact, Finding
+from app.models import EvidenceArtifact, Finding, Scan
 
 
 MAX_DEDUPE_KEY_LENGTH = 500
@@ -23,6 +23,10 @@ def persist_normalized_findings(
     findings: list[NormalizedFindingInput],
     artifact_root: str | Path,
 ) -> list[Finding]:
+    scan = db.get(Scan, scan_id)
+    if scan is None:
+        raise FindingPersistenceError("scan not found")
+
     persisted: list[Finding] = []
     try:
         for finding_input in findings:
@@ -30,7 +34,7 @@ def persist_normalized_findings(
             if finding_input.raw_artifact is not None:
                 raw_artifact = persist_evidence_artifact(
                     db,
-                    scan_id=scan_id,
+                    scan=scan,
                     artifact=finding_input.raw_artifact,
                     artifact_root=artifact_root,
                 )
@@ -41,6 +45,7 @@ def persist_normalized_findings(
             false_positive_notes, notes_redacted = redact_text(finding_input.false_positive_notes)
             finding = Finding(
                 id=str(uuid4()),
+                workspace_id=scan.workspace_id,
                 scan_id=scan_id,
                 title=finding_input.title,
                 severity=finding_input.severity.value,
@@ -81,14 +86,16 @@ def persist_normalized_findings(
 def persist_evidence_artifact(
     db: Session,
     *,
-    scan_id: str,
+    scan: Scan,
     artifact: EvidenceArtifactInput,
     artifact_root: str | Path,
 ) -> EvidenceArtifact:
     path = validate_artifact_path(artifact.path, artifact_root)
     evidence_artifact = EvidenceArtifact(
         id=str(uuid4()),
-        scan_id=scan_id,
+        workspace_id=scan.workspace_id,
+        created_by_user_id=scan.created_by_user_id,
+        scan_id=scan.id,
         artifact_type=artifact.artifact_type,
         path=str(path),
         redaction_applied=artifact.redaction_applied,
