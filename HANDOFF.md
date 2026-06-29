@@ -314,6 +314,7 @@ Phase 19, `phase-19-demo-seed-docs`:
 - Before each phase, verify clean worktree and create/switch to the dedicated `phase-*` branch.
 - Use multiple focused commits inside a phase.
 - Report each commit hash, message, verification, and next step.
+- Do not edit `HANDOFF.md` after each commit-sized subdivision. Update `HANDOFF.md` only at the end of each phase after implementation, verification, review decisions, and accepted review fixes are complete, unless the user explicitly asks for an out-of-band instruction/documentation update.
 - Run the public review workflow at phase end after implementation commits.
 - Treat review findings as advisory; document accepted/rejected findings in implementation summaries.
 - Commit accepted review fixes separately.
