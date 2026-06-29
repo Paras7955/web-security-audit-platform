@@ -9,6 +9,7 @@ from app.ai.service import AiExplanationResult, TemplateAiProvider, generate_ai_
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import EvidenceArtifact, Finding, Scan, Target
+from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
 class AiExplanationTests(unittest.TestCase):
@@ -18,9 +19,12 @@ class AiExplanationTests(unittest.TestCase):
         self.scan_id = str(uuid4())
         self.finding_id = str(uuid4())
         with SessionLocal() as db:
+            ensure_dev_principal(db)
             db.add(
                 Target(
                     id=self.target_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    created_by_user_id=DEV_USER_ID,
                     allowlist_id="juice-shop",
                     name="OWASP Juice Shop",
                     base_url="http://juice-shop:3000/",
@@ -30,6 +34,8 @@ class AiExplanationTests(unittest.TestCase):
             db.add(
                 Scan(
                     id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    created_by_user_id=DEV_USER_ID,
                     target_id=self.target_id,
                     mode="passive",
                     status="completed",
@@ -42,6 +48,8 @@ class AiExplanationTests(unittest.TestCase):
             db.add(
                 EvidenceArtifact(
                     id="raw-artifact-id",
+                    workspace_id=DEV_WORKSPACE_ID,
+                    created_by_user_id=DEV_USER_ID,
                     scan_id=self.scan_id,
                     artifact_type="http_response",
                     path="/app/artifacts/scans/example/raw.txt",
@@ -51,6 +59,7 @@ class AiExplanationTests(unittest.TestCase):
             db.add(
                 Finding(
                     id=self.finding_id,
+                    workspace_id=DEV_WORKSPACE_ID,
                     scan_id=self.scan_id,
                     title="Missing Content Security Policy",
                     severity="high",
@@ -101,7 +110,7 @@ class AiExplanationTests(unittest.TestCase):
         self.assertIn("Content-Security-Policy", first.explanations[0].recommended_action)
 
     def test_ai_api_returns_explanations(self) -> None:
-        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations")
+        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -110,7 +119,7 @@ class AiExplanationTests(unittest.TestCase):
         self.assertEqual(body["explanations"][0]["finding_id"], self.finding_id)
 
     def test_missing_scan_returns_404(self) -> None:
-        response = self.client.get(f"/scans/{uuid4()}/ai-explanations")
+        response = self.client.get(f"/scans/{uuid4()}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 404)
 
@@ -122,7 +131,7 @@ class AiExplanationTests(unittest.TestCase):
             db.add(scan)
             db.commit()
 
-        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations")
+        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("completed scans", response.json()["detail"])
@@ -135,7 +144,7 @@ class AiExplanationTests(unittest.TestCase):
             db.add(scan)
             db.commit()
 
-        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations")
+        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["provider"], "template")
@@ -148,7 +157,7 @@ class AiExplanationTests(unittest.TestCase):
             db.add(scan)
             db.commit()
 
-        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations")
+        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("passive and Active Demo scans", response.json()["detail"])
@@ -161,7 +170,7 @@ class AiExplanationTests(unittest.TestCase):
             db.add(scan)
             db.commit()
 
-        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations")
+        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("passive and Active Demo scans", response.json()["detail"])
@@ -181,11 +190,11 @@ class AiExplanationTests(unittest.TestCase):
         self.assertIn("OPENAI_API_KEY", result.provider_error or "")
 
     def test_unknown_provider_is_rejected(self) -> None:
-        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations")
+        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
         self.assertEqual(response.status_code, 200)
 
         with patch("app.api.ai.settings.ai_provider", "unexpected"):
-            response = self.client.get(f"/scans/{self.scan_id}/ai-explanations")
+            response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("AI_PROVIDER", response.json()["detail"])
@@ -228,6 +237,7 @@ class AiExplanationTests(unittest.TestCase):
             db.add(
                 Finding(
                     id=unsafe_id,
+                    workspace_id=DEV_WORKSPACE_ID,
                     scan_id=self.scan_id,
                     title="Sensitive callback URL",
                     severity="medium",

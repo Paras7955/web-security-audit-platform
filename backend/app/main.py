@@ -9,6 +9,7 @@ from app.api.targets import router as targets_router
 from app.core.config import settings
 from app.core.contracts import CONTRACTS
 from app.db.session import check_database_ready
+from app.security.auth import validate_auth_settings
 
 app = FastAPI(
     title="Defensive Web App Security Audit Platform",
@@ -29,6 +30,11 @@ app.include_router(scans_router)
 app.include_router(findings_router)
 app.include_router(reports_router)
 app.include_router(ai_router)
+
+
+@app.on_event("startup")
+def validate_startup_configuration() -> None:
+    validate_auth_settings(settings)
 
 
 @app.get("/health")

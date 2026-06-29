@@ -95,6 +95,7 @@ type AiExplanation = {
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const devAuthToken = process.env.NEXT_PUBLIC_DEV_AUTH_TOKEN ?? "";
 const terminalStatuses = new Set(["completed", "completed_with_warnings", "failed", "cancelled"]);
 const reportableStatuses = new Set(["completed", "completed_with_warnings"]);
 const reportableModes = new Set(["passive", "active_demo", "repo"]);
@@ -205,7 +206,7 @@ export function TargetSetup() {
     setMessage("Validating target against the local allowlist...");
 
     try {
-      const response = await fetch(`${apiBaseUrl}/targets/validate?target_url=${encodeURIComponent(targetUrl)}`);
+      const response = await apiFetch(`${apiBaseUrl}/targets/validate?target_url=${encodeURIComponent(targetUrl)}`);
       const body = await response.json();
       if (!response.ok) {
         throw new Error(body.detail ?? "Target validation failed.");
@@ -224,7 +225,7 @@ export function TargetSetup() {
     setMessage("Saving target...");
 
     try {
-      const response = await fetch(`${apiBaseUrl}/targets`, {
+      const response = await apiFetch(`${apiBaseUrl}/targets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -255,7 +256,7 @@ export function TargetSetup() {
     setMessage(`Creating ${formatScanModeLabel(scanMode)} scan...`);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/scans`, {
+      const response = await apiFetch(`${apiBaseUrl}/scans`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -295,7 +296,7 @@ export function TargetSetup() {
     setMessage("Attaching repo path to selected target...");
 
     try {
-      const response = await fetch(`${apiBaseUrl}/targets/${selectedTarget.id}/repo-path`, {
+      const response = await apiFetch(`${apiBaseUrl}/targets/${selectedTarget.id}/repo-path`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -319,7 +320,7 @@ export function TargetSetup() {
 
   async function refreshScan(scanId: string) {
     try {
-      const response = await fetch(`${apiBaseUrl}/scans/${scanId}`);
+      const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}`);
       const body = await response.json();
       if (!response.ok) {
         throw new Error(body.detail ?? "Scan status refresh failed.");
@@ -348,7 +349,7 @@ export function TargetSetup() {
 
   async function loadTargets(preferredTargetId?: string) {
     try {
-      const response = await fetch(`${apiBaseUrl}/targets`);
+      const response = await apiFetch(`${apiBaseUrl}/targets`);
       if (!response.ok) {
         return;
       }
@@ -363,7 +364,7 @@ export function TargetSetup() {
 
   async function loadScanHistory(preferredScanId?: string) {
     try {
-      const response = await fetch(`${apiBaseUrl}/scans`);
+      const response = await apiFetch(`${apiBaseUrl}/scans`);
       if (!response.ok) {
         return;
       }
@@ -378,7 +379,7 @@ export function TargetSetup() {
 
   async function loadFindings(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
     try {
-      const response = await fetch(`${apiBaseUrl}/scans/${scanId}/findings`);
+      const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}/findings`);
       if (!response.ok) {
         if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
           return;
@@ -406,7 +407,7 @@ export function TargetSetup() {
 
   async function loadReports(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
     try {
-      const response = await fetch(`${apiBaseUrl}/scans/${scanId}/reports`);
+      const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}/reports`);
       if (!response.ok) {
         if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
           return;
@@ -430,7 +431,7 @@ export function TargetSetup() {
 
   async function loadAiExplanation(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
     try {
-      const response = await fetch(`${apiBaseUrl}/scans/${scanId}/ai-explanations`);
+      const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}/ai-explanations`);
       if (!response.ok) {
         if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
           return;
@@ -462,7 +463,7 @@ export function TargetSetup() {
     setReportMessage("Generating Markdown and HTML reports...");
 
     try {
-      const response = await fetch(`${apiBaseUrl}/scans/${selectedScan.id}/reports`, {
+      const response = await apiFetch(`${apiBaseUrl}/scans/${selectedScan.id}/reports`, {
         method: "POST"
       });
       const body = await response.json();
@@ -475,6 +476,42 @@ export function TargetSetup() {
       setReportMessage(error instanceof Error ? error.message : "Report generation failed.");
     } finally {
       setIsGeneratingReports(false);
+    }
+  }
+
+  async function viewReport(report: ReportArtifact) {
+    try {
+      const response = await apiFetch(`${apiBaseUrl}${report.view_url}`);
+      if (!response.ok) {
+        const body = await response.json();
+        throw new Error(body.detail ?? "Report view failed.");
+      }
+      const content = await response.text();
+      const mediaType = report.report_type === "html" ? "text/html" : "text/markdown";
+      const url = window.URL.createObjectURL(new Blob([content], { type: mediaType }));
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setReportMessage(error instanceof Error ? error.message : "Report view failed.");
+    }
+  }
+
+  async function downloadReport(report: ReportArtifact) {
+    try {
+      const response = await apiFetch(`${apiBaseUrl}${report.download_url}`);
+      if (!response.ok) {
+        const body = await response.json();
+        throw new Error(body.detail ?? "Report download failed.");
+      }
+      const content = await response.text();
+      const extension = report.report_type === "html" ? "html" : "md";
+      const url = window.URL.createObjectURL(new Blob([content], { type: "application/octet-stream" }));
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `scan-${report.scan_id}-report.${extension}`;
+      anchor.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      setReportMessage(error instanceof Error ? error.message : "Report download failed.");
     }
   }
 
@@ -537,6 +574,8 @@ export function TargetSetup() {
         message={reportMessage}
         isGenerating={isGeneratingReports}
         onGenerate={generateReports}
+        onViewReport={viewReport}
+        onDownloadReport={downloadReport}
       />
 
       <AiExplanationsPanel explanation={aiExplanation} message={aiMessage} />
@@ -557,13 +596,17 @@ function ReportsPanel({
   reports,
   message,
   isGenerating,
-  onGenerate
+  onGenerate,
+  onViewReport,
+  onDownloadReport
 }: {
   scan: Scan | null;
   reports: ReportArtifact[];
   message: string;
   isGenerating: boolean;
   onGenerate: () => void;
+  onViewReport: (report: ReportArtifact) => void;
+  onDownloadReport: (report: ReportArtifact) => void;
 }) {
   const canGenerate = Boolean(scan && canUseReports(scan) && reportableStatuses.has(scan.status) && !isGenerating);
 
@@ -587,12 +630,12 @@ function ReportsPanel({
             <li key={report.id}>
               <strong>{report.report_type}</strong>
               <span>{new Date(report.created_at).toLocaleString()}</span>
-              <a href={`${apiBaseUrl}${report.view_url}`} target="_blank" rel="noreferrer">
+              <button type="button" onClick={() => onViewReport(report)}>
                 View
-              </a>
-              <a href={`${apiBaseUrl}${report.download_url}`}>
+              </button>
+              <button type="button" onClick={() => onDownloadReport(report)}>
                 Download
-              </a>
+              </button>
             </li>
           ))}
         </ul>
@@ -601,6 +644,14 @@ function ReportsPanel({
       )}
     </div>
   );
+}
+
+async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  if (devAuthToken) {
+    headers.set("Authorization", `Bearer ${devAuthToken}`);
+  }
+  return fetch(input, { ...init, headers });
 }
 
 function AiExplanationsPanel({ explanation, message }: { explanation: AiExplanation | null; message: string }) {

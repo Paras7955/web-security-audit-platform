@@ -198,6 +198,7 @@ def generate_ai_explanations(
     db: Session,
     *,
     scan_id: str,
+    workspace_id: str | None = None,
     provider_name: str,
     openai_api_key: str | None,
     openai_model: str | None,
@@ -205,12 +206,14 @@ def generate_ai_explanations(
     scan = db.get(Scan, scan_id)
     if scan is None:
         raise AiExplanationError("Scan not found.")
+    if workspace_id is not None and scan.workspace_id != workspace_id:
+        raise AiExplanationError("Scan not found.")
     if scan.mode not in AI_EXPLANATION_SCAN_MODES:
         raise AiExplanationError("AI explanations can only be generated for passive and Active Demo scans.")
     if scan.status not in ELIGIBLE_SCAN_STATUSES:
         raise AiExplanationError("AI explanations can only be generated for completed scans.")
 
-    safe_findings = load_safe_findings(db, scan_id=scan_id)
+    safe_findings = load_safe_findings(db, scan_id=scan_id, workspace_id=scan.workspace_id)
     template_provider = TemplateAiProvider()
     provider = build_provider(provider_name=provider_name, openai_api_key=openai_api_key, openai_model=openai_model)
     try:
@@ -237,8 +240,12 @@ def build_provider(*, provider_name: str, openai_api_key: str | None, openai_mod
     raise AiExplanationError("AI_PROVIDER must be template or openai.")
 
 
-def load_safe_findings(db: Session, *, scan_id: str) -> tuple[SafeFindingInput, ...]:
-    findings = db.scalars(select(Finding).where(Finding.scan_id == scan_id).order_by(Finding.created_at.asc())).all()
+def load_safe_findings(db: Session, *, scan_id: str, workspace_id: str) -> tuple[SafeFindingInput, ...]:
+    findings = db.scalars(
+        select(Finding)
+        .where(Finding.scan_id == scan_id, Finding.workspace_id == workspace_id)
+        .order_by(Finding.created_at.asc())
+    ).all()
     return tuple(safe_finding_input(finding) for finding in findings)
 
 

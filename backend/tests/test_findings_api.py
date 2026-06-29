@@ -7,6 +7,7 @@ from sqlalchemy import delete
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import Finding, Scan, Target
+from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
 class FindingsApiTests(unittest.TestCase):
@@ -16,9 +17,12 @@ class FindingsApiTests(unittest.TestCase):
         self.scan_id = str(uuid4())
         self.finding_id = str(uuid4())
         with SessionLocal() as db:
+            ensure_dev_principal(db)
             db.add(
                 Target(
                     id=self.target_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    created_by_user_id=DEV_USER_ID,
                     allowlist_id="juice-shop",
                     name="OWASP Juice Shop",
                     base_url="http://juice-shop:3000/",
@@ -28,6 +32,8 @@ class FindingsApiTests(unittest.TestCase):
             db.add(
                 Scan(
                     id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    created_by_user_id=DEV_USER_ID,
                     target_id=self.target_id,
                     mode="passive",
                     status="completed",
@@ -40,6 +46,7 @@ class FindingsApiTests(unittest.TestCase):
             db.add(
                 Finding(
                     id=self.finding_id,
+                    workspace_id=DEV_WORKSPACE_ID,
                     scan_id=self.scan_id,
                     title="Missing Content Security Policy",
                     severity="low",
@@ -63,7 +70,7 @@ class FindingsApiTests(unittest.TestCase):
             db.commit()
 
     def test_list_scan_findings(self) -> None:
-        response = self.client.get(f"/scans/{self.scan_id}/findings")
+        response = self.client.get(f"/scans/{self.scan_id}/findings", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -72,18 +79,18 @@ class FindingsApiTests(unittest.TestCase):
         self.assertEqual(body[0]["source_tool"], "custom-passive")
 
     def test_get_finding_detail(self) -> None:
-        response = self.client.get(f"/findings/{self.finding_id}")
+        response = self.client.get(f"/findings/{self.finding_id}", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["scanner_rule_id"], "header:content-security-policy")
 
     def test_missing_scan_returns_404(self) -> None:
-        response = self.client.get(f"/scans/{uuid4()}/findings")
+        response = self.client.get(f"/scans/{uuid4()}/findings", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 404)
 
     def test_missing_finding_returns_404(self) -> None:
-        response = self.client.get(f"/findings/{uuid4()}")
+        response = self.client.get(f"/findings/{uuid4()}", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 404)
 

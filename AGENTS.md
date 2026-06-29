@@ -30,6 +30,15 @@ Future phase branch names use the `phase-*` convention:
 - Phase 9C: `phase-9c-ajax-short`
 - Phase 9D: `phase-9d-multimode-reports-ai`
 - Phase 10: `phase-10-repo-scanning`
+- Phase 11: `phase-11-auth-workspaces`
+- Phase 12: `phase-12-app-shell`
+- Phase 13: `phase-13-scan-profiles`
+- Phase 14: `phase-14-auth-profiles`
+- Phase 15: `phase-15-dashboards-risk`
+- Phase 16: `phase-16-finding-management`
+- Phase 17: `phase-17-ai-rate-limits`
+- Phase 18: `phase-18-platform-ops`
+- Phase 19: `phase-19-demo-seed-docs`
 
 Historical branches may still use the previous `codex/phase-*` prefix. Do not rename old branches or rewrite branch history for this convention change.
 
@@ -67,6 +76,17 @@ Phase 10 repo scanning uses existing allowlisted targets with a configured local
 - Reports may include completed repo scans after normalization/redaction.
 - Do not send repo-scan findings to AI providers in Phase 10.
 
+Phase 11 platform authentication and workspace isolation:
+
+- Authentication identities are provider-agnostic and use `provider` plus `provider_subject`.
+- Auth0 is the preferred production provider, but do not hard-code Auth0-only identity assumptions into data ownership.
+- Dev auth is only for explicit local/dev configuration and must fail closed in production-like configuration.
+- Dev auth and production OIDC settings must not coexist.
+- Protected API routes must scope data by authenticated workspace in backend code.
+- Direct ID lookups for findings, reports, targets, scans, and generated artifacts must be workspace-scoped.
+- Background jobs and generated artifacts must carry persisted workspace/user context and must not rely only on later ownership lookups.
+- The worker must reject jobs whose persisted workspace context does not match the target workspace.
+
 Post-v1 unless explicitly approved:
 
 - Playwright login/session workflows.
@@ -76,7 +96,7 @@ Post-v1 unless explicitly approved:
 - Nuclei templates.
 - Semgrep/full SAST.
 - PDF export.
-- Multi-user production auth.
+- RBAC, team administration, and production user-management hardening beyond Phase 11 workspace isolation.
 - Public cloud scanning.
 
 ## Safety Requirements
@@ -135,6 +155,7 @@ Rules:
 - Do not push unless the user explicitly asks.
 - If review-agent changes are accepted, commit those changes separately after the review.
 - Include the final phase branch name, commits, verification results, merge reminder, and any extra commits made beyond the original subdivision list in the phase summary.
+- End every implementation or phase summary with an explicit user-action note. If the user must do anything before work can continue or a feature can be fully used, state exactly what is needed, such as a URL, `.env` value, API key name, merge confirmation, manual deployment step, or production configuration. If no user action is needed, say so explicitly.
 
 ## Decision Log Format
 

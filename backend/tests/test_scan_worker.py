@@ -9,7 +9,7 @@ from sqlalchemy import delete, select
 from app.core.contracts import Confidence, ScanStatus, ScanStep, Severity
 from app.db.session import SessionLocal
 from app.findings.schemas import NormalizedFindingInput
-from app.models import Finding, Scan, Target
+from app.models import LEGACY_USER_ID, Finding, Scan, Target, Workspace
 from app.repo_scanner.stubs import RepoScanResult
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
 from app.scans.lifecycle import claim_next_queued_scan, run_internal_lifecycle_job, run_passive_scan_job, run_repo_scan_job
@@ -52,6 +52,7 @@ class ScanWorkerTests(unittest.TestCase):
             db.execute(delete(Finding).where(Finding.scan_id == self.scan_id))
             db.execute(delete(Scan).where(Scan.id == self.scan_id))
             db.execute(delete(Target).where(Target.id == self.target_id))
+            db.execute(delete(Workspace).where(Workspace.id == "different-workspace"))
             db.commit()
 
     def test_worker_claims_queued_scan(self) -> None:
@@ -141,6 +142,25 @@ class ScanWorkerTests(unittest.TestCase):
                 self.assertEqual(scan.status, "failed")
                 self.assertEqual(scan.error_code, "scan_worker_failed")
                 self.assertIn("authorization is not confirmed", scan.error_detail)
+
+    def test_worker_fails_workspace_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with SessionLocal() as db:
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(scan)
+                if db.get(Workspace, "different-workspace") is None:
+                    db.add(Workspace(id="different-workspace", owner_user_id=LEGACY_USER_ID, name="Different Workspace"))
+                    db.flush()
+                scan.workspace_id = "different-workspace"
+                db.add(scan)
+                db.commit()
+                db.refresh(scan)
+
+                run_internal_lifecycle_job(db, scan, temp_dir)
+
+                self.assertEqual(scan.status, "failed")
+                self.assertEqual(scan.error_code, "scan_worker_failed")
+                self.assertIn("workspace does not match target workspace", scan.error_detail)
 
     def test_passive_scan_job_persists_findings(self) -> None:
         allowlist = ScanAllowlist.model_validate(

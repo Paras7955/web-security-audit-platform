@@ -74,11 +74,14 @@ def build_report_data(
     *,
     scan_id: str,
     ai_provider: str,
+    workspace_id: str | None = None,
     openai_api_key: str | None = None,
     openai_model: str | None = None,
 ) -> ReportData:
     scan = db.get(Scan, scan_id)
     if scan is None:
+        raise ReportGenerationError("Scan not found.")
+    if workspace_id is not None and scan.workspace_id != workspace_id:
         raise ReportGenerationError("Scan not found.")
     if scan.status not in TERMINAL_REPORT_STATUSES:
         raise ReportGenerationError("Reports can only be generated for completed scans.")
@@ -88,10 +91,12 @@ def build_report_data(
     target = db.get(Target, scan.target_id)
     if target is None:
         raise ReportGenerationError("Scan target not found.")
+    if target.workspace_id != scan.workspace_id:
+        raise ReportGenerationError("Scan target workspace does not match scan workspace.")
 
     findings = db.scalars(
         select(Finding)
-        .where(Finding.scan_id == scan.id)
+        .where(Finding.scan_id == scan.id, Finding.workspace_id == scan.workspace_id)
         .order_by(Finding.severity.asc(), Finding.created_at.asc())
     ).all()
     sorted_findings = tuple(
@@ -104,6 +109,7 @@ def build_report_data(
         else generate_ai_explanations(
             db,
             scan_id=scan.id,
+            workspace_id=workspace_id,
             provider_name=ai_provider,
             openai_api_key=openai_api_key,
             openai_model=openai_model,
@@ -122,6 +128,7 @@ def generate_report_artifacts(
     db: Session,
     *,
     scan_id: str,
+    workspace_id: str | None = None,
     artifact_root: str | Path,
     ai_provider: str,
     openai_api_key: str | None = None,
@@ -130,6 +137,7 @@ def generate_report_artifacts(
     data = build_report_data(
         db,
         scan_id=scan_id,
+        workspace_id=workspace_id,
         ai_provider=ai_provider,
         openai_api_key=openai_api_key,
         openai_model=openai_model,
@@ -146,7 +154,7 @@ def generate_report_artifacts(
     for report_type, content in rendered.items():
         path = reports_dir / REPORT_FILENAMES[report_type]
         write_report_file(path, content)
-        artifact = get_or_create_report_artifact(db, scan_id=scan_id, report_type=report_type, path=path)
+        artifact = get_or_create_report_artifact(db, scan=data.scan, report_type=report_type, path=path)
         artifacts.append(artifact)
 
     db.commit()
@@ -155,38 +163,60 @@ def generate_report_artifacts(
     return artifacts
 
 
-def get_or_create_report_artifact(db: Session, *, scan_id: str, report_type: str, path: Path) -> ReportArtifact:
+def get_or_create_report_artifact(db: Session, *, scan: Scan, report_type: str, path: Path) -> ReportArtifact:
     artifact = db.scalar(
         select(ReportArtifact).where(
-            ReportArtifact.scan_id == scan_id,
+            ReportArtifact.scan_id == scan.id,
             ReportArtifact.report_type == report_type,
         )
     )
     if artifact is None:
-        artifact = ReportArtifact(id=str(uuid4()), scan_id=scan_id, report_type=report_type, path=str(path.resolve()))
+        artifact = ReportArtifact(
+            id=str(uuid4()),
+            workspace_id=scan.workspace_id,
+            created_by_user_id=scan.created_by_user_id,
+            scan_id=scan.id,
+            report_type=report_type,
+            path=str(path.resolve()),
+        )
     else:
+        artifact.workspace_id = scan.workspace_id
+        artifact.created_by_user_id = scan.created_by_user_id
         artifact.path = str(path.resolve())
     db.add(artifact)
     return artifact
 
 
-def list_report_artifacts(db: Session, *, scan_id: str) -> list[ReportArtifact]:
+def list_report_artifacts(db: Session, *, scan_id: str, workspace_id: str | None = None) -> list[ReportArtifact]:
     scan = db.get(Scan, scan_id)
     if scan is None:
+        raise ReportGenerationError("Scan not found.")
+    if workspace_id is not None and scan.workspace_id != workspace_id:
         raise ReportGenerationError("Scan not found.")
     validate_report_scan_eligibility(scan)
     return list(
         db.scalars(
             select(ReportArtifact)
-            .where(ReportArtifact.scan_id == scan_id)
+            .where(
+                ReportArtifact.scan_id == scan_id,
+                ReportArtifact.workspace_id == scan.workspace_id,
+            )
             .order_by(ReportArtifact.report_type.asc(), ReportArtifact.created_at.asc())
         ).all()
     )
 
 
-def read_report_artifact(db: Session, artifact: ReportArtifact, *, artifact_root: str | Path) -> str:
+def read_report_artifact(
+    db: Session,
+    artifact: ReportArtifact,
+    *,
+    artifact_root: str | Path,
+    workspace_id: str | None = None,
+) -> str:
     scan = db.get(Scan, artifact.scan_id)
     if scan is None:
+        raise ReportGenerationError("Scan not found.")
+    if workspace_id is not None and (scan.workspace_id != workspace_id or artifact.workspace_id != workspace_id):
         raise ReportGenerationError("Scan not found.")
     validate_report_scan_eligibility(scan)
     return read_report_artifact_file(artifact, artifact_root=artifact_root)

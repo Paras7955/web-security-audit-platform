@@ -366,6 +366,10 @@ def validate_scan_job(scan: Scan) -> None:
         raise ScanLifecycleError("Worker only supports passive, Active Demo, AJAX Short, and Repo scan jobs in this phase.")
     if scan.target is None:
         raise ScanLifecycleError("Scan target no longer exists.")
+    if scan.workspace_id != scan.target.workspace_id:
+        raise ScanLifecycleError("Scan workspace does not match target workspace.")
+    if not scan.created_by_user_id:
+        raise ScanLifecycleError("Scan is missing persisted user context.")
     if not scan.target.permission_confirmed:
         raise ScanLifecycleError("Scan target authorization is not confirmed.")
 
