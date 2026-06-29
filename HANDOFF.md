@@ -9,7 +9,7 @@ Do not include private reviewer-loop instructions or any information that should
 ## Current Branch And Phase
 
 - Current phase branch: `phase-12-app-shell`
-- Current phase: Phase 12, Frontend Decomposition And Authenticated App Shell
+- Current phase: Phase 12, Frontend Decomposition And Authenticated App Shell, complete and awaiting merge
 - Base branch at phase start: `main`
 - Phase gate: stop after Phase 12 is complete and reviewed. Do not start Phase 13 until the user confirms this branch has been merged back into the base branch.
 
@@ -66,7 +66,7 @@ Reports are available for completed `passive`, `active_demo`, and `repo` scans. 
 - Phase 9D: multimode report/AI hardening for passive and Active Demo.
 - Phase 10: deterministic repo scan mode, repo path safety, repo findings in reports, repo findings excluded from AI.
 - Phase 11: platform auth, workspace isolation, worker job context, initial repo-visible handoff.
-- Phase 12 in progress: frontend decomposition and authenticated workspace app shell.
+- Phase 12: frontend decomposition and authenticated workspace app shell, complete and awaiting merge.
 
 ## Phase 11 Design
 
@@ -181,19 +181,23 @@ Phase 12 commits so far:
 - `b977d1b refactor: split dashboard workflow components`
 - `46a4bda feat: add authenticated workspace app shell`
 - `691302c docs: update phase 12 handoff`
+- `4511d94 fix: align app shell review findings`
+- `041331d fix: avoid session claims in app shell`
 
 Verification so far:
 
 - `docker compose build frontend`
 - `docker compose run --rm frontend npm run build`
-  - Result: passed after each Phase 12 subdivision.
+  - Result: passed after each Phase 12 subdivision and after each review-fix commit.
 - `docker compose run --rm backend python -m unittest discover tests`
   - Result: 153 tests OK after starting the `juice-shop` Compose service required by allowlist validation tests.
 
-Known verification still needed before Phase 12 close:
+Phase 12 close status:
 
-- Final frontend production build.
-- Review-fix commit and follow-up review.
+- Phase review completed.
+- Accepted review findings were fixed in separate commits.
+- Follow-up review confirmed the findings were resolved.
+- Phase 12 is ready for the user to merge back into the base branch.
 
 Review decision:
 - Finding: The app shell displayed hard-coded local/dev workspace and auth labels.

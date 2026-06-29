@@ -266,7 +266,7 @@ Phase 11 does not add target-application authentication profiles. Those remain p
 
 ## Phase 12 Status
 
-Phase 12 decomposes the frontend dashboard and replaces the old phase-oriented landing page with an authenticated workspace console.
+Phase 12 decomposes the frontend dashboard and replaces the old phase-oriented landing page with an authenticated workspace console. The phase branch has completed implementation and review and is awaiting merge.
 
 Implemented Phase 12 capabilities:
 
