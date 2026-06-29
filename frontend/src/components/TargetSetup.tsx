@@ -48,6 +48,7 @@ export function TargetSetup() {
   const [message, setMessage] = useState("Enter an allowlisted local/demo target.");
   const [reportMessage, setReportMessage] = useState("Reports are available after a passive, Active Demo, or Repo scan completes.");
   const [aiMessage, setAiMessage] = useState("AI explanations are available after a passive or Active Demo scan completes.");
+  const [bootstrapError, setBootstrapError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [isGeneratingReports, setIsGeneratingReports] = useState(false);
   const selectedScanIdRef = useRef("");
@@ -72,8 +73,7 @@ export function TargetSetup() {
   const selectedFinding = filteredFindings.find((finding) => finding.id === selectedFindingId) ?? filteredFindings[0] ?? null;
 
   useEffect(() => {
-    void loadTargets();
-    void loadScanHistory();
+    void loadInitialData();
   }, []);
 
   useEffect(() => {
@@ -117,6 +117,17 @@ export function TargetSetup() {
     setAiExplanation(null);
     setAiMessage("AI explanations remain available for passive and Active Demo scans.");
   }, [selectedScanId, selectedScan?.mode]);
+
+  async function loadInitialData() {
+    setBootstrapError("");
+    const results = await Promise.allSettled([loadTargets(), loadScanHistory()]);
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") {
+      const error = failed.reason;
+      const detail = error instanceof Error ? error.message : "Workspace data could not be loaded.";
+      setBootstrapError(`Workspace data could not be loaded. ${detail}`);
+    }
+  }
 
   async function validateTarget(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -246,31 +257,17 @@ export function TargetSetup() {
   }
 
   async function loadTargets(preferredTargetId?: string) {
-    try {
-      const response = await apiFetch(`${apiBaseUrl}/targets`);
-      if (!response.ok) {
-        return;
-      }
-      const body = (await response.json()) as Target[];
-      setTargets(body);
-      setSelectedTargetId(preferredTargetId ?? selectedTargetId ?? body[0]?.id ?? "");
-    } catch {
-      // Target list is optional until the backend is running locally.
-    }
+    const response = await apiFetch(`${apiBaseUrl}/targets`);
+    const body = await readJson<Target[]>(response, "Target list load failed.");
+    setTargets(body);
+    setSelectedTargetId(preferredTargetId ?? selectedTargetId ?? body[0]?.id ?? "");
   }
 
   async function loadScanHistory(preferredScanId?: string) {
-    try {
-      const response = await apiFetch(`${apiBaseUrl}/scans`);
-      if (!response.ok) {
-        return;
-      }
-      const body = (await response.json()) as Scan[];
-      setScanHistory(body);
-      setSelectedScanId(preferredScanId ?? selectedScanId ?? body[0]?.id ?? "");
-    } catch {
-      // Scan history is optional until the backend is running locally.
-    }
+    const response = await apiFetch(`${apiBaseUrl}/scans`);
+    const body = await readJson<Scan[]>(response, "Scan history load failed.");
+    setScanHistory(body);
+    setSelectedScanId(preferredScanId ?? selectedScanId ?? body[0]?.id ?? "");
   }
 
   async function loadFindings(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
@@ -407,11 +404,17 @@ export function TargetSetup() {
     <section className="dashboard" aria-labelledby="dashboard-heading">
       <div className="sectionHeader">
         <div>
-          <p className="eyebrow">Authenticated Workspace</p>
+          <p className="eyebrow">Workspace Console</p>
           <h2 id="dashboard-heading">Run authorized scans, review normalized findings, and manage reportable evidence</h2>
         </div>
         <span className="phaseBadge">Phase 12 shell</span>
       </div>
+
+      {bootstrapError ? (
+        <div className="statusBanner statusBannerError" role="alert">
+          {bootstrapError}
+        </div>
+      ) : null}
 
       <div className="dashboardGrid" id="targets">
         <div className="workflowPanel">

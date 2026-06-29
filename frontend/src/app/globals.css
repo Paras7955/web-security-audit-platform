@@ -289,6 +289,19 @@ dd {
   white-space: nowrap;
 }
 
+.statusBanner {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+}
+
+.statusBannerError {
+  border-color: #e2a39e;
+  background: #fff5f3;
+  color: #9f2d24;
+}
+
 .targetForm {
   display: grid;
   gap: 14px;

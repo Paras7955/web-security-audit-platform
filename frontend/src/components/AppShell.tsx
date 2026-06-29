@@ -10,7 +10,7 @@ const navItems = [
 ];
 const safetyRules = [
   "Allowlisted targets only",
-  "Workspace-scoped data",
+  "Workspace-owned records",
   "Redacted evidence",
   "Template AI by default"
 ];
@@ -23,9 +23,9 @@ export function AppShell() {
           <p className="eyebrow">Defensive Web App Security Audit</p>
           <h1>Workspace Security Console</h1>
         </div>
-        <div className="workspaceBadge" aria-label="Workspace data boundary">
-          <span>Data access</span>
-          <strong>Workspace-scoped</strong>
+        <div className="workspaceBadge" aria-label="Workspace data model">
+          <span>Data model</span>
+          <strong>Workspace-owned</strong>
         </div>
       </header>
 
@@ -48,8 +48,8 @@ export function AppShell() {
             <strong>{SCAN_STATUSES.length}</strong>
           </div>
           <div>
-            <span>API boundary</span>
-            <strong>Protected routes</strong>
+            <span>API surface</span>
+            <strong>Protected endpoints</strong>
           </div>
           <div>
             <span>Target scope</span>

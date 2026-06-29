@@ -199,13 +199,13 @@ Phase 12 close status:
 - An additional fresh review loop was requested after the initial close-out.
 - Accepted review findings from that loop were fixed in `2458515`.
 - Follow-up review confirmed both fresh-loop findings were resolved.
-- Phase 12 is ready for the user to merge back into the base branch.
+- A broader follow-up review loop found additional noticeable issues and fixes are pending verification before Phase 12 is marked ready to merge again.
 
 Review decision:
 - Finding: The app shell displayed hard-coded local/dev workspace and auth labels.
 - Decision: Accepted.
 - Rationale: Phase 12 should present a provider-agnostic authenticated workspace shell and avoid implying the real provider/workspace can be inferred in frontend-only state.
-- Follow-up: Replaced the local/dev labels with invariant workspace-scoped data access language and changed auth-related shell copy to describe protected API routes rather than a credential mechanism or runtime session state.
+- Follow-up: Replaced current-session styled labels with neutral architecture/data-model language and changed auth-related shell copy to describe protected API endpoints rather than a credential mechanism or runtime session state.
 
 Review decision:
 - Finding: App shell navigation links were mostly decorative and the first item was always styled as active.
@@ -218,6 +218,12 @@ Review decision:
 - Decision: Accepted.
 - Rationale: The new first-screen app shell must remain readable on mobile and should follow the existing single-column breakpoint behavior.
 - Follow-up: Added `.metricStrip` to the existing `900px` single-column responsive breakpoint.
+
+Review decision:
+- Finding: Initial target/scan bootstrap failures were silently treated as empty target/scan data.
+- Decision: Accepted.
+- Rationale: After Phase 12 made the shell the first screen, unauthenticated, forbidden, or backend-unavailable states must be visible instead of appearing as a valid empty workspace.
+- Follow-up: Initial target and scan loaders now use shared response error handling and display a bootstrap error banner on load failure.
 
 ## Current API Surface
 
