@@ -187,6 +187,7 @@ Phase 12 commits so far:
 - `2458515 fix: resolve app shell review loop findings`
 - `526af1f docs: record phase 12 review loop`
 - `09ee453 fix: surface app shell bootstrap failures`
+- `ac3820b fix: clear recovered bootstrap errors`
 
 Verification so far:
 
@@ -200,7 +201,9 @@ Phase 12 close status:
 
 - Corrected review loop is now using one fresh `gpt-5.4` reviewer with repeated broad passes.
 - The first corrected-loop pass found one accepted stale-bootstrap-banner bug and one residual frontend coverage gap.
-- Accepted fixes are pending verification and follow-up broad review before Phase 12 is marked ready to merge again.
+- Accepted fixes were committed in `ac3820b`.
+- Follow-up broad pass from the same reviewer found no additional actionable issues meeting the review bar.
+- Phase 12 is ready for the user to merge back into the base branch.
 
 Review decision:
 - Finding: The app shell displayed hard-coded local/dev workspace and auth labels.
