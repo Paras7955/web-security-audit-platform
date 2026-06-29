@@ -155,6 +155,7 @@ Rules:
 - Do not push unless the user explicitly asks.
 - If review-agent changes are accepted, commit those changes separately after the review.
 - Include the final phase branch name, commits, verification results, merge reminder, and any extra commits made beyond the original subdivision list in the phase summary.
+- End every implementation or phase summary with an explicit user-action note. If the user must do anything before work can continue or a feature can be fully used, state exactly what is needed, such as a URL, `.env` value, API key name, merge confirmation, manual deployment step, or production configuration. If no user action is needed, say so explicitly.
 
 ## Decision Log Format
 

@@ -238,3 +238,4 @@ Phase 19, `phase-19-demo-seed-docs`:
 - Commit accepted review fixes separately.
 - Do not push unless the user explicitly asks.
 - Stop at phase boundaries and wait for user approval plus merge confirmation before starting the next phase.
+- End every implementation or phase summary with a clear user-action note. If the user must do anything before work can continue or a feature can be fully used, state exactly what is needed, such as a URL, `.env` value, API key name, merge confirmation, manual deployment step, or production configuration. If no user action is needed, say so explicitly.
