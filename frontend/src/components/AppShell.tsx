@@ -23,9 +23,9 @@ export function AppShell() {
           <p className="eyebrow">Defensive Web App Security Audit</p>
           <h1>Workspace Security Console</h1>
         </div>
-        <div className="workspaceBadge" aria-label="Workspace isolation status">
-          <span>Workspace</span>
-          <strong>Isolated</strong>
+        <div className="workspaceBadge" aria-label="Workspace data boundary">
+          <span>Data access</span>
+          <strong>Workspace-scoped</strong>
         </div>
       </header>
 
@@ -48,8 +48,8 @@ export function AppShell() {
             <strong>{SCAN_STATUSES.length}</strong>
           </div>
           <div>
-            <span>Auth boundary</span>
-            <strong>Required</strong>
+            <span>API auth</span>
+            <strong>Bearer token</strong>
           </div>
           <div>
             <span>Target scope</span>

@@ -199,7 +199,7 @@ Review decision:
 - Finding: The app shell displayed hard-coded local/dev workspace and auth labels.
 - Decision: Accepted.
 - Rationale: Phase 12 should present a provider-agnostic authenticated workspace shell and avoid implying the real provider/workspace can be inferred in frontend-only state.
-- Follow-up: Replaced the local/dev labels with generic workspace isolation and required-auth boundary language.
+- Follow-up: Replaced the local/dev labels with invariant workspace-scoped data access and bearer-token API boundary language instead of runtime/session claims.
 
 Review decision:
 - Finding: App shell navigation links were mostly decorative and the first item was always styled as active.
