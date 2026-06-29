@@ -13,10 +13,20 @@ def default_allowlist_path() -> str:
 
 
 class Settings(BaseSettings):
+    app_env: str = "local"
     database_url: str = "postgresql+psycopg://security_audit:security_audit@postgres:5432/security_audit"
     allowlist_path: str = default_allowlist_path()
     artifact_root: str = "/app/artifacts"
     repo_scan_root: str = "/app/repositories"
+    auth_mode: str = "dev"
+    auth_provider: str = "dev"
+    auth_oidc_issuer: str | None = None
+    auth_oidc_audience: str | None = None
+    auth_oidc_jwks_url: str | None = None
+    dev_auth_token: str = "dev-token"
+    dev_auth_user_id: str = "dev-user"
+    dev_auth_workspace_id: str = "dev-workspace"
+    dev_auth_subject: str = "dev-user"
     ai_provider: str = "template"
     openai_model: str | None = None
     openai_api_key: str | None = None
