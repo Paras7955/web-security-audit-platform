@@ -261,6 +261,7 @@ export function TargetSetup() {
     const body = await readJson<Target[]>(response, "Target list load failed.");
     setTargets(body);
     setSelectedTargetId(preferredTargetId ?? selectedTargetId ?? body[0]?.id ?? "");
+    setBootstrapError("");
   }
 
   async function loadScanHistory(preferredScanId?: string) {
@@ -268,6 +269,7 @@ export function TargetSetup() {
     const body = await readJson<Scan[]>(response, "Scan history load failed.");
     setScanHistory(body);
     setSelectedScanId(preferredScanId ?? selectedScanId ?? body[0]?.id ?? "");
+    setBootstrapError("");
   }
 
   async function loadFindings(scanId: string, options: { onlyIfSelected?: boolean } = {}) {

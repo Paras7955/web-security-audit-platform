@@ -185,6 +185,8 @@ Phase 12 commits so far:
 - `041331d fix: avoid session claims in app shell`
 - `f377954 docs: close phase 12 handoff`
 - `2458515 fix: resolve app shell review loop findings`
+- `526af1f docs: record phase 12 review loop`
+- `09ee453 fix: surface app shell bootstrap failures`
 
 Verification so far:
 
@@ -196,10 +198,9 @@ Verification so far:
 
 Phase 12 close status:
 
-- An additional fresh review loop was requested after the initial close-out.
-- Accepted review findings from that loop were fixed in `2458515`.
-- Follow-up review confirmed both fresh-loop findings were resolved.
-- A broader follow-up review loop found additional noticeable issues and fixes are pending verification before Phase 12 is marked ready to merge again.
+- Corrected review loop is now using one fresh `gpt-5.4` reviewer with repeated broad passes.
+- The first corrected-loop pass found one accepted stale-bootstrap-banner bug and one residual frontend coverage gap.
+- Accepted fixes are pending verification and follow-up broad review before Phase 12 is marked ready to merge again.
 
 Review decision:
 - Finding: The app shell displayed hard-coded local/dev workspace and auth labels.
@@ -224,6 +225,18 @@ Review decision:
 - Decision: Accepted.
 - Rationale: After Phase 12 made the shell the first screen, unauthenticated, forbidden, or backend-unavailable states must be visible instead of appearing as a valid empty workspace.
 - Follow-up: Initial target and scan loaders now use shared response error handling and display a bootstrap error banner on load failure.
+
+Review decision:
+- Finding: The bootstrap error banner could remain stale after later successful target or scan loads.
+- Decision: Accepted.
+- Rationale: A recovered app shell should not continue displaying a false workspace-load failure.
+- Follow-up: Successful target and scan history loads now clear the bootstrap error banner.
+
+Review decision:
+- Finding: Frontend workflow coverage remains build-only after the decomposition.
+- Decision: Deferred.
+- Rationale: The gap is real, but introducing a frontend test framework and meaningful React workflow tests is larger than the accepted Phase 12 close-out fixes. Docker production build remains the current verification, and broader frontend interaction tests should be added in a dedicated follow-up.
+- Follow-up: Record as residual risk for the phase summary.
 
 ## Current API Surface
 
