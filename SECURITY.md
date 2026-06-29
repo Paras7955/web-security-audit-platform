@@ -21,6 +21,9 @@ Do not use this platform for:
 ## Scan Safety Rules
 
 - Scanner targets must match `config/scan-allowlist.yml`.
+- Platform APIs that create or read targets, scans, findings, reports, and AI explanations must require authenticated workspace context.
+- Workspace isolation must be enforced in backend queries, including direct finding and report artifact lookups by ID.
+- Background scan jobs and generated artifacts must carry persisted workspace and user context.
 - Docker service names are canonical scanner targets inside containers.
 - HTTP clients must disable automatic redirects and manually revalidate redirect destinations.
 - Every outbound scanner request must pass SSRF and allowlist validation.

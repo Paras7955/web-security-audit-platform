@@ -221,6 +221,49 @@ Implemented Phase 10 capabilities:
 - Reports support completed `passive`, `active_demo`, and `repo` scans.
 - AI explanations remain limited to completed `passive` and `active_demo` scans; repo findings are not sent to AI providers in Phase 10.
 
+## Phase 11 Status
+
+Phase 11 adds provider-agnostic platform authentication foundations, workspace isolation, and persisted worker job context.
+
+Implemented Phase 11 capabilities:
+
+- Platform users and provider-agnostic auth identities using `provider` plus `provider_subject`.
+- Auth0 remains the preferred production identity provider, but backend OIDC/JWT validation is provider-agnostic.
+- Explicit local dev auth for Docker and tests using `AUTH_MODE=dev`.
+- Startup validation fails closed when auth configuration is invalid.
+- Dev auth cannot run with `APP_ENV=production`, and dev auth cannot coexist with production OIDC settings.
+- Existing target, scan, finding, report, and AI APIs require bearer authentication.
+- Backend API access is scoped to the authenticated workspace, including report-by-ID and finding-by-ID routes.
+- Scans, findings, evidence artifacts, and report artifacts carry persisted workspace context.
+- Scans, targets, evidence artifacts, and report artifacts carry persisted user context where applicable.
+- Worker lifecycle validation rejects scan jobs whose persisted workspace does not match the target workspace.
+- Frontend local dev API calls attach the configured dev bearer token.
+
+Important local dev auth settings:
+
+```text
+APP_ENV=local
+AUTH_MODE=dev
+AUTH_PROVIDER=dev
+DEV_AUTH_TOKEN=dev-token
+DEV_AUTH_USER_ID=dev-user
+DEV_AUTH_WORKSPACE_ID=dev-workspace
+DEV_AUTH_SUBJECT=dev-user
+NEXT_PUBLIC_DEV_AUTH_TOKEN=dev-token
+```
+
+Production-like auth uses:
+
+```text
+AUTH_MODE=required
+AUTH_PROVIDER=auth0
+AUTH_OIDC_ISSUER=
+AUTH_OIDC_AUDIENCE=
+AUTH_OIDC_JWKS_URL=
+```
+
+Phase 11 does not add target-application authentication profiles. Those remain planned for Phase 14.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.
@@ -282,7 +325,7 @@ Post-v1 unless explicitly approved:
 - Nuclei templates.
 - Semgrep/full SAST.
 - PDF export.
-- Multi-user production auth.
+- RBAC, team administration, and production user-management hardening beyond Phase 11 workspace isolation.
 - Public cloud scanning.
 
 ## Phase Approval Gate
