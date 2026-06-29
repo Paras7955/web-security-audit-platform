@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 import jwt
-from jwt import PyJWKClient
+from jwt import PyJWKClient, PyJWTError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -52,6 +52,8 @@ def validate_auth_settings(config: Settings = settings) -> None:
             raise AuthConfigurationError("DEV_AUTH_TOKEN is required when AUTH_MODE=dev.")
         return
 
+    if not provider:
+        raise AuthConfigurationError("AUTH_PROVIDER is required when AUTH_MODE=required.")
     if provider == "dev":
         raise AuthConfigurationError("AUTH_PROVIDER=dev is not allowed when AUTH_MODE=required.")
     if not config.auth_oidc_issuer or not config.auth_oidc_audience or not config.auth_oidc_jwks_url:
@@ -93,15 +95,20 @@ def authenticate_oidc_token(token: str, db: Session, config: Settings) -> Authen
     if not config.auth_oidc_jwks_url or not config.auth_oidc_issuer or not config.auth_oidc_audience:
         raise AuthConfigurationError("OIDC auth is not fully configured.")
 
-    jwk_client = PyJWKClient(config.auth_oidc_jwks_url)
-    signing_key = jwk_client.get_signing_key_from_jwt(token)
-    claims = jwt.decode(
-        token,
-        signing_key.key,
-        algorithms=["RS256"],
-        audience=config.auth_oidc_audience,
-        issuer=config.auth_oidc_issuer,
-    )
+    try:
+        jwk_client = PyJWKClient(config.auth_oidc_jwks_url)
+        signing_key = jwk_client.get_signing_key_from_jwt(token)
+        claims = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=config.auth_oidc_audience,
+            issuer=config.auth_oidc_issuer,
+        )
+    except PyJWTError as exc:
+        raise AuthError("Invalid bearer token.") from exc
+    except Exception as exc:
+        raise AuthError("OIDC token validation failed.") from exc
     subject = claims.get("sub")
     if not isinstance(subject, str) or not subject:
         raise AuthError("OIDC token is missing a subject.")

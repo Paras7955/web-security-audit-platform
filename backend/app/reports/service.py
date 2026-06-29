@@ -91,10 +91,12 @@ def build_report_data(
     target = db.get(Target, scan.target_id)
     if target is None:
         raise ReportGenerationError("Scan target not found.")
+    if target.workspace_id != scan.workspace_id:
+        raise ReportGenerationError("Scan target workspace does not match scan workspace.")
 
     findings = db.scalars(
         select(Finding)
-        .where(Finding.scan_id == scan.id)
+        .where(Finding.scan_id == scan.id, Finding.workspace_id == scan.workspace_id)
         .order_by(Finding.severity.asc(), Finding.created_at.asc())
     ).all()
     sorted_findings = tuple(

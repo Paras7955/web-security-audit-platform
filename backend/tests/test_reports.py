@@ -10,8 +10,8 @@ from sqlalchemy import delete, select
 
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import Finding, ReportArtifact, Scan, Target
-from app.reports.service import generate_report_artifacts, read_report_artifact_file
+from app.models import Finding, ReportArtifact, Scan, Target, Workspace
+from app.reports.service import ReportGenerationError, generate_report_artifacts, read_report_artifact_file
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
@@ -140,6 +140,32 @@ class ReportsTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("completed scans", response.json()["detail"])
+
+    def test_report_generation_rejects_scan_target_workspace_mismatch(self) -> None:
+        mismatch_workspace_id = f"report-mismatch-{uuid4()}"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with SessionLocal() as db:
+                target = db.get(Target, self.target_id)
+                self.assertIsNotNone(target)
+                db.add(Workspace(id=mismatch_workspace_id, owner_user_id=DEV_USER_ID, name="Report Mismatch"))
+                db.flush()
+                target.workspace_id = mismatch_workspace_id
+                db.add(target)
+                db.commit()
+
+            try:
+                with SessionLocal() as db:
+                    with self.assertRaises(ReportGenerationError):
+                        generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+            finally:
+                with SessionLocal() as db:
+                    target = db.get(Target, self.target_id)
+                    if target is not None:
+                        target.workspace_id = DEV_WORKSPACE_ID
+                        db.add(target)
+                        db.flush()
+                    db.execute(delete(Workspace).where(Workspace.id == mismatch_workspace_id))
+                    db.commit()
 
     def test_reports_support_active_demo_scan(self) -> None:
         with SessionLocal() as db:

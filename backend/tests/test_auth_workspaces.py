@@ -1,16 +1,17 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.core.config import Settings
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import AuthIdentity, Finding, PlatformUser, ReportArtifact, Scan, Target, Workspace
-from app.security.auth import AuthConfigurationError, ensure_user_workspace_identity, validate_auth_settings
+from app.security.auth import AuthConfigurationError, authenticate_oidc_token, ensure_user_workspace_identity, validate_auth_settings
 from tests.helpers import DEV_AUTH_HEADERS, ensure_dev_principal
 
 
@@ -145,6 +146,7 @@ class AuthWorkspaceTests(unittest.TestCase):
             Settings(app_env="production", auth_mode="dev", auth_provider="dev"),
             Settings(app_env="local", auth_mode="dev", auth_provider="dev", auth_oidc_issuer="https://issuer.example/"),
             Settings(app_env="local", auth_mode="required", auth_provider="dev"),
+            Settings(app_env="local", auth_mode="required", auth_provider=" "),
             Settings(app_env="local", auth_mode="required", auth_provider="auth0"),
         ]
 
@@ -162,6 +164,75 @@ class AuthWorkspaceTests(unittest.TestCase):
                 auth_oidc_jwks_url="https://tenant.example/.well-known/jwks.json",
             )
         )
+
+    def test_required_auth_runtime_token_errors_return_401(self) -> None:
+        required_settings = Settings(
+            app_env="production",
+            auth_mode="required",
+            auth_provider="auth0",
+            auth_oidc_issuer="https://tenant.example/",
+            auth_oidc_audience="security-audit-api",
+            auth_oidc_jwks_url="https://tenant.example/.well-known/jwks.json",
+        )
+
+        with (
+            patch("app.api.deps.settings.auth_mode", required_settings.auth_mode),
+            patch("app.api.deps.settings.auth_provider", required_settings.auth_provider),
+            patch("app.api.deps.settings.auth_oidc_issuer", required_settings.auth_oidc_issuer),
+            patch("app.api.deps.settings.auth_oidc_audience", required_settings.auth_oidc_audience),
+            patch("app.api.deps.settings.auth_oidc_jwks_url", required_settings.auth_oidc_jwks_url),
+        ):
+            response = self.client.get("/targets", headers={"Authorization": "Bearer malformed-token"})
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("token", response.json()["detail"].lower())
+
+    def test_oidc_identity_reuses_existing_user_workspace(self) -> None:
+        claims = {"sub": "auth0|stable-user", "name": "Stable User"}
+        oidc_settings = Settings(
+            app_env="production",
+            auth_mode="required",
+            auth_provider="auth0",
+            auth_oidc_issuer="https://tenant.example/",
+            auth_oidc_audience="security-audit-api",
+            auth_oidc_jwks_url="https://tenant.example/.well-known/jwks.json",
+        )
+
+        class SigningKey:
+            key = "unused"
+
+        try:
+            with SessionLocal() as db, patch("app.security.auth.PyJWKClient") as jwk_client, patch(
+                "app.security.auth.jwt.decode", return_value=claims
+            ):
+                jwk_client.return_value.get_signing_key_from_jwt.return_value = SigningKey()
+                first = authenticate_oidc_token("token-one", db, oidc_settings)
+                second = authenticate_oidc_token("token-two", db, oidc_settings)
+
+                identities = db.scalars(
+                    select(AuthIdentity).where(
+                        AuthIdentity.provider == "auth0",
+                        AuthIdentity.provider_subject == "auth0|stable-user",
+                    )
+                ).all()
+
+            self.assertEqual(first.user_id, second.user_id)
+            self.assertEqual(first.workspace_id, second.workspace_id)
+            self.assertEqual(len(identities), 1)
+        finally:
+            with SessionLocal() as db:
+                identity = db.scalar(
+                    select(AuthIdentity).where(
+                        AuthIdentity.provider == "auth0",
+                        AuthIdentity.provider_subject == "auth0|stable-user",
+                    )
+                )
+                if identity is not None:
+                    user_id = identity.user_id
+                    db.execute(delete(AuthIdentity).where(AuthIdentity.user_id == user_id))
+                    db.execute(delete(Workspace).where(Workspace.owner_user_id == user_id))
+                    db.execute(delete(PlatformUser).where(PlatformUser.id == user_id))
+                    db.commit()
 
 
 if __name__ == "__main__":

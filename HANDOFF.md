@@ -92,6 +92,11 @@ Phase 11 commits so far:
 - `584349f feat: enforce workspace scoped APIs`
 - `50c969b feat: attach auth token in frontend API calls`
 - `37f7c18 test: cover auth workspace enforcement`
+- `32d6e9a docs: add phase 11 handoff context`
+- Review fixes pending commit:
+  - OIDC/JWT request-time validation errors are converted to auth failures instead of unhandled server errors.
+  - `AUTH_MODE=required` rejects blank/whitespace `AUTH_PROVIDER`.
+  - Report generation rejects scan rows whose target belongs to another workspace and loads only same-workspace findings.
 
 ## Phase 11 Implementation State
 
@@ -105,8 +110,10 @@ Implemented:
 - Auth config validation and bearer-token dependency.
 - Dev auth that creates a deterministic dev user/workspace.
 - OIDC JWT validation foundation using configured issuer, audience, JWKS URL, and provider.
+- OIDC/JWT validation errors are returned as authentication failures rather than unhandled server errors.
 - Workspace-scoped current target, scan, finding, report, and AI APIs.
 - Report-by-ID and finding-by-ID access scoped by workspace.
+- Report generation validates scan-target workspace consistency before rendering target metadata.
 - Findings/evidence/report artifacts inherit workspace/user context from the persisted scan.
 - Worker validation rejects scans whose workspace does not match the target workspace.
 - Frontend API calls attach the dev bearer token from `NEXT_PUBLIC_DEV_AUTH_TOKEN`.
@@ -120,12 +127,38 @@ Verification so far:
 - `docker compose run --rm migrate`
 - `docker compose run --rm backend python -m unittest tests.test_auth_workspaces tests.test_targets_api tests.test_scans_api tests.test_findings_api tests.test_ai_explanations tests.test_reports tests.test_scan_worker`
   - Result: 79 tests OK.
+- `docker compose run --rm backend python -m unittest discover tests`
+  - Result: 150 tests OK.
+- `docker compose build frontend`
+- `docker compose run --rm frontend npm run build`
+  - Result: passed.
+- Review-fix focused tests:
+  - `docker compose run --rm backend python -m unittest tests.test_auth_workspaces tests.test_reports`
+  - Result: 25 tests OK.
 
 Known verification still needed before Phase 11 close:
 
-- Full backend test suite.
-- Frontend production build in Docker.
-- Phase review and any accepted review-fix commit.
+- Full backend test suite after review fixes.
+- Frontend production build after review fixes if frontend files change.
+- Commit accepted review fixes.
+
+Review decision:
+- Finding: Required-mode OIDC/JWT token and JWKS failures could escape as unhandled exceptions.
+- Decision: Accepted.
+- Rationale: Invalid bearer tokens and validation failures should consistently return authentication failures, not 500 responses.
+- Follow-up: Wrapped PyJWT/JWKS validation failures as `AuthError` and added request-time required-mode coverage.
+
+Review decision:
+- Finding: Blank `AUTH_PROVIDER` was allowed in required mode.
+- Decision: Accepted.
+- Rationale: Empty provider namespaces undermine provider-agnostic identity ownership.
+- Follow-up: Required non-empty provider in `AUTH_MODE=required` and added config coverage.
+
+Review decision:
+- Finding: Report generation did not revalidate target workspace against scan workspace.
+- Decision: Accepted.
+- Rationale: Reports include target metadata, so corrupted/stale scan-target ownership must fail closed.
+- Follow-up: Added scan-target workspace validation, filtered report findings by scan workspace, and added regression coverage.
 
 ## Current API Surface
 
