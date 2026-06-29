@@ -8,10 +8,10 @@ Do not include private reviewer-loop instructions or any information that should
 
 ## Current Branch And Phase
 
-- Current phase branch: `phase-11-auth-workspaces`
-- Current phase: Phase 11, Auth, Workspace Isolation, Worker Context, And Handoff Foundation
+- Current phase branch: `phase-12-app-shell`
+- Current phase: Phase 12, Frontend Decomposition And Authenticated App Shell
 - Base branch at phase start: `main`
-- Phase gate: stop after Phase 11 is complete and reviewed. Do not start Phase 12 until the user confirms this branch has been merged back into the base branch.
+- Phase gate: stop after Phase 12 is complete and reviewed. Do not start Phase 13 until the user confirms this branch has been merged back into the base branch.
 
 ## Mission And Safety Model
 
@@ -65,7 +65,8 @@ Reports are available for completed `passive`, `active_demo`, and `repo` scans. 
 - Phase 9A-9C: scoped ZAP passive, bounded Active Demo, bounded AJAX Short.
 - Phase 9D: multimode report/AI hardening for passive and Active Demo.
 - Phase 10: deterministic repo scan mode, repo path safety, repo findings in reports, repo findings excluded from AI.
-- Phase 11 in progress: platform auth, workspace isolation, worker job context, initial repo-visible handoff.
+- Phase 11: platform auth, workspace isolation, worker job context, initial repo-visible handoff.
+- Phase 12 in progress: frontend decomposition and authenticated workspace app shell.
 
 ## Phase 11 Design
 
@@ -93,10 +94,8 @@ Phase 11 commits so far:
 - `50c969b feat: attach auth token in frontend API calls`
 - `37f7c18 test: cover auth workspace enforcement`
 - `32d6e9a docs: add phase 11 handoff context`
-- Review fixes pending commit:
-  - OIDC/JWT request-time validation errors are converted to auth failures instead of unhandled server errors.
-  - `AUTH_MODE=required` rejects blank/whitespace `AUTH_PROVIDER`.
-  - Report generation rejects scan rows whose target belongs to another workspace and loads only same-workspace findings.
+- `f0e500a fix: harden auth workspace review findings`
+- `3954958 adding rule to confirm user actions needed`
 
 ## Phase 11 Implementation State
 
@@ -135,12 +134,13 @@ Verification so far:
 - Review-fix focused tests:
   - `docker compose run --rm backend python -m unittest tests.test_auth_workspaces tests.test_reports`
   - Result: 25 tests OK.
+- Final Phase 11 full backend tests:
+  - `docker compose run --rm backend python -m unittest discover tests`
+  - Result: 153 tests OK.
 
-Known verification still needed before Phase 11 close:
+Phase 11 close status:
 
-- Full backend test suite after review fixes.
-- Frontend production build after review fixes if frontend files change.
-- Commit accepted review fixes.
+- Phase 11 was reviewed, fixed, merged to `main`, and used as the base for Phase 12.
 
 Review decision:
 - Finding: Required-mode OIDC/JWT token and JWKS failures could escape as unhandled exceptions.
@@ -159,6 +159,39 @@ Review decision:
 - Decision: Accepted.
 - Rationale: Reports include target metadata, so corrupted/stale scan-target ownership must fail closed.
 - Follow-up: Added scan-target workspace validation, filtered report findings by scan workspace, and added regression coverage.
+
+## Phase 12 Implementation State
+
+Implemented:
+
+- Split the monolithic frontend dashboard workflow into focused modules:
+  - `frontend/src/lib/securityAuditApi.ts`
+  - `frontend/src/components/dashboard/TargetForm.tsx`
+  - `frontend/src/components/dashboard/ScanControls.tsx`
+  - `frontend/src/components/dashboard/ReportsPanel.tsx`
+  - `frontend/src/components/dashboard/AiExplanationsPanel.tsx`
+  - `frontend/src/components/dashboard/FindingsDashboard.tsx`
+- Replaced `TargetSetup.tsx` with a smaller workflow controller that owns data loading, polling, selected scan/finding state, and report download/view behavior.
+- Added `frontend/src/components/AppShell.tsx` as the authenticated workspace shell with top navigation, workspace indicator, overview metrics, and safety chips.
+- Replaced the old landing/contract page with the operational app shell.
+- Preserved the existing target creation, repo path attachment, scan launch, scan polling, findings, reports, and AI explanation behavior.
+
+Phase 12 commits so far:
+
+- `b977d1b refactor: split dashboard workflow components`
+- `46a4bda feat: add authenticated workspace app shell`
+
+Verification so far:
+
+- `docker compose build frontend`
+- `docker compose run --rm frontend npm run build`
+  - Result: passed after each Phase 12 subdivision.
+
+Known verification still needed before Phase 12 close:
+
+- Full backend test suite.
+- Final frontend production build.
+- Phase review and any accepted review-fix commit.
 
 ## Current API Surface
 
