@@ -1,13 +1,6 @@
 import { TargetSetup } from "@/components/TargetSetup";
 import { SCAN_PROFILES, SCAN_STATUSES } from "@/lib/contracts";
 
-const navItems = [
-  { label: "Overview", href: "#overview" },
-  { label: "Targets", href: "#targets" },
-  { label: "Scans", href: "#scans" },
-  { label: "Reports", href: "#reports" },
-  { label: "Findings", href: "#findings" }
-];
 const safetyRules = [
   "Allowlisted targets only",
   "Workspace-owned records",
@@ -28,14 +21,6 @@ export function AppShell() {
           <strong>Workspace-owned</strong>
         </div>
       </header>
-
-      <nav className="appNav" aria-label="Workspace navigation">
-        {navItems.map((item) => (
-          <a href={item.href} key={item.href}>
-            {item.label}
-          </a>
-        ))}
-      </nav>
 
       <section id="overview" className="overviewBand" aria-label="Workspace overview">
         <div className="metricStrip">
