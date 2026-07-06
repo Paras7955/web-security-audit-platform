@@ -7,7 +7,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.contracts import ScanMode, ScanStatus
+from app.core.contracts import ScanStatus, default_scan_profile_for_mode, scan_profile_for_id
 from app.models import Finding, Scan
 
 
@@ -28,10 +28,6 @@ EVIDENCE_PROVIDER_CAP = 1000
 ELIGIBLE_SCAN_STATUSES = {
     ScanStatus.COMPLETED.value,
     ScanStatus.COMPLETED_WITH_WARNINGS.value,
-}
-AI_EXPLANATION_SCAN_MODES = {
-    ScanMode.PASSIVE.value,
-    ScanMode.ACTIVE_DEMO.value,
 }
 
 
@@ -208,7 +204,8 @@ def generate_ai_explanations(
         raise AiExplanationError("Scan not found.")
     if workspace_id is not None and scan.workspace_id != workspace_id:
         raise AiExplanationError("Scan not found.")
-    if scan.mode not in AI_EXPLANATION_SCAN_MODES:
+    profile = scan_profile_for_id(scan.scan_profile_id) or default_scan_profile_for_mode(scan.mode)
+    if profile is None or not profile.ai_enabled:
         raise AiExplanationError("AI explanations can only be generated for passive and Active Demo scans.")
     if scan.status not in ELIGIBLE_SCAN_STATUSES:
         raise AiExplanationError("AI explanations can only be generated for completed scans.")

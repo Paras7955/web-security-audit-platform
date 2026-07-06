@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_principal, get_db, get_scan_allowlist
 from app.api.schemas import ScanCreate, ScanRead
-from app.core.contracts import ScanMode, ScanStatus, ScanStep
+from app.core.contracts import ScanMode, ScanProfile, ScanStatus, ScanStep, default_scan_profile_for_mode, scan_profile_for_id
 from app.core.config import settings
 from app.models import Scan, Target
 from app.repo_scanner.paths import RepoPathError, validate_repo_path
@@ -31,8 +31,9 @@ def create_scan(
     if not target.permission_confirmed:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target authorization is not confirmed.")
 
-    mode = validate_scan_mode(
-        payload.mode,
+    profile = resolve_scan_profile(payload)
+    mode = validate_scan_profile(
+        profile,
         target,
         allowlist,
         active_demo_acknowledged=payload.active_demo_acknowledged,
@@ -43,10 +44,11 @@ def create_scan(
         workspace_id=principal.workspace_id,
         created_by_user_id=principal.user_id,
         target_id=target.id,
+        scan_profile_id=profile.id,
         mode=mode.value,
         status=ScanStatus.QUEUED.value,
         current_step=ScanStep.TARGET_VALIDATION.value,
-        status_message=f"Queued for {mode.value} scanner worker.",
+        status_message=f"Queued for {mode.value} scanner worker using {profile.label} profile.",
         progress_percent=0,
     )
     db.add(scan)
@@ -81,59 +83,71 @@ def get_scan(
     return scan
 
 
-def validate_scan_mode(
-    raw_mode: str,
+def resolve_scan_profile(payload: ScanCreate) -> ScanProfile:
+    profile: ScanProfile | None = None
+    if payload.scan_profile_id is not None:
+        profile = scan_profile_for_id(payload.scan_profile_id)
+        if profile is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported scan profile.")
+
+    if payload.mode is not None:
+        try:
+            mode = ScanMode(payload.mode)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported scan mode.") from exc
+        mode_profile = default_scan_profile_for_mode(mode.value)
+        if mode_profile is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported scan mode.") from None
+        if profile is not None and profile.mode != mode:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan mode does not match scan profile.")
+        profile = profile or mode_profile
+
+    if profile is None:
+        profile = scan_profile_for_id("passive-web")
+        if profile is None:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Default scan profile is not configured.")
+    return profile
+
+
+def validate_scan_profile(
+    profile: ScanProfile,
     target: Target,
     allowlist: ScanAllowlist,
     *,
     active_demo_acknowledged: bool,
     ajax_short_acknowledged: bool,
 ) -> ScanMode:
-    try:
-        mode = ScanMode(raw_mode)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported scan mode.") from exc
+    mode = profile.mode
 
     allowlist_target = allowlist.get_target(target.allowlist_id)
     allowed_modes = set(allowlist_target.allowed_modes) if allowlist_target else set()
     if mode not in allowed_modes:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan mode is not allowed for this target.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan profile is not allowed for this target.")
 
-    if mode is ScanMode.ACTIVE_DEMO:
+    if profile.local_demo_only:
         if allowlist_target is None or not allowlist_target.local_demo:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Active Demo scans are local/demo allowlist only.")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{profile.label} scans are local/demo allowlist only.")
+
+    if profile.requires_active_demo_acknowledgement:
         if not active_demo_acknowledged:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Active Demo scans require explicit acknowledgement.",
             )
-        revalidate_target_record(target, allowlist)
-        return mode
 
-    if mode is ScanMode.AJAX_SHORT:
-        if allowlist_target is None or not allowlist_target.local_demo:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="AJAX Short scans are local/demo allowlist only.")
+    if profile.requires_ajax_short_acknowledgement:
         if not ajax_short_acknowledged:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="AJAX Short scans require explicit acknowledgement.",
             )
-        revalidate_target_record(target, allowlist)
-        return mode
 
-    if mode is ScanMode.REPO:
-        revalidate_target_record(target, allowlist)
+    if profile.requires_repo_path:
         try:
             validate_repo_path(target.repo_path, repo_scan_root=settings.repo_scan_root)
         except RepoPathError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-        return mode
 
-    if mode is not ScanMode.PASSIVE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only passive, Active Demo, AJAX Short, and Repo scans are available.",
-        )
     revalidate_target_record(target, allowlist)
     return mode
 

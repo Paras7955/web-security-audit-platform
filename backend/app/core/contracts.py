@@ -106,3 +106,11 @@ def _load_scan_profiles() -> tuple[ScanProfile, ...]:
 SCAN_PROFILES = _load_scan_profiles()
 SCAN_PROFILE_BY_ID = {profile.id: profile for profile in SCAN_PROFILES}
 DEFAULT_SCAN_PROFILE_BY_MODE = {profile.mode.value: profile for profile in SCAN_PROFILES}
+
+
+def scan_profile_for_id(profile_id: str) -> ScanProfile | None:
+    return SCAN_PROFILE_BY_ID.get(profile_id)
+
+
+def default_scan_profile_for_mode(mode: str) -> ScanProfile | None:
+    return DEFAULT_SCAN_PROFILE_BY_MODE.get(mode)
