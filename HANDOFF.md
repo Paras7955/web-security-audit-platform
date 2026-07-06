@@ -8,10 +8,10 @@ Do not include private reviewer-loop instructions or any information that should
 
 ## Current Branch And Phase
 
-- Current phase branch: `phase-12-app-shell`
-- Current phase: Phase 12, Frontend Decomposition And Authenticated App Shell, complete and awaiting merge
+- Current phase branch: `phase-13-scan-profiles`
+- Current phase: Phase 13, Scan Profiles, complete and awaiting merge
 - Base branch at phase start: `main`
-- Phase gate: stop after Phase 12 is complete and reviewed. Do not start Phase 13 until the user confirms this branch has been merged back into the base branch.
+- Phase gate: stop after Phase 13 is complete and reviewed. Do not start Phase 14 until the user confirms this branch has been merged back into the base branch.
 
 ## Mission And Safety Model
 
@@ -45,14 +45,21 @@ Core safety rules:
 - ZAP daemon: internal Compose service only.
 - Canonical scanner target inside Docker: `http://juice-shop:3000`.
 
-Current scan modes:
+Current scan profiles:
+
+- `passive-web` -> internal mode `passive`
+- `active-demo` -> internal mode `active_demo`
+- `ajax-short` -> internal mode `ajax_short`
+- `repository` -> internal mode `repo`
+
+Current internal worker scan modes:
 
 - `passive`
 - `active_demo`
 - `ajax_short`
 - `repo`
 
-Reports are available for completed `passive`, `active_demo`, and `repo` scans. AI explanations are available for completed `passive` and `active_demo` scans only; repo findings remain excluded from AI.
+Reports and AI eligibility are determined by scan profile metadata. In the current profile set, reports are available for completed `passive-web`, `active-demo`, and `repository` scans. AI explanations are available for completed `passive-web` and `active-demo` scans only; repository findings remain excluded from AI.
 
 ## Phase History
 
@@ -66,7 +73,8 @@ Reports are available for completed `passive`, `active_demo`, and `repo` scans. 
 - Phase 9D: multimode report/AI hardening for passive and Active Demo.
 - Phase 10: deterministic repo scan mode, repo path safety, repo findings in reports, repo findings excluded from AI.
 - Phase 11: platform auth, workspace isolation, worker job context, initial repo-visible handoff.
-- Phase 12: frontend decomposition and authenticated workspace app shell, complete and awaiting merge.
+- Phase 12: frontend decomposition and authenticated workspace app shell.
+- Phase 13: code-defined scan profiles, `scan_profile_id` persistence, compatibility mode input, profile-driven eligibility, and frontend profile selection.
 
 ## Phase 11 Design
 
@@ -203,7 +211,7 @@ Phase 12 close status:
 - The first corrected-loop pass found one accepted stale-bootstrap-banner bug and one residual frontend coverage gap.
 - Accepted fixes were committed in `ac3820b`.
 - Follow-up broad pass from the same reviewer found no additional actionable issues meeting the review bar.
-- Phase 12 is ready for the user to merge back into the base branch.
+- Phase 12 was merged to `main` and used as the base for Phase 13.
 
 Review decision:
 - Finding: The app shell displayed hard-coded local/dev workspace and auth labels.
@@ -241,6 +249,78 @@ Review decision:
 - Rationale: The gap is real, but introducing a frontend test framework and meaningful React workflow tests is larger than the accepted Phase 12 close-out fixes. Docker production build remains the current verification, and broader frontend interaction tests should be added in a dedicated follow-up.
 - Follow-up: Record as residual risk for the phase summary.
 
+## Phase 13 Implementation State
+
+Implemented:
+
+- Added code-defined scan profile metadata in `shared/contracts.json` and mirrored frontend constants in `frontend/src/lib/contracts.ts`.
+- Added backend `ScanProfile` registry helpers in `backend/app/core/contracts.py`.
+- Added Alembic revision `0003_scan_profiles` with `scans.scan_profile_id`, mode-based backfill, and an index.
+- Added `Scan.scan_profile_id` to the SQLAlchemy model and API response schema.
+- Updated scan creation to accept `scan_profile_id`.
+- Kept deprecated `mode` input for compatibility.
+- Rejects `scan_profile_id`/`mode` mismatches when both are supplied.
+- Defaults omitted profile/mode input to `passive-web`.
+- Keeps internal `mode` as the worker execution primitive.
+- Moved active/AJAX acknowledgement, local-demo, repo-path, report eligibility, and AI eligibility decisions to scan profile metadata where appropriate.
+- Report and AI eligibility fail closed when a persisted `scan_profile_id` is unknown or inconsistent with the persisted worker `mode`.
+- Report generation uses profile `ai_enabled` to decide whether to generate AI explanations or use the disabled placeholder.
+- Updated the frontend scan launcher to select profiles and send `scan_profile_id`.
+- Updated the app shell to show the number of scan profiles instead of raw worker modes.
+
+Phase 13 commits:
+
+- `99fa7b4 feat: add scan profile schema registry`
+- `9f1c200 feat: create scans from profiles`
+- `90fe28c feat: select scan profiles in frontend`
+- `7d7b170 fix: align profile eligibility with scan mode`
+- `4288c40 chore: show scan profile count in shell`
+- `6ef4669 fix: enforce authoritative scan profiles`
+
+Verification:
+
+- `python3 -m py_compile backend/app/core/contracts.py backend/app/api/schemas.py backend/app/api/scans.py backend/app/ai/service.py backend/app/reports/service.py backend/tests/test_scans_api.py`
+  - Result: passed.
+- `docker compose build backend migrate frontend`
+  - Result: passed.
+- `docker compose run --rm migrate`
+  - Result: applied `0003_scan_profiles`.
+- `docker compose up -d juice-shop`
+  - Result: started local demo target required by allowlist validation tests.
+- `docker compose run --rm backend python -m unittest tests.test_scans_api tests.test_reports tests.test_ai_explanations tests.test_scan_worker`
+  - Result: 68 tests OK after review fixes.
+- `docker compose run --rm backend python -m unittest discover tests`
+  - Result: 157 tests OK.
+- `docker compose build frontend`
+  - Result: passed.
+- `docker compose run --rm frontend npm run build`
+  - Result: passed.
+
+Phase 13 close status:
+
+- Review loop used one fresh `gpt-5.4` reviewer with repeated broad passes.
+- First pass found two accepted metadata/eligibility findings.
+- Accepted fixes were committed in `6ef4669`.
+- Follow-up broad pass from the same reviewer found no additional actionable issues meeting the review bar.
+- Phase 13 is ready for the user to merge back into the base branch.
+
+Review decision:
+- Finding: Persisted `scan_profile_id` was treated as advisory because eligibility fell back to mode defaults even when profile ID and mode were inconsistent.
+- Decision: Accepted.
+- Rationale: Phase 13 makes scan profile identity part of persisted scan context; corrupted or stale profile/mode combinations should fail closed rather than silently borrowing default mode metadata.
+- Follow-up: Backend and frontend profile resolution now fall back to mode only when profile ID is missing. Unknown or mismatched persisted profile IDs are invalid for eligibility decisions, and report tests cover inconsistent profile/mode rows.
+
+Review decision:
+- Finding: Report generation still used `mode == "repo"` to disable AI instead of profile metadata.
+- Decision: Accepted.
+- Rationale: Report and AI eligibility should be driven by profile metadata so future reportable/non-AI profiles behave correctly without new mode special cases.
+- Follow-up: Report generation now uses resolved profile metadata and `profile.ai_enabled` to choose generated AI explanations versus the disabled placeholder.
+
+Residual risk:
+
+- Frontend profile metadata is mirrored in TypeScript while backend reads `shared/contracts.json`; this is acceptable for Phase 13 but creates future drift risk. A later hardening pass should generate frontend contracts from the shared file or fetch profile metadata from `/contracts`.
+- Frontend profile-selection behavior is covered by production build rather than dedicated interaction tests.
+
 ## Current API Surface
 
 Protected by bearer auth:
@@ -271,14 +351,11 @@ Public operational endpoints:
 
 Phase 12, `phase-12-app-shell`:
 
-- Decompose `TargetSetup.tsx`.
-- Add authenticated operational app shell.
-- Preserve existing functionality behind a typed workspace-aware API client.
+- Complete and merged.
 
 Phase 13, `phase-13-scan-profiles`:
 
-- Add code-defined scan profiles: `passive-web`, `active-demo`, `ajax-short`, `repository`.
-- Add `scan_profile_id` while keeping current scan modes as internal execution primitives.
+- Complete and awaiting merge.
 
 Phase 14, `phase-14-auth-profiles`:
 

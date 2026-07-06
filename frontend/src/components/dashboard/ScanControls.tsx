@@ -1,9 +1,22 @@
 import type { Scan, Target } from "@/lib/securityAuditApi";
+import { SCAN_PROFILES } from "@/lib/contracts";
 
 export const terminalStatuses = new Set(["completed", "completed_with_warnings", "failed", "cancelled"]);
 export const reportableStatuses = new Set(["completed", "completed_with_warnings"]);
-export const reportableModes = new Set(["passive", "active_demo", "repo"]);
-export const aiModes = new Set(["passive", "active_demo"]);
+type ScanProfileMetadata = (typeof SCAN_PROFILES)[number];
+const profilesById: Map<string, ScanProfileMetadata> = new Map(SCAN_PROFILES.map((profile) => [profile.id, profile]));
+const profilesByMode: Map<string, ScanProfileMetadata> = new Map(SCAN_PROFILES.map((profile) => [profile.mode, profile]));
+
+export function scanProfileForScan(scan: Scan) {
+  if (!scan.scan_profile_id) {
+    return profilesByMode.get(scan.mode) ?? null;
+  }
+  const profile = profilesById.get(scan.scan_profile_id);
+  if (profile && profile.mode === scan.mode) {
+    return profile;
+  }
+  return null;
+}
 
 export function formatScanModeLabel(mode: string): string {
   if (mode === "active_demo") {
@@ -18,12 +31,16 @@ export function formatScanModeLabel(mode: string): string {
   return "Passive";
 }
 
+export function formatScanProfileLabel(profileId: string, mode: string): string {
+  return profilesById.get(profileId)?.label ?? formatScanModeLabel(mode);
+}
+
 export function canUseReports(scan: Scan): boolean {
-  return reportableModes.has(scan.mode);
+  return Boolean(scanProfileForScan(scan)?.reports_enabled);
 }
 
 export function canUseAi(scan: Scan): boolean {
-  return aiModes.has(scan.mode);
+  return Boolean(scanProfileForScan(scan)?.ai_enabled);
 }
 
 export function mergeScan(scans: Scan[], updatedScan: Scan): Scan[] {
@@ -38,13 +55,13 @@ export function ScanLauncher({
   targets,
   selectedTargetId,
   repoPath,
-  scanMode,
+  scanProfileId,
   activeDemoAcknowledged,
   ajaxShortAcknowledged,
   canStartScan,
   isBusy,
   onSelectTarget,
-  onSelectScanMode,
+  onSelectScanProfile,
   onAttachRepoPath,
   onActiveDemoAcknowledged,
   onAjaxShortAcknowledged,
@@ -53,28 +70,29 @@ export function ScanLauncher({
   targets: Target[];
   selectedTargetId: string;
   repoPath: string;
-  scanMode: string;
+  scanProfileId: string;
   activeDemoAcknowledged: boolean;
   ajaxShortAcknowledged: boolean;
   canStartScan: boolean;
   isBusy: boolean;
   onSelectTarget: (targetId: string) => void;
-  onSelectScanMode: (mode: string) => void;
+  onSelectScanProfile: (profileId: string) => void;
   onAttachRepoPath: () => void;
   onActiveDemoAcknowledged: (acknowledged: boolean) => void;
   onAjaxShortAcknowledged: (acknowledged: boolean) => void;
   onStartScan: () => void;
 }) {
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
-  const selectedTargetSupportsMode = selectedTarget?.allowed_modes.includes(scanMode) ?? false;
-  const repoPathMissing = scanMode === "repo" && Boolean(selectedTarget) && !selectedTarget?.repo_path;
+  const selectedProfile = profilesById.get(scanProfileId) ?? SCAN_PROFILES[0];
+  const selectedTargetSupportsProfile = selectedTarget?.allowed_modes.includes(selectedProfile.mode) ?? false;
+  const repoPathMissing = selectedProfile.requires_repo_path && Boolean(selectedTarget) && !selectedTarget?.repo_path;
   const canAttachRepoPath = Boolean(selectedTarget && repoPath.trim() && !isBusy);
 
   return (
     <div className="panel">
       <div className="panelHeader">
-        <h3>Scan Mode</h3>
-        <span className="phaseBadge">Profiles next</span>
+        <h3>Scan Profile</h3>
+        <span className="phaseBadge">Phase 13</span>
       </div>
 
       <label className="selectLabel">
@@ -89,21 +107,21 @@ export function ScanLauncher({
         </select>
       </label>
 
-      <div className="modeGrid" aria-label="Scan mode safety controls">
-        {["passive", "active_demo", "ajax_short", "repo"].map((mode) => (
+      <div className="modeGrid" aria-label="Scan profile safety controls">
+        {SCAN_PROFILES.map((profile) => (
           <button
-            key={mode}
+            key={profile.id}
             type="button"
-            className={scanMode === mode ? "modeCard modeCardActive" : "modeCard"}
-            onClick={() => onSelectScanMode(mode)}
+            className={scanProfileId === profile.id ? "modeCard modeCardActive" : "modeCard"}
+            onClick={() => onSelectScanProfile(profile.id)}
           >
-            <strong>{formatScanModeLabel(mode)}</strong>
-            <span>{modeDescription(mode)}</span>
+            <strong>{profile.label}</strong>
+            <span>{profile.description}</span>
           </button>
         ))}
       </div>
 
-      {scanMode === "active_demo" ? (
+      {selectedProfile.requires_active_demo_acknowledgement ? (
         <label className="checkboxRow scanModeAck">
           <input
             type="checkbox"
@@ -114,7 +132,7 @@ export function ScanLauncher({
         </label>
       ) : null}
 
-      {scanMode === "ajax_short" ? (
+      {selectedProfile.requires_ajax_short_acknowledgement ? (
         <label className="checkboxRow scanModeAck">
           <input
             type="checkbox"
@@ -125,7 +143,7 @@ export function ScanLauncher({
         </label>
       ) : null}
 
-      {scanMode === "repo" ? (
+      {selectedProfile.requires_repo_path ? (
         <div className="repoPathNotice">
           <p className="formMessage">
             Repo scans use the saved local repo path for this target and do not clone, install dependencies, or execute repo code.
@@ -151,11 +169,11 @@ export function ScanLauncher({
 
       <div className="actions">
         <button type="button" onClick={onStartScan} disabled={!canStartScan || isBusy}>
-          Start {formatScanModeLabel(scanMode)} Scan
+          Start {selectedProfile.label} Scan
         </button>
       </div>
-      {selectedTarget && !selectedTargetSupportsMode ? (
-        <p className="formMessage">This scan mode is not allowed for the selected target.</p>
+      {selectedTarget && !selectedTargetSupportsProfile ? (
+        <p className="formMessage">This scan profile is not allowed for the selected target.</p>
       ) : null}
     </div>
   );
@@ -222,6 +240,10 @@ export function ScanProgress({ scan }: { scan: Scan }) {
           <dd>{scan.mode}</dd>
         </div>
         <div>
+          <dt>Profile</dt>
+          <dd>{formatScanProfileLabel(scan.scan_profile_id, scan.mode)}</dd>
+        </div>
+        <div>
           <dt>Current Step</dt>
           <dd>{scan.current_step ?? "none"}</dd>
         </div>
@@ -234,17 +256,4 @@ export function ScanProgress({ scan }: { scan: Scan }) {
       {scan.error_detail ? <p className="errorText">{scan.error_detail}</p> : null}
     </div>
   );
-}
-
-function modeDescription(mode: string): string {
-  if (mode === "active_demo") {
-    return "Bounded ZAP active scan for local demo targets";
-  }
-  if (mode === "ajax_short") {
-    return "Bounded ZAP browser crawl for local demo targets";
-  }
-  if (mode === "repo") {
-    return "Deterministic secret and dependency scanner adapters";
-  }
-  return "Custom crawl plus ZAP passive analysis";
 }

@@ -113,6 +113,7 @@ class Scan(Base):
     )
     target_id: Mapped[str] = mapped_column(String(64), ForeignKey("targets.id"), nullable=False)
     mode: Mapped[str] = mapped_column(String(40), nullable=False)
+    scan_profile_id: Mapped[str] = mapped_column(String(80), nullable=False, default="passive-web", server_default="passive-web")
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     current_step: Mapped[str | None] = mapped_column(String(80), nullable=True)
     status_message: Mapped[str | None] = mapped_column(String(500), nullable=True)

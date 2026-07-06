@@ -141,6 +141,7 @@ class AiExplanationTests(unittest.TestCase):
             scan = db.get(Scan, self.scan_id)
             self.assertIsNotNone(scan)
             scan.mode = "active_demo"
+            scan.scan_profile_id = "active-demo"
             db.add(scan)
             db.commit()
 
@@ -154,6 +155,7 @@ class AiExplanationTests(unittest.TestCase):
             scan = db.get(Scan, self.scan_id)
             self.assertIsNotNone(scan)
             scan.mode = "ajax_short"
+            scan.scan_profile_id = "ajax-short"
             db.add(scan)
             db.commit()
 
@@ -167,6 +169,7 @@ class AiExplanationTests(unittest.TestCase):
             scan = db.get(Scan, self.scan_id)
             self.assertIsNotNone(scan)
             scan.mode = "repo"
+            scan.scan_profile_id = "repository"
             db.add(scan)
             db.commit()
 
@@ -205,6 +208,7 @@ class AiExplanationTests(unittest.TestCase):
             scan = db.get(Scan, self.scan_id)
             self.assertIsNotNone(scan)
             scan.mode = "active_demo"
+            scan.scan_profile_id = "active-demo"
             finding = db.get(Finding, self.finding_id)
             self.assertIsNotNone(finding)
             finding.source_tool = "zap-active"

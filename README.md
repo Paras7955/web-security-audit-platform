@@ -266,7 +266,7 @@ Phase 11 does not add target-application authentication profiles. Those remain p
 
 ## Phase 12 Status
 
-Phase 12 decomposes the frontend dashboard and replaces the old phase-oriented landing page with an authenticated workspace console. The phase branch has completed implementation and review and is awaiting merge.
+Phase 12 decomposes the frontend dashboard and replaces the old phase-oriented landing page with an authenticated workspace console.
 
 Implemented Phase 12 capabilities:
 
@@ -275,7 +275,23 @@ Implemented Phase 12 capabilities:
 - Added an authenticated workspace app shell with top navigation, workspace indicator, overview metrics, and safety status chips.
 - Replaced the landing/contract overview page with the operational workspace console as the first screen.
 
-Phase 12 does not add scan profiles, finding management, risk scoring, or target-application authentication profiles. Those remain planned for later phases.
+Phase 12 does not add finding management, risk scoring, or target-application authentication profiles. Those remain planned for later phases.
+
+## Phase 13 Status
+
+Phase 13 adds code-defined scan profiles while preserving existing scan modes as internal worker execution primitives.
+
+Implemented Phase 13 capabilities:
+
+- Added scan profiles: `passive-web`, `active-demo`, `ajax-short`, and `repository`.
+- Added `scan_profile_id` persistence on scans with migration/backfill from existing `mode` values.
+- Updated scan creation to accept `scan_profile_id` while temporarily preserving deprecated `mode` input for compatibility.
+- Rejects mismatched `scan_profile_id` and `mode` input.
+- Routes acknowledgement, local-demo, repo-path, report eligibility, and AI eligibility decisions through scan profile metadata.
+- Keeps active/AJAX/repo safety gates enforced in backend code.
+- Updated the frontend scan launcher to select profiles and send `scan_profile_id`.
+
+Phase 13 does not add user-editable scan profiles, target-application authentication profiles, finding lifecycle management, risk scoring, or dashboards. Those remain planned for later phases.
 
 ## Responsible Use
 

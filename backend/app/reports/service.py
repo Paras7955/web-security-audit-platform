@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.service import AiExplanationResult, generate_ai_explanations, sanitize_provider_url
-from app.core.contracts import ScanMode, ScanStatus
+from app.core.contracts import ScanMode, ScanStatus, scan_profile_for_values
 from app.models import Finding, ReportArtifact, Scan, Target
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
 
@@ -21,11 +21,6 @@ REPORT_FILENAMES = {
 TERMINAL_REPORT_STATUSES = {
     ScanStatus.COMPLETED.value,
     ScanStatus.COMPLETED_WITH_WARNINGS.value,
-}
-REPORT_SCAN_MODES = {
-    ScanMode.PASSIVE.value,
-    ScanMode.ACTIVE_DEMO.value,
-    ScanMode.REPO.value,
 }
 SEVERITY_ORDER = {
     "critical": 0,
@@ -85,7 +80,8 @@ def build_report_data(
         raise ReportGenerationError("Scan not found.")
     if scan.status not in TERMINAL_REPORT_STATUSES:
         raise ReportGenerationError("Reports can only be generated for completed scans.")
-    if scan.mode not in REPORT_SCAN_MODES:
+    profile = scan_profile_for_values(scan.scan_profile_id, scan.mode)
+    if profile is None or not profile.reports_enabled:
         raise ReportGenerationError("Reports can only be generated for passive, Active Demo, and Repo scans.")
 
     target = db.get(Target, scan.target_id)
@@ -104,9 +100,7 @@ def build_report_data(
         for finding in sorted(findings, key=lambda finding: (SEVERITY_ORDER.get(finding.severity, 99), finding.title.lower()))
     )
     ai_explanations = (
-        disabled_ai_explanations(scan.id)
-        if scan.mode == ScanMode.REPO.value
-        else generate_ai_explanations(
+        generate_ai_explanations(
             db,
             scan_id=scan.id,
             workspace_id=workspace_id,
@@ -114,6 +108,8 @@ def build_report_data(
             openai_api_key=openai_api_key,
             openai_model=openai_model,
         )
+        if profile.ai_enabled
+        else disabled_ai_explanations(scan.id)
     )
     return ReportData(
         scan=scan,
@@ -271,8 +267,13 @@ def write_report_file(path: Path, content: str) -> None:
 def validate_report_scan_eligibility(scan: Scan) -> None:
     if scan.status not in TERMINAL_REPORT_STATUSES:
         raise ReportGenerationError("Reports can only be generated for completed scans.")
-    if scan.mode not in REPORT_SCAN_MODES:
+    if not scan_reports_enabled(scan):
         raise ReportGenerationError("Reports can only be generated for passive, Active Demo, and Repo scans.")
+
+
+def scan_reports_enabled(scan: Scan) -> bool:
+    profile = scan_profile_for_values(scan.scan_profile_id, scan.mode)
+    return bool(profile and profile.reports_enabled)
 
 
 def disabled_ai_explanations(scan_id: str) -> AiExplanationResult:
