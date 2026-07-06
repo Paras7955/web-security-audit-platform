@@ -18,9 +18,19 @@ export type Target = {
   created_at: string;
 };
 
+export type AuthProfile = {
+  id: string;
+  label: string;
+  profile_type: "bearer_token" | "custom_header" | string;
+  header_name: string | null;
+  secret_hint: string;
+  created_at: string;
+};
+
 export type Scan = {
   id: string;
   target_id: string;
+  auth_profile_id: string | null;
   mode: string;
   scan_profile_id: string;
   status: string;

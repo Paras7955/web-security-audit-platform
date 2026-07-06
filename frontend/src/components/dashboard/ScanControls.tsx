@@ -90,6 +90,7 @@ export function ScanLauncher({
   const selectedProfile = profilesById.get(scanProfileId) ?? SCAN_PROFILES[0];
   const selectedTargetSupportsProfile = selectedTarget?.allowed_modes.includes(selectedProfile.mode) ?? false;
   const repoPathMissing = selectedProfile.requires_repo_path && Boolean(selectedTarget) && !selectedTarget?.repo_path;
+  const authProfileUnsupported = Boolean(selectedTarget?.auth_profile_id && selectedProfile.mode !== "passive");
   const canAttachRepoPath = Boolean(selectedTarget && repoPath.trim() && !isBusy);
 
   return (
@@ -110,6 +111,10 @@ export function ScanLauncher({
           ))}
         </select>
       </label>
+
+      {selectedTarget?.auth_profile_id ? (
+        <p className="formMessage">Selected target has an auth profile. Authenticated scanner requests are available for Passive Web only.</p>
+      ) : null}
 
       <div className="modeGrid" aria-label="Scan profile safety controls">
         {SCAN_PROFILES.map((profile) => (
@@ -178,6 +183,9 @@ export function ScanLauncher({
       </div>
       {selectedTarget && !selectedTargetSupportsProfile ? (
         <p className="formMessage">This scan profile is not allowed for the selected target.</p>
+      ) : null}
+      {authProfileUnsupported ? (
+        <p className="formMessage errorText">Auth profiles are currently supported only for passive-web scans.</p>
       ) : null}
     </div>
   );
@@ -248,6 +256,10 @@ export function ScanProgress({ scan }: { scan: Scan }) {
         <div>
           <dt>Profile</dt>
           <dd>{formatScanProfileLabel(scan.scan_profile_id, scan.mode)}</dd>
+        </div>
+        <div>
+          <dt>Auth</dt>
+          <dd>{scan.auth_profile_id ? "Configured" : "None"}</dd>
         </div>
         <div>
           <dt>Current Step</dt>
