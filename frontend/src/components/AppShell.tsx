@@ -1,5 +1,5 @@
 import { TargetSetup } from "@/components/TargetSetup";
-import { SCAN_MODES, SCAN_STATUSES } from "@/lib/contracts";
+import { SCAN_PROFILES, SCAN_STATUSES } from "@/lib/contracts";
 
 const navItems = [
   { label: "Overview", href: "#overview" },
@@ -40,8 +40,8 @@ export function AppShell() {
       <section id="overview" className="overviewBand" aria-label="Workspace overview">
         <div className="metricStrip">
           <div>
-            <span>Scan modes</span>
-            <strong>{SCAN_MODES.length}</strong>
+            <span>Scan profiles</span>
+            <strong>{SCAN_PROFILES.length}</strong>
           </div>
           <div>
             <span>Status states</span>
