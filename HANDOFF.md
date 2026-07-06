@@ -8,10 +8,10 @@ Do not include private reviewer-loop instructions or any information that should
 
 ## Current Branch And Phase
 
-- Current phase branch: `phase-13-scan-profiles`
-- Current phase: Phase 13, Scan Profiles, complete and awaiting merge
-- Base branch at phase start: `main`
-- Phase gate: stop after Phase 13 is complete and reviewed. Do not start Phase 14 until the user confirms this branch has been merged back into the base branch.
+- Current branch: `frontend-ai-progress-fixes`
+- Current state: inter-phase frontend quality-of-life fix after Phase 13 was merged to `main`
+- Base branch for current fix: `main`
+- Phase gate: do not start Phase 14 until the current frontend fix branch has been reviewed/merged or the user explicitly decides to abandon it. Phase 14 should start from updated `main` on `phase-14-auth-profiles`.
 
 ## Mission And Safety Model
 
@@ -74,7 +74,7 @@ Reports and AI eligibility are determined by scan profile metadata. In the curre
 - Phase 10: deterministic repo scan mode, repo path safety, repo findings in reports, repo findings excluded from AI.
 - Phase 11: platform auth, workspace isolation, worker job context, initial repo-visible handoff.
 - Phase 12: frontend decomposition and authenticated workspace app shell.
-- Phase 13: code-defined scan profiles, `scan_profile_id` persistence, compatibility mode input, profile-driven eligibility, and frontend profile selection.
+- Phase 13: code-defined scan profiles, `scan_profile_id` persistence, compatibility mode input, profile-driven eligibility, and frontend profile selection. Merged to `main`.
 
 ## Phase 11 Design
 
@@ -302,7 +302,7 @@ Phase 13 close status:
 - First pass found two accepted metadata/eligibility findings.
 - Accepted fixes were committed in `6ef4669`.
 - Follow-up broad pass from the same reviewer found no additional actionable issues meeting the review bar.
-- Phase 13 is ready for the user to merge back into the base branch.
+- Phase 13 was merged to `main` and used as the base for the follow-up frontend quality-of-life branch.
 
 Review decision:
 - Finding: Persisted `scan_profile_id` was treated as advisory because eligibility fell back to mode defaults even when profile ID and mode were inconsistent.
@@ -320,6 +320,41 @@ Residual risk:
 
 - Frontend profile metadata is mirrored in TypeScript while backend reads `shared/contracts.json`; this is acceptable for Phase 13 but creates future drift risk. A later hardening pass should generate frontend contracts from the shared file or fetch profile metadata from `/contracts`.
 - Frontend profile-selection behavior is covered by production build rather than dedicated interaction tests.
+
+## Current Frontend Quality-Of-Life Fix
+
+Branch: `frontend-ai-progress-fixes`
+
+Context:
+
+- This is not a new roadmap phase.
+- It addresses user-reported frontend issues found after Phase 13 was merged:
+  - AI explanation cards could still render duplicate cards side by side for findings with identical rendered explanation content.
+  - Scan progress displayed abrupt backend checkpoint jumps, such as jumping quickly to 75-80 percent, pausing, then jumping to 100 percent.
+
+Implemented:
+
+- AI explanation cards now de-duplicate by normalized rendered explanation content rather than primarily by finding ID or dedupe key.
+- AI explanation group counts are recomputed from the retained explanation cards.
+- Scan progress now smooths locally between backend progress checkpoints and advances gradually while scans are running.
+- Backend worker progress semantics were not changed.
+- `frontend/src/components/dashboard/ScanControls.tsx` is explicitly marked as a client module because it now owns the progress-smoothing hook.
+
+Commits:
+
+- `e45a985 fix: dedupe ai cards and smooth progress`
+- `HANDOFF.md` was updated on the same branch as an explicit out-of-band documentation update requested by the user.
+
+Verification:
+
+- `docker compose run --rm frontend npm run build`
+  - Result: passed.
+
+Current close status:
+
+- The implementation commit is complete.
+- The handoff has been updated to reflect Phase 13 merge status and this pending frontend fix branch.
+- The branch should be merged back to `main` before Phase 14 begins, unless the user explicitly decides not to keep this follow-up fix.
 
 ## Current API Surface
 
@@ -355,7 +390,7 @@ Phase 12, `phase-12-app-shell`:
 
 Phase 13, `phase-13-scan-profiles`:
 
-- Complete and awaiting merge.
+- Complete and merged.
 
 Phase 14, `phase-14-auth-profiles`:
 
