@@ -14,6 +14,7 @@ class ScanCreate(BaseModel):
 class ScanRead(BaseModel):
     id: str
     target_id: str
+    auth_profile_id: str | None
     mode: str
     scan_profile_id: str
     status: str
@@ -99,6 +100,10 @@ class TargetRepoPathUpdate(BaseModel):
     repo_path: str | None = Field(default=None, max_length=2048)
 
 
+class TargetAuthProfileUpdate(BaseModel):
+    auth_profile_id: str | None = Field(default=None, max_length=64)
+
+
 class TargetRead(BaseModel):
     id: str
     allowlist_id: str
@@ -120,3 +125,21 @@ class TargetValidationRead(BaseModel):
     allowed_modes: list[str]
     max_redirects: int
     local_demo: bool
+
+
+class AuthProfileCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=200)
+    profile_type: str = Field(min_length=1, max_length=40)
+    header_name: str | None = Field(default=None, max_length=120)
+    secret: str = Field(min_length=1, max_length=4096)
+
+
+class AuthProfileRead(BaseModel):
+    id: str
+    label: str
+    profile_type: str
+    header_name: str | None
+    secret_hint: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

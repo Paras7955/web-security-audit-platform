@@ -44,6 +44,7 @@ def create_scan(
         workspace_id=principal.workspace_id,
         created_by_user_id=principal.user_id,
         target_id=target.id,
+        auth_profile_id=target.auth_profile_id,
         scan_profile_id=profile.id,
         mode=mode.value,
         status=ScanStatus.QUEUED.value,

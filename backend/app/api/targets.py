@@ -5,9 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_principal, get_db, get_scan_allowlist
-from app.api.schemas import TargetCreate, TargetRead, TargetRepoPathUpdate, TargetValidationRead
+from app.api.schemas import TargetAuthProfileUpdate, TargetCreate, TargetRead, TargetRepoPathUpdate, TargetValidationRead
 from app.core.config import settings
-from app.models import Target
+from app.models import AuthProfile, Target
 from app.security.auth import AuthenticatedPrincipal
 from app.repo_scanner.paths import RepoPathError, validate_repo_path
 from app.security.allowlist import ScanAllowlist
@@ -47,11 +47,7 @@ def create_target(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Permission confirmation is required before creating a scan target.",
         )
-    if payload.auth_profile_id is not None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Authenticated scanning is not available in v1 target creation.",
-        )
+    auth_profile_id = require_workspace_auth_profile(db, payload.auth_profile_id, principal)
 
     match = validate_allowed_target_url(payload.target_url, allowlist)
     allowlist_target = match.allowlist_target
@@ -65,7 +61,7 @@ def create_target(
         base_url=match.url.normalized_url,
         permission_confirmed=True,
         repo_path=payload.repo_path,
-        auth_profile_id=payload.auth_profile_id,
+        auth_profile_id=auth_profile_id,
     )
     db.add(target)
     db.commit()
@@ -113,6 +109,25 @@ def update_target_repo_path(
     return target_to_read(target, allowlist)
 
 
+@router.patch("/{target_id}/auth-profile", response_model=TargetRead)
+def update_target_auth_profile(
+    target_id: str,
+    payload: TargetAuthProfileUpdate,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+    allowlist: ScanAllowlist = Depends(get_scan_allowlist),
+) -> TargetRead:
+    target = db.scalar(select(Target).where(Target.id == target_id, Target.workspace_id == principal.workspace_id))
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
+
+    target.auth_profile_id = require_workspace_auth_profile(db, payload.auth_profile_id, principal)
+    db.add(target)
+    db.commit()
+    db.refresh(target)
+    return target_to_read(target, allowlist)
+
+
 @router.get("/{target_id}", response_model=TargetRead)
 def get_target(
     target_id: str,
@@ -133,6 +148,15 @@ def validate_allowed_target_url(target_url: str, allowlist: ScanAllowlist):
         return match
     except (TargetUrlError, SsrfGuardError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+def require_workspace_auth_profile(db: Session, auth_profile_id: str | None, principal: AuthenticatedPrincipal) -> str | None:
+    if auth_profile_id is None:
+        return None
+    profile = db.scalar(select(AuthProfile).where(AuthProfile.id == auth_profile_id, AuthProfile.workspace_id == principal.workspace_id))
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Auth profile not found.")
+    return profile.id
 
 
 def target_to_read(target: Target, allowlist: ScanAllowlist) -> TargetRead:

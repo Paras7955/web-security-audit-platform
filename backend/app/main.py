@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.ai import router as ai_router
+from app.api.auth_profiles import router as auth_profiles_router
 from app.api.findings import router as findings_router
 from app.api.reports import router as reports_router
 from app.api.scans import router as scans_router
@@ -26,6 +27,7 @@ app.add_middleware(
 )
 
 app.include_router(targets_router)
+app.include_router(auth_profiles_router)
 app.include_router(scans_router)
 app.include_router(findings_router)
 app.include_router(reports_router)

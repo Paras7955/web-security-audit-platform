@@ -10,7 +10,7 @@ from sqlalchemy import delete
 from app.main import app
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.models import Target
+from app.models import AuthProfile, Target
 from tests.helpers import DEV_AUTH_HEADERS
 
 
@@ -18,12 +18,14 @@ class TargetApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = TestClient(app)
         self.created_target_ids: list[str] = []
+        self.created_auth_profile_ids: list[str] = []
 
     def tearDown(self) -> None:
-        if not self.created_target_ids:
-            return
         with SessionLocal() as db:
-            db.execute(delete(Target).where(Target.id.in_(self.created_target_ids)))
+            if self.created_target_ids:
+                db.execute(delete(Target).where(Target.id.in_(self.created_target_ids)))
+            if self.created_auth_profile_ids:
+                db.execute(delete(AuthProfile).where(AuthProfile.id.in_(self.created_auth_profile_ids)))
             db.commit()
 
     def test_validate_allowed_target(self) -> None:
@@ -127,18 +129,33 @@ class TargetApiTests(unittest.TestCase):
         self.assertEqual(response.headers["access-control-allow-origin"], "http://localhost:3001")
         self.assertIn("PATCH", response.headers["access-control-allow-methods"])
 
-    def test_auth_profile_placeholder_is_not_enabled(self) -> None:
-        response = self.client.post(
+    def test_update_target_auth_profile_persists_workspace_profile(self) -> None:
+        target = self.client.post(
             "/targets",
-            json={
-                "target_url": "http://juice-shop:3000",
-                "permission_confirmed": True,
-                "auth_profile_id": str(uuid4()),
-            },
+            json={"target_url": "http://juice-shop:3000", "permission_confirmed": True},
+            headers=DEV_AUTH_HEADERS,
+        )
+        self.assertEqual(target.status_code, 201)
+        target_body = target.json()
+        self.created_target_ids.append(target_body["id"])
+
+        profile = self.client.post(
+            "/auth-profiles",
+            json={"label": "API Key", "profile_type": "custom_header", "header_name": "X-API-Key", "secret": "secret-key"},
+            headers=DEV_AUTH_HEADERS,
+        )
+        self.assertEqual(profile.status_code, 201)
+        profile_body = profile.json()
+        self.created_auth_profile_ids.append(profile_body["id"])
+
+        update = self.client.patch(
+            f"/targets/{target_body['id']}/auth-profile",
+            json={"auth_profile_id": profile_body["id"]},
             headers=DEV_AUTH_HEADERS,
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(update.status_code, 200)
+        self.assertEqual(update.json()["auth_profile_id"], profile_body["id"])
 
     def test_public_target_is_rejected(self) -> None:
         response = self.client.post(
