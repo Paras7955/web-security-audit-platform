@@ -262,7 +262,7 @@ AUTH_OIDC_AUDIENCE=
 AUTH_OIDC_JWKS_URL=
 ```
 
-Phase 11 does not add target-application authentication profiles. Those remain planned for Phase 14.
+Target-application authentication profiles are implemented in Phase 14.
 
 ## Phase 12 Status
 
@@ -291,7 +291,29 @@ Implemented Phase 13 capabilities:
 - Keeps active/AJAX/repo safety gates enforced in backend code.
 - Updated the frontend scan launcher to select profiles and send `scan_profile_id`.
 
-Phase 13 does not add user-editable scan profiles, target-application authentication profiles, finding lifecycle management, risk scoring, or dashboards. Those remain planned for later phases.
+Phase 13 does not add user-editable scan profiles, finding lifecycle management, risk scoring, or dashboards. Those remain planned for later phases.
+
+## Phase 14 Status
+
+Phase 14 adds target-application auth profiles for conservative authenticated passive scans. These profiles are separate from platform user authentication.
+
+Implemented Phase 14 capabilities:
+
+- Added workspace-owned auth profiles for bearer tokens and custom static headers/API keys.
+- Stores auth profile secrets encrypted with `AUTH_PROFILE_SECRET_KEY`; API responses return only metadata and a short secret hint.
+- Targets can optionally reference an auth profile after workspace ownership checks.
+- New scans snapshot the selected target auth profile into persisted scan context.
+- The worker decrypts auth material only for persisted passive-web scan jobs and injects it into guarded custom scanner HTTP requests after allowlist/SSRF validation.
+- Active Demo, AJAX Short, browser/ZAP authenticated workflows, repo scans, login automation, password form flows, and business-logic auth testing remain out of scope.
+- Reports, AI explanations, findings, artifacts, status messages, and API reads must not receive auth profile secrets.
+
+`AUTH_PROFILE_SECRET_KEY` is required for backend and worker startup. Use a generated Fernet key and do not reuse the placeholder in `.env.example`:
+
+```text
+AUTH_PROFILE_SECRET_KEY=<generated-fernet-key>
+```
+
+For local Docker Compose, place this value in a local `.env` file or export it before running Compose commands. Production-like environments fail startup if the key is missing, invalid, or still using the local development example value.
 
 ## Responsible Use
 
@@ -404,9 +426,9 @@ The backend readiness endpoint verifies that the initial schema exists before re
 The full verification path is Docker Compose based because backend tests expect the Compose database and service hostnames by default:
 
 ```text
-docker compose build backend migrate
-docker compose run --rm backend python -m unittest discover tests
-docker compose run --rm frontend npm run build
+AUTH_PROFILE_SECRET_KEY=<generated-fernet-key> docker compose build backend migrate
+AUTH_PROFILE_SECRET_KEY=<generated-fernet-key> docker compose run --rm backend python -m unittest discover tests
+AUTH_PROFILE_SECRET_KEY=<generated-fernet-key> docker compose run --rm frontend npm run build
 ```
 
 Host-side backend tests require an explicit `DATABASE_URL` that points at a reachable Postgres instance with the migrated schema. Host-side frontend builds require local `node_modules`.

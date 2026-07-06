@@ -87,6 +87,19 @@ Phase 11 platform authentication and workspace isolation:
 - Background jobs and generated artifacts must carry persisted workspace/user context and must not rely only on later ownership lookups.
 - The worker must reject jobs whose persisted workspace context does not match the target workspace.
 
+Phase 14 target-application auth profiles:
+
+- Auth profiles are workspace-owned target-application credentials, not platform login identities.
+- Supported profile types are bearer token and custom static header/API key.
+- Auth profile secrets must be encrypted with `AUTH_PROFILE_SECRET_KEY`.
+- `AUTH_PROFILE_SECRET_KEY` must be valid at startup/readiness; production-like environments must not use the local development example key.
+- API responses must never return auth profile secrets.
+- Targets may reference auth profiles only after workspace ownership checks.
+- Scans must snapshot the selected auth profile into persisted scan context.
+- Auth material may be injected only into guarded custom passive HTTP requests after allowlist/SSRF validation.
+- Active Demo, AJAX Short, browser/ZAP authenticated workflows, repo scans, login automation, password-form workflows, and business-logic auth testing remain out of scope.
+- Auth profile secrets must not appear in findings, reports, AI payloads, artifacts, logs, status messages, or audit events.
+
 Post-v1 unless explicitly approved:
 
 - Playwright login/session workflows.
