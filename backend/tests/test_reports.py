@@ -172,6 +172,7 @@ class ReportsTests(unittest.TestCase):
             scan = db.get(Scan, self.scan_id)
             self.assertIsNotNone(scan)
             scan.mode = "active_demo"
+            scan.scan_profile_id = "active-demo"
             finding = db.get(Finding, self.finding_id)
             self.assertIsNotNone(finding)
             finding.source_tool = "zap-active"
@@ -201,6 +202,22 @@ class ReportsTests(unittest.TestCase):
             scan = db.get(Scan, self.scan_id)
             self.assertIsNotNone(scan)
             scan.mode = "ajax_short"
+            scan.scan_profile_id = "ajax-short"
+            db.add(scan)
+            db.commit()
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
+            response = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("passive, Active Demo, and Repo scans", response.json()["detail"])
+
+    def test_reports_reject_inconsistent_scan_profile(self) -> None:
+        with SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            scan.mode = "ajax_short"
+            scan.scan_profile_id = "passive-web"
             db.add(scan)
             db.commit()
 
@@ -215,6 +232,7 @@ class ReportsTests(unittest.TestCase):
             scan = db.get(Scan, self.scan_id)
             self.assertIsNotNone(scan)
             scan.mode = "repo"
+            scan.scan_profile_id = "repository"
             finding = db.get(Finding, self.finding_id)
             self.assertIsNotNone(finding)
             finding.source_tool = "gitleaks-stub"
@@ -291,6 +309,7 @@ class ReportsTests(unittest.TestCase):
                 scan = db.get(Scan, self.scan_id)
                 self.assertIsNotNone(scan)
                 scan.mode = "ajax_short"
+                scan.scan_profile_id = "ajax-short"
                 db.add(scan)
                 db.commit()
 

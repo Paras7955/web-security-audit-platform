@@ -117,7 +117,9 @@ def default_scan_profile_for_mode(mode: str) -> ScanProfile | None:
 
 
 def scan_profile_for_values(profile_id: str | None, mode: str) -> ScanProfile | None:
-    profile = SCAN_PROFILE_BY_ID.get(profile_id or "")
+    if profile_id is None or profile_id == "":
+        return default_scan_profile_for_mode(mode)
+    profile = SCAN_PROFILE_BY_ID.get(profile_id)
     if profile is not None and profile.mode.value == mode:
         return profile
-    return default_scan_profile_for_mode(mode)
+    return None

@@ -80,7 +80,8 @@ def build_report_data(
         raise ReportGenerationError("Scan not found.")
     if scan.status not in TERMINAL_REPORT_STATUSES:
         raise ReportGenerationError("Reports can only be generated for completed scans.")
-    if not scan_reports_enabled(scan):
+    profile = scan_profile_for_values(scan.scan_profile_id, scan.mode)
+    if profile is None or not profile.reports_enabled:
         raise ReportGenerationError("Reports can only be generated for passive, Active Demo, and Repo scans.")
 
     target = db.get(Target, scan.target_id)
@@ -99,9 +100,7 @@ def build_report_data(
         for finding in sorted(findings, key=lambda finding: (SEVERITY_ORDER.get(finding.severity, 99), finding.title.lower()))
     )
     ai_explanations = (
-        disabled_ai_explanations(scan.id)
-        if scan.mode == ScanMode.REPO.value
-        else generate_ai_explanations(
+        generate_ai_explanations(
             db,
             scan_id=scan.id,
             workspace_id=workspace_id,
@@ -109,6 +108,8 @@ def build_report_data(
             openai_api_key=openai_api_key,
             openai_model=openai_model,
         )
+        if profile.ai_enabled
+        else disabled_ai_explanations(scan.id)
     )
     return ReportData(
         scan=scan,
