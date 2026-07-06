@@ -66,11 +66,13 @@ export function TargetSetup() {
       (!selectedProfile.requires_active_demo_acknowledgement || activeDemoAcknowledged) &&
       (!selectedProfile.requires_ajax_short_acknowledgement || ajaxShortAcknowledged)
   );
+  const displayFindings = useMemo(() => uniqueFindings(findings), [findings]);
+  const displayAiExplanation = useMemo(() => uniqueAiExplanation(aiExplanation, findings), [aiExplanation, findings]);
   const filteredFindings = useMemo(() => {
-    return findings
+    return displayFindings
       .filter((finding) => severityFilter === "all" || finding.severity === severityFilter)
       .sort((left, right) => (severityRank[right.severity] ?? 0) - (severityRank[left.severity] ?? 0));
-  }, [findings, severityFilter]);
+  }, [displayFindings, severityFilter]);
   const selectedFinding = filteredFindings.find((finding) => finding.id === selectedFindingId) ?? filteredFindings[0] ?? null;
 
   useEffect(() => {
@@ -410,7 +412,7 @@ export function TargetSetup() {
           <p className="eyebrow">Workspace Console</p>
           <h2 id="dashboard-heading">Run authorized scans, review normalized findings, and manage reportable evidence</h2>
         </div>
-        <span className="phaseBadge">Phase 12 shell</span>
+        <span className="phaseBadge">Phase 13 profiles</span>
       </div>
 
       {bootstrapError ? (
@@ -472,7 +474,7 @@ export function TargetSetup() {
         />
       </div>
 
-      <AiExplanationsPanel explanation={aiExplanation} message={aiMessage} />
+      <AiExplanationsPanel explanation={displayAiExplanation} message={aiMessage} />
 
       <div id="findings">
         <FindingsDashboard
@@ -485,4 +487,64 @@ export function TargetSetup() {
       </div>
     </section>
   );
+}
+
+function uniqueFindings(items: Finding[]): Finding[] {
+  const seen = new Set<string>();
+  const unique: Finding[] = [];
+  for (const finding of items) {
+    const key = finding.dedupe_key || finding.id;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(finding);
+  }
+  return unique;
+}
+
+function uniqueAiExplanation(explanation: AiExplanation | null, findings: Finding[]): AiExplanation | null {
+  if (!explanation) {
+    return null;
+  }
+
+  const canonicalFindingIdByKey = new Map<string, string>();
+  const findingKeyById = new Map<string, string>();
+  for (const finding of findings) {
+    const key = finding.dedupe_key || finding.id;
+    findingKeyById.set(finding.id, key);
+    if (!canonicalFindingIdByKey.has(key)) {
+      canonicalFindingIdByKey.set(key, finding.id);
+    }
+  }
+
+  const keptKeys = new Set<string>();
+  const explanations = explanation.explanations.filter((item) => {
+    const key = findingKeyById.get(item.finding_id) ?? explanationSignature(item);
+    if (keptKeys.has(key)) {
+      return false;
+    }
+    keptKeys.add(key);
+    return true;
+  });
+
+  const groups = explanation.groups.map((group) => {
+    const ids: string[] = [];
+    const seenKeys = new Set<string>();
+    for (const findingId of group.finding_ids) {
+      const key = findingKeyById.get(findingId) ?? findingId;
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
+      ids.push(canonicalFindingIdByKey.get(key) ?? findingId);
+    }
+    return { ...group, count: ids.length, finding_ids: ids };
+  });
+
+  return { ...explanation, groups, explanations };
+}
+
+function explanationSignature(item: AiExplanation["explanations"][number]): string {
+  return [item.summary, item.recommended_action, item.owasp_mapping, item.limitations].join("|");
 }

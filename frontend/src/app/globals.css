@@ -78,31 +78,6 @@ a {
   font-size: 1rem;
 }
 
-.appNav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  border-bottom: 1px solid var(--border);
-  padding: 12px 0;
-}
-
-.appNav a {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--muted);
-  font-size: 0.9rem;
-  font-weight: 700;
-  padding: 8px 10px;
-  text-decoration: none;
-}
-
-.appNav a:hover,
-.appNav a:focus-visible {
-  border-color: #9ccfbd;
-  color: var(--foreground);
-}
-
 .overviewBand {
   display: grid;
   gap: 12px;
