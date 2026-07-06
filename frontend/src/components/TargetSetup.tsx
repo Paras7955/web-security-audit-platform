@@ -489,7 +489,7 @@ export function TargetSetup() {
           <p className="eyebrow">Workspace Console</p>
           <h2 id="dashboard-heading">Run authorized scans, review normalized findings, and manage reportable evidence</h2>
         </div>
-        <span className="phaseBadge">Phase 13 profiles</span>
+        <span className="phaseBadge">Profiles + auth</span>
       </div>
 
       {bootstrapError ? (

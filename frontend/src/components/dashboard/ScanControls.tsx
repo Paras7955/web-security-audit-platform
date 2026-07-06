@@ -97,7 +97,7 @@ export function ScanLauncher({
     <div className="panel">
       <div className="panelHeader">
         <h3>Scan Profile</h3>
-        <span className="phaseBadge">Phase 13</span>
+        <span className="phaseBadge">Profiled</span>
       </div>
 
       <label className="selectLabel">
