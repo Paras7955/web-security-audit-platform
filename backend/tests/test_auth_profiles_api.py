@@ -84,6 +84,16 @@ class AuthProfileApiTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 400)
 
+    def test_create_profile_rejects_blank_label(self) -> None:
+        response = self.client.post(
+            "/auth-profiles",
+            json={"label": "   ", "profile_type": "bearer_token", "secret": "demo-token"},
+            headers=DEV_AUTH_HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("label", response.json()["detail"].lower())
+
     def test_list_and_get_profiles_are_workspace_scoped(self) -> None:
         own = self.client.post(
             "/auth-profiles",

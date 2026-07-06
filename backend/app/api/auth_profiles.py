@@ -20,6 +20,9 @@ def create_auth_profile(
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> AuthProfileRead:
+    label = payload.label.strip()
+    if not label:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Auth profile label is required.")
     try:
         profile_type, header_name, secret = validate_profile_input(
             profile_type=payload.profile_type,
@@ -34,7 +37,7 @@ def create_auth_profile(
         id=str(uuid4()),
         workspace_id=principal.workspace_id,
         created_by_user_id=principal.user_id,
-        label=payload.label.strip(),
+        label=label,
         profile_type=profile_type,
         header_name=header_name,
         encrypted_secret=encrypted_secret,
