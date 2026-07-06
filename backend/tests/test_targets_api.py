@@ -47,26 +47,48 @@ class TargetApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
 
-    def test_create_allowed_target_persists_repo_path_placeholder(self) -> None:
-        response = self.client.post(
-            "/targets",
-            json={
-                "target_url": "http://juice-shop:3000",
-                "permission_confirmed": True,
-                "repo_path": "/repos/example",
-            },
-            headers=DEV_AUTH_HEADERS,
-        )
+    def test_create_allowed_target_validates_and_persists_repo_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_path = Path(temp_dir) / "security-project"
+            repo_path.mkdir()
+            original_root = settings.repo_scan_root
+            settings.repo_scan_root = temp_dir
+            try:
+                response = self.client.post(
+                    "/targets",
+                    json={
+                        "target_url": "http://juice-shop:3000",
+                        "permission_confirmed": True,
+                        "repo_path": f"  {repo_path}  ",
+                    },
+                    headers=DEV_AUTH_HEADERS,
+                )
+            finally:
+                settings.repo_scan_root = original_root
 
         self.assertEqual(response.status_code, 201)
         body = response.json()
         self.created_target_ids.append(body["id"])
         self.assertEqual(body["allowlist_id"], "juice-shop")
-        self.assertEqual(body["repo_path"], "/repos/example")
+        self.assertEqual(body["repo_path"], str(repo_path))
         self.assertIsNone(body["auth_profile_id"])
 
         detail = self.client.get(f"/targets/{body['id']}", headers=DEV_AUTH_HEADERS)
         self.assertEqual(detail.status_code, 200)
+
+    def test_create_allowed_target_rejects_invalid_repo_path(self) -> None:
+        response = self.client.post(
+            "/targets",
+            json={
+                "target_url": "http://juice-shop:3000",
+                "permission_confirmed": True,
+                "repo_path": "relative/repo",
+            },
+            headers=DEV_AUTH_HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("absolute", response.json()["detail"])
 
     def test_update_target_repo_path_validates_and_persists_path(self) -> None:
         response = self.client.post(

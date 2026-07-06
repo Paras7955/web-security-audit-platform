@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     dev_auth_user_id: str = "dev-user"
     dev_auth_workspace_id: str = "dev-workspace"
     dev_auth_subject: str = "dev-user"
-    auth_profile_secret_key: str = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+    auth_profile_secret_key: str = ""
     ai_provider: str = "template"
     openai_model: str | None = None
     openai_api_key: str | None = None

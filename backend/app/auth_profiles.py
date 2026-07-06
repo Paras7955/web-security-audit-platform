@@ -24,6 +24,7 @@ DISALLOWED_CUSTOM_HEADERS = {
     "set-cookie",
 }
 HEADER_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,119}$")
+LOCAL_DEV_EXAMPLE_SECRET_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 
 
 @dataclass(frozen=True)
@@ -92,8 +93,17 @@ def build_scanner_auth_material(profile: AuthProfile, config: Settings = setting
     raise AuthProfileError("Unsupported auth profile type.")
 
 
+def validate_auth_profile_secret_settings(config: Settings = settings) -> None:
+    key = config.auth_profile_secret_key.strip()
+    if not key:
+        raise AuthProfileError("AUTH_PROFILE_SECRET_KEY is required.")
+    _fernet(config)
+    if config.app_env.strip().lower() != "local" and key == LOCAL_DEV_EXAMPLE_SECRET_KEY:
+        raise AuthProfileError("AUTH_PROFILE_SECRET_KEY must be replaced outside local development.")
+
+
 def _fernet(config: Settings) -> Fernet:
     try:
-        return Fernet(config.auth_profile_secret_key.encode("ascii"))
+        return Fernet(config.auth_profile_secret_key.strip().encode("ascii"))
     except (ValueError, TypeError) as exc:
         raise AuthProfileError("AUTH_PROFILE_SECRET_KEY must be a valid Fernet key.") from exc

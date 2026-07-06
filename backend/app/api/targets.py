@@ -51,6 +51,12 @@ def create_target(
 
     match = validate_allowed_target_url(payload.target_url, allowlist)
     allowlist_target = match.allowlist_target
+    repo_path = payload.repo_path.strip() if payload.repo_path else None
+    if repo_path is not None:
+        try:
+            validate_repo_path(repo_path, repo_scan_root=settings.repo_scan_root)
+        except RepoPathError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     target = Target(
         id=str(uuid4()),
@@ -60,7 +66,7 @@ def create_target(
         name=allowlist_target.name,
         base_url=match.url.normalized_url,
         permission_confirmed=True,
-        repo_path=payload.repo_path,
+        repo_path=repo_path,
         auth_profile_id=auth_profile_id,
     )
     db.add(target)

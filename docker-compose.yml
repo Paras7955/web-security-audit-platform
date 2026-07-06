@@ -79,7 +79,7 @@ services:
       DEV_AUTH_USER_ID: dev-user
       DEV_AUTH_WORKSPACE_ID: dev-workspace
       DEV_AUTH_SUBJECT: dev-user
-      AUTH_PROFILE_SECRET_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      AUTH_PROFILE_SECRET_KEY: ${AUTH_PROFILE_SECRET_KEY:?Set AUTH_PROFILE_SECRET_KEY to a generated Fernet key}
       ZAP_BASE_URL: http://zap:8080
     ports:
       - "8000:8000"
@@ -117,7 +117,7 @@ services:
       DEV_AUTH_USER_ID: dev-user
       DEV_AUTH_WORKSPACE_ID: dev-workspace
       DEV_AUTH_SUBJECT: dev-user
-      AUTH_PROFILE_SECRET_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      AUTH_PROFILE_SECRET_KEY: ${AUTH_PROFILE_SECRET_KEY:?Set AUTH_PROFILE_SECRET_KEY to a generated Fernet key}
       ZAP_BASE_URL: http://zap:8080
     volumes:
       - ./config:/app/config:ro

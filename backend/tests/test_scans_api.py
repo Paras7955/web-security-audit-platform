@@ -33,11 +33,19 @@ class ScanApiTests(unittest.TestCase):
             db.commit()
 
     def create_target(self, *, repo_path: str | None = None) -> dict[str, object]:
-        response = self.client.post(
-            "/targets",
-            json={"target_url": "http://juice-shop:3000", "permission_confirmed": True, "repo_path": repo_path},
-            headers=DEV_AUTH_HEADERS,
-        )
+        if repo_path is None:
+            response = self.client.post(
+                "/targets",
+                json={"target_url": "http://juice-shop:3000", "permission_confirmed": True},
+                headers=DEV_AUTH_HEADERS,
+            )
+        else:
+            with patch("app.api.targets.settings.repo_scan_root", str(Path(repo_path).parent)):
+                response = self.client.post(
+                    "/targets",
+                    json={"target_url": "http://juice-shop:3000", "permission_confirmed": True, "repo_path": repo_path},
+                    headers=DEV_AUTH_HEADERS,
+                )
         self.assertEqual(response.status_code, 201)
         body = response.json()
         self.created_target_ids.append(body["id"])
