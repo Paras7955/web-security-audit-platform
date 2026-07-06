@@ -149,6 +149,12 @@ def validate_scan_profile(
         except RepoPathError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+    if target.auth_profile_id is not None and mode != ScanMode.PASSIVE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Auth profiles are currently supported only for passive-web scans.",
+        )
+
     revalidate_target_record(target, allowlist)
     return mode
 

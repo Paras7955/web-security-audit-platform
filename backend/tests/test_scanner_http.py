@@ -101,6 +101,35 @@ class ScannerHttpTests(unittest.TestCase):
         self.assertEqual(str(seen_requests[0].url), "http://172.20.0.10:3000/")
         self.assertEqual(seen_requests[0].headers["host"], "juice-shop:3000")
 
+    def test_http_client_injects_auth_headers_without_overriding_host(self) -> None:
+        client = GuardedHttpClient(
+            allowlist_target=ALLOWLIST_TARGET,
+            timeout_seconds=1,
+            resolver=resolver,
+            default_headers={"Authorization": "Bearer scanner-token"},
+        )
+        seen_requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen_requests.append(request)
+            return httpx.Response(200, content=b"ok")
+
+        original_client = httpx.Client
+
+        class MockClient(httpx.Client):
+            def __init__(self, *args, **kwargs):
+                super().__init__(transport=httpx.MockTransport(handler), *args, **kwargs)
+
+        try:
+            httpx.Client = MockClient
+            response = client.get("http://juice-shop:3000/")
+        finally:
+            httpx.Client = original_client
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(seen_requests[0].headers["authorization"], "Bearer scanner-token")
+        self.assertEqual(seen_requests[0].headers["host"], "juice-shop:3000")
+
     def test_https_scanner_connection_fails_closed_until_tls_pinning_is_supported(self) -> None:
         client = GuardedHttpClient(allowlist_target=HTTPS_ALLOWLIST_TARGET, timeout_seconds=1, resolver=public_resolver)
 

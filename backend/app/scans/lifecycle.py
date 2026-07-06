@@ -4,9 +4,10 @@ from contextlib import contextmanager
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from app.auth_profiles import AuthProfileError, build_scanner_auth_material
 from app.core.contracts import ScanMode, ScanStatus, ScanStep
 from app.findings.service import persist_normalized_findings
-from app.models import Scan
+from app.models import AuthProfile, Scan
 from app.repo_scanner.paths import validate_repo_path
 from app.repo_scanner.stubs import run_repo_stub_scan
 from app.scans.artifacts import ensure_scan_artifact_dir
@@ -121,6 +122,7 @@ def run_passive_scan_job(
         ajax_short = scan.mode == ScanMode.AJAX_SHORT.value
         if scan.mode not in set(allowlist_target.allowed_modes):
             raise ScanLifecycleError("Scan mode is no longer allowed for this target.")
+        auth_headers = load_scan_auth_headers(db, scan)
         if active_demo:
             if not allowlist_target.local_demo:
                 raise ScanLifecycleError("Active Demo scan target must be a local/demo allowlist target.")
@@ -154,6 +156,7 @@ def run_passive_scan_job(
             target_url=scan.target.base_url,
             allowlist_target=allowlist_target,
             artifact_root=artifact_root,
+            auth_headers=auth_headers,
         )
 
         update_scan_progress(
@@ -372,6 +375,25 @@ def validate_scan_job(scan: Scan) -> None:
         raise ScanLifecycleError("Scan is missing persisted user context.")
     if not scan.target.permission_confirmed:
         raise ScanLifecycleError("Scan target authorization is not confirmed.")
+    if scan.auth_profile_id is not None and scan.mode != ScanMode.PASSIVE.value:
+        raise ScanLifecycleError("Auth profiles are currently supported only for passive-web scans.")
+
+
+def load_scan_auth_headers(db: Session, scan: Scan) -> dict[str, str] | None:
+    if scan.auth_profile_id is None:
+        return None
+    profile = db.scalar(
+        select(AuthProfile).where(
+            AuthProfile.id == scan.auth_profile_id,
+            AuthProfile.workspace_id == scan.workspace_id,
+        )
+    )
+    if profile is None:
+        raise ScanLifecycleError("Scan auth profile is not available in this workspace.")
+    try:
+        return build_scanner_auth_material(profile).headers
+    except AuthProfileError as exc:
+        raise ScanLifecycleError(str(exc)) from exc
 
 
 def format_scan_mode(mode: str) -> str:

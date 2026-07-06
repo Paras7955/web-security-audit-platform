@@ -33,11 +33,13 @@ class GuardedHttpClient:
         timeout_seconds: int,
         resolver: Resolver = resolve_host,
         body_bytes_limit: int = 65536,
+        default_headers: dict[str, str] | None = None,
     ) -> None:
         self.allowlist_target = allowlist_target
         self.timeout_seconds = timeout_seconds
         self.resolver = resolver
         self.body_bytes_limit = body_bytes_limit
+        self.default_headers = default_headers or {}
 
     def get(self, raw_url: str) -> ScannerHttpResponse:
         current_url, current_destination = self._validate_url(raw_url)
@@ -47,7 +49,7 @@ class GuardedHttpClient:
             for _attempt in range(self.allowlist_target.max_redirects + 1):
                 try:
                     request_url = build_pinned_request_url(current_url, current_destination)
-                    with client.stream("GET", request_url, headers={"Host": build_host_header(current_url)}) as response:
+                    with client.stream("GET", request_url, headers=self._request_headers(current_url)) as response:
                         if not is_redirect(response.status_code):
                             return ScannerHttpResponse(
                                 url=current_url,
@@ -84,6 +86,11 @@ class GuardedHttpClient:
         normalized = normalize_target_url(raw_url)
         destination = validate_destination(normalized, self.allowlist_target, resolver=self.resolver)
         return normalized, destination
+
+    def _request_headers(self, current_url: NormalizedTargetUrl) -> dict[str, str]:
+        headers = dict(self.default_headers)
+        headers["Host"] = build_host_header(current_url)
+        return headers
 
 
 def is_redirect(status_code: int) -> bool:
