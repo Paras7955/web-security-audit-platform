@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.service import AiExplanationResult, generate_ai_explanations, sanitize_provider_url
-from app.core.contracts import ScanMode, ScanStatus, default_scan_profile_for_mode, scan_profile_for_id
+from app.core.contracts import ScanMode, ScanStatus, scan_profile_for_values
 from app.models import Finding, ReportArtifact, Scan, Target
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
 
@@ -271,7 +271,7 @@ def validate_report_scan_eligibility(scan: Scan) -> None:
 
 
 def scan_reports_enabled(scan: Scan) -> bool:
-    profile = scan_profile_for_id(scan.scan_profile_id) or default_scan_profile_for_mode(scan.mode)
+    profile = scan_profile_for_values(scan.scan_profile_id, scan.mode)
     return bool(profile and profile.reports_enabled)
 
 

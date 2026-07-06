@@ -8,7 +8,11 @@ const profilesById: Map<string, ScanProfileMetadata> = new Map(SCAN_PROFILES.map
 const profilesByMode: Map<string, ScanProfileMetadata> = new Map(SCAN_PROFILES.map((profile) => [profile.mode, profile]));
 
 export function scanProfileForScan(scan: Scan) {
-  return profilesById.get(scan.scan_profile_id) ?? profilesByMode.get(scan.mode) ?? null;
+  const profile = profilesById.get(scan.scan_profile_id);
+  if (profile && profile.mode === scan.mode) {
+    return profile;
+  }
+  return profilesByMode.get(scan.mode) ?? null;
 }
 
 export function formatScanModeLabel(mode: string): string {

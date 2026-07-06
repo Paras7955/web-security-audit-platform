@@ -7,7 +7,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.contracts import ScanStatus, default_scan_profile_for_mode, scan_profile_for_id
+from app.core.contracts import ScanStatus, scan_profile_for_values
 from app.models import Finding, Scan
 
 
@@ -204,7 +204,7 @@ def generate_ai_explanations(
         raise AiExplanationError("Scan not found.")
     if workspace_id is not None and scan.workspace_id != workspace_id:
         raise AiExplanationError("Scan not found.")
-    profile = scan_profile_for_id(scan.scan_profile_id) or default_scan_profile_for_mode(scan.mode)
+    profile = scan_profile_for_values(scan.scan_profile_id, scan.mode)
     if profile is None or not profile.ai_enabled:
         raise AiExplanationError("AI explanations can only be generated for passive and Active Demo scans.")
     if scan.status not in ELIGIBLE_SCAN_STATUSES:
