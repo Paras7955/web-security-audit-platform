@@ -11,10 +11,10 @@ import {
   ScanProgress,
   canUseAi,
   canUseReports,
-  formatScanModeLabel,
   mergeScan,
   terminalStatuses
 } from "@/components/dashboard/ScanControls";
+import { SCAN_PROFILES } from "@/lib/contracts";
 import { TargetForm } from "@/components/dashboard/TargetForm";
 import {
   AiExplanation,
@@ -35,7 +35,7 @@ export function TargetSetup() {
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
   const [selectedTargetId, setSelectedTargetId] = useState("");
-  const [scanMode, setScanMode] = useState("passive");
+  const [scanProfileId, setScanProfileId] = useState("passive-web");
   const [activeDemoAcknowledged, setActiveDemoAcknowledged] = useState(false);
   const [ajaxShortAcknowledged, setAjaxShortAcknowledged] = useState(false);
   const [selectedScanId, setSelectedScanId] = useState("");
@@ -56,14 +56,15 @@ export function TargetSetup() {
 
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
   const selectedScan = scanHistory.find((scan) => scan.id === selectedScanId) ?? null;
+  const selectedProfile = SCAN_PROFILES.find((profile) => profile.id === scanProfileId) ?? SCAN_PROFILES[0];
   const canCreate = useMemo(() => Boolean(validation && permissionConfirmed && !isBusy), [validation, permissionConfirmed, isBusy]);
   const canStartScan = Boolean(
     selectedTarget &&
-      selectedTarget.allowed_modes.includes(scanMode) &&
+      selectedTarget.allowed_modes.includes(selectedProfile.mode) &&
       !isBusy &&
-      (scanMode !== "repo" || Boolean(selectedTarget.repo_path)) &&
-      (scanMode !== "active_demo" || activeDemoAcknowledged) &&
-      (scanMode !== "ajax_short" || ajaxShortAcknowledged)
+      (!selectedProfile.requires_repo_path || Boolean(selectedTarget.repo_path)) &&
+      (!selectedProfile.requires_active_demo_acknowledgement || activeDemoAcknowledged) &&
+      (!selectedProfile.requires_ajax_short_acknowledgement || ajaxShortAcknowledged)
   );
   const filteredFindings = useMemo(() => {
     return findings
@@ -176,7 +177,7 @@ export function TargetSetup() {
     }
 
     setIsBusy(true);
-    setMessage(`Creating ${formatScanModeLabel(scanMode)} scan...`);
+    setMessage(`Creating ${selectedProfile.label} scan...`);
 
     try {
       const response = await apiFetch(`${apiBaseUrl}/scans`, {
@@ -184,7 +185,7 @@ export function TargetSetup() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           target_id: selectedTarget.id,
-          mode: scanMode,
+          scan_profile_id: selectedProfile.id,
           active_demo_acknowledged: activeDemoAcknowledged,
           ajax_short_acknowledged: ajaxShortAcknowledged
         })
@@ -438,13 +439,13 @@ export function TargetSetup() {
             targets={targets}
             selectedTargetId={selectedTargetId}
             repoPath={repoPath}
-            scanMode={scanMode}
+            scanProfileId={scanProfileId}
             activeDemoAcknowledged={activeDemoAcknowledged}
             ajaxShortAcknowledged={ajaxShortAcknowledged}
             canStartScan={canStartScan}
             isBusy={isBusy}
             onSelectTarget={setSelectedTargetId}
-            onSelectScanMode={setScanMode}
+            onSelectScanProfile={setScanProfileId}
             onAttachRepoPath={updateSelectedTargetRepoPath}
             onActiveDemoAcknowledged={setActiveDemoAcknowledged}
             onAjaxShortAcknowledged={setAjaxShortAcknowledged}

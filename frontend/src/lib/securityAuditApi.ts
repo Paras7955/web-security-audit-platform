@@ -22,6 +22,7 @@ export type Scan = {
   id: string;
   target_id: string;
   mode: string;
+  scan_profile_id: string;
   status: string;
   current_step: string | null;
   status_message: string | null;
