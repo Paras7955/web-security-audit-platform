@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
@@ -67,3 +68,41 @@ class Confidence(StrEnum):
 
 
 DEFAULT_LIMITS = CONTRACTS["default_limits"]
+
+
+@dataclass(frozen=True)
+class ScanProfile:
+    id: str
+    label: str
+    mode: ScanMode
+    description: str
+    requires_active_demo_acknowledgement: bool
+    requires_ajax_short_acknowledgement: bool
+    requires_repo_path: bool
+    local_demo_only: bool
+    reports_enabled: bool
+    ai_enabled: bool
+
+
+def _load_scan_profiles() -> tuple[ScanProfile, ...]:
+    profiles: list[ScanProfile] = []
+    for raw_profile in CONTRACTS["scan_profiles"]:
+        profile = ScanProfile(
+            id=str(raw_profile["id"]),
+            label=str(raw_profile["label"]),
+            mode=ScanMode(str(raw_profile["mode"])),
+            description=str(raw_profile["description"]),
+            requires_active_demo_acknowledgement=bool(raw_profile["requires_active_demo_acknowledgement"]),
+            requires_ajax_short_acknowledgement=bool(raw_profile["requires_ajax_short_acknowledgement"]),
+            requires_repo_path=bool(raw_profile["requires_repo_path"]),
+            local_demo_only=bool(raw_profile["local_demo_only"]),
+            reports_enabled=bool(raw_profile["reports_enabled"]),
+            ai_enabled=bool(raw_profile["ai_enabled"]),
+        )
+        profiles.append(profile)
+    return tuple(profiles)
+
+
+SCAN_PROFILES = _load_scan_profiles()
+SCAN_PROFILE_BY_ID = {profile.id: profile for profile in SCAN_PROFILES}
+DEFAULT_SCAN_PROFILE_BY_MODE = {profile.mode.value: profile for profile in SCAN_PROFILES}
