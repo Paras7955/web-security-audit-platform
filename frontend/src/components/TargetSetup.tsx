@@ -518,13 +518,15 @@ function uniqueAiExplanation(explanation: AiExplanation | null, findings: Findin
     }
   }
 
-  const keptKeys = new Set<string>();
+  const keptExplanationKeys = new Set<string>();
+  const keptFindingIds = new Set<string>();
   const explanations = explanation.explanations.filter((item) => {
-    const key = findingKeyById.get(item.finding_id) ?? explanationSignature(item);
-    if (keptKeys.has(key)) {
+    const key = explanationSignature(item);
+    if (keptExplanationKeys.has(key)) {
       return false;
     }
-    keptKeys.add(key);
+    keptExplanationKeys.add(key);
+    keptFindingIds.add(item.finding_id);
     return true;
   });
 
@@ -532,6 +534,9 @@ function uniqueAiExplanation(explanation: AiExplanation | null, findings: Findin
     const ids: string[] = [];
     const seenKeys = new Set<string>();
     for (const findingId of group.finding_ids) {
+      if (!keptFindingIds.has(findingId)) {
+        continue;
+      }
       const key = findingKeyById.get(findingId) ?? findingId;
       if (seenKeys.has(key)) {
         continue;
@@ -540,11 +545,15 @@ function uniqueAiExplanation(explanation: AiExplanation | null, findings: Findin
       ids.push(canonicalFindingIdByKey.get(key) ?? findingId);
     }
     return { ...group, count: ids.length, finding_ids: ids };
-  });
+  }).filter((group) => group.count > 0);
 
   return { ...explanation, groups, explanations };
 }
 
 function explanationSignature(item: AiExplanation["explanations"][number]): string {
-  return [item.summary, item.recommended_action, item.owasp_mapping, item.limitations].join("|");
+  return [item.summary, item.recommended_action, item.owasp_mapping, item.limitations].map(normalizeExplanationText).join("|");
+}
+
+function normalizeExplanationText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
 }

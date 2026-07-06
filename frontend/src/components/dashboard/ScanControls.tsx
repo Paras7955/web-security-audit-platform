@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+
 import type { Scan, Target } from "@/lib/securityAuditApi";
 import { SCAN_PROFILES } from "@/lib/contracts";
 
@@ -222,6 +226,8 @@ export function ScanHistory({
 }
 
 export function ScanProgress({ scan }: { scan: Scan }) {
+  const displayedProgress = useSmoothedProgress(scan);
+
   return (
     <div className="scanPanel">
       <div className="scanHeader">
@@ -232,7 +238,7 @@ export function ScanProgress({ scan }: { scan: Scan }) {
         <span className={`statusPill status-${scan.status}`}>{scan.status}</span>
       </div>
       <div className="progressTrack" aria-label="Scan progress">
-        <span style={{ width: `${scan.progress_percent}%` }} />
+        <span style={{ width: `${displayedProgress}%` }} />
       </div>
       <dl className="scanMeta">
         <div>
@@ -249,11 +255,67 @@ export function ScanProgress({ scan }: { scan: Scan }) {
         </div>
         <div>
           <dt>Progress</dt>
-          <dd>{scan.progress_percent}%</dd>
+          <dd>{displayedProgress}%</dd>
         </div>
       </dl>
       <p>{scan.status_message}</p>
       {scan.error_detail ? <p className="errorText">{scan.error_detail}</p> : null}
     </div>
   );
+}
+
+function useSmoothedProgress(scan: Scan): number {
+  const isTerminal = terminalStatuses.has(scan.status);
+  const serverProgress = clampProgress(scan.progress_percent);
+  const ceiling = useMemo(() => progressCeiling(scan), [scan.status, scan.progress_percent]);
+  const [displayedProgress, setDisplayedProgress] = useState(() => (isTerminal ? serverProgress : Math.min(serverProgress, ceiling)));
+  const scanIdRef = useRef(scan.id);
+
+  useEffect(() => {
+    if (scanIdRef.current !== scan.id) {
+      scanIdRef.current = scan.id;
+      setDisplayedProgress(isTerminal ? serverProgress : Math.min(serverProgress, ceiling));
+    }
+  }, [ceiling, isTerminal, scan.id, serverProgress]);
+
+  useEffect(() => {
+    if (isTerminal) {
+      setDisplayedProgress(serverProgress);
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setDisplayedProgress((current) => {
+        if (current >= ceiling) {
+          return current;
+        }
+        const step = serverProgress > current ? 4 : 1;
+        return Math.min(current + step, ceiling);
+      });
+    }, 700);
+
+    return () => window.clearInterval(timer);
+  }, [ceiling, isTerminal, serverProgress]);
+
+  return displayedProgress;
+}
+
+function progressCeiling(scan: Scan): number {
+  if (terminalStatuses.has(scan.status)) {
+    return clampProgress(scan.progress_percent);
+  }
+  if (scan.status === "queued") {
+    return Math.max(clampProgress(scan.progress_percent), 12);
+  }
+  if (scan.status === "validating") {
+    return Math.max(clampProgress(scan.progress_percent), 28);
+  }
+  if (scan.status === "normalizing") {
+    return Math.max(clampProgress(scan.progress_percent), 96);
+  }
+  return Math.max(clampProgress(scan.progress_percent), 92);
+}
+
+function clampProgress(progress: number): number {
+  return Math.max(0, Math.min(100, Math.round(progress)));
 }
