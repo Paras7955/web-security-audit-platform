@@ -51,18 +51,19 @@ class AuthProfileApiTests(unittest.TestCase):
             self.assertEqual(decrypt_secret(profile.encrypted_secret), "demo-secret-token")
 
     def test_create_custom_header_profile_validates_header(self) -> None:
-        response = self.client.post(
-            "/auth-profiles",
-            json={"label": "API key", "profile_type": "custom_header", "header_name": "X-API-Key", "secret": "key-1234"},
-            headers=DEV_AUTH_HEADERS,
-        )
+        for header_name in ("X-API-Key", "Api-Key", "X-Auth-Token", "X-Access-Token"):
+            response = self.client.post(
+                "/auth-profiles",
+                json={"label": header_name, "profile_type": "custom_header", "header_name": header_name, "secret": "key-1234"},
+                headers=DEV_AUTH_HEADERS,
+            )
 
-        self.assertEqual(response.status_code, 201)
-        body = response.json()
-        self.created_auth_profile_ids.append(body["id"])
-        self.assertEqual(body["profile_type"], "custom_header")
-        self.assertEqual(body["header_name"], "X-API-Key")
-        self.assertEqual(body["secret_hint"], "****1234")
+            self.assertEqual(response.status_code, 201)
+            body = response.json()
+            self.created_auth_profile_ids.append(body["id"])
+            self.assertEqual(body["profile_type"], "custom_header")
+            self.assertEqual(body["header_name"], header_name)
+            self.assertEqual(body["secret_hint"], "****1234")
 
     def test_create_custom_header_profile_rejects_disallowed_header(self) -> None:
         response = self.client.post(
@@ -72,6 +73,16 @@ class AuthProfileApiTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    def test_create_custom_header_profile_rejects_routing_headers(self) -> None:
+        for header_name in ("Forwarded", "X-Forwarded-Host", "X-Original-URL", "X-Rewrite-URL"):
+            response = self.client.post(
+                "/auth-profiles",
+                json={"label": "Bad", "profile_type": "custom_header", "header_name": header_name, "secret": "header-value"},
+                headers=DEV_AUTH_HEADERS,
+            )
+
+            self.assertEqual(response.status_code, 400)
 
     def test_list_and_get_profiles_are_workspace_scoped(self) -> None:
         own = self.client.post(

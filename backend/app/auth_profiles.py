@@ -14,14 +14,11 @@ class AuthProfileError(ValueError):
 
 
 SUPPORTED_AUTH_PROFILE_TYPES = {"bearer_token", "custom_header"}
-DISALLOWED_CUSTOM_HEADERS = {
-    "authorization",
-    "cookie",
-    "host",
-    "content-length",
-    "transfer-encoding",
-    "connection",
-    "set-cookie",
+ALLOWED_CUSTOM_HEADERS = {
+    "api-key",
+    "x-api-key",
+    "x-auth-token",
+    "x-access-token",
 }
 HEADER_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,119}$")
 LOCAL_DEV_EXAMPLE_SECRET_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
@@ -77,8 +74,8 @@ def validate_custom_header_name(header_name: str) -> None:
         raise AuthProfileError("Custom header auth profiles require a header name.")
     if not HEADER_NAME_PATTERN.fullmatch(header_name):
         raise AuthProfileError("Custom header name is invalid.")
-    if header_name.lower() in DISALLOWED_CUSTOM_HEADERS:
-        raise AuthProfileError("Custom header name is not allowed for scanner auth profiles.")
+    if header_name.lower() not in ALLOWED_CUSTOM_HEADERS:
+        raise AuthProfileError("Custom header name must be an API key or auth token header.")
 
 
 def build_scanner_auth_material(profile: AuthProfile, config: Settings = settings) -> ScannerAuthMaterial:

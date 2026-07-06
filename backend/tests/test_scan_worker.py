@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy import delete, select
 
-from app.auth_profiles import encrypt_secret
+from app.auth_profiles import AuthProfileError, encrypt_secret
 from app.core.contracts import Confidence, ScanStatus, ScanStep, Severity
 from app.db.session import SessionLocal
 from app.findings.schemas import NormalizedFindingInput
@@ -19,6 +19,7 @@ from app.security.allowlist import ScanAllowlist
 from app.zap.active import ZapActiveDemoResult
 from app.zap.ajax import ZapAjaxShortResult
 from app.zap.passive import ZapPassiveResult
+from worker.main import validate_worker_startup
 
 
 class ScanWorkerTests(unittest.TestCase):
@@ -67,6 +68,11 @@ class ScanWorkerTests(unittest.TestCase):
             self.assertEqual(scan.current_step, "target_validation")
             self.assertEqual(scan.progress_percent, 5)
             self.assertIsNotNone(scan.started_at)
+
+    def test_worker_startup_fails_on_invalid_auth_profile_secret_key(self) -> None:
+        with patch("worker.main.settings.auth_profile_secret_key", "not-a-fernet-key"):
+            with self.assertRaises(AuthProfileError):
+                validate_worker_startup()
 
     def test_internal_lifecycle_job_completes_scan_and_writes_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

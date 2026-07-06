@@ -2,6 +2,7 @@ import time
 
 from sqlalchemy import text
 
+from app.auth_profiles import validate_auth_profile_secret_settings
 from app.core.config import settings
 from app.db.session import engine
 from app.db.session import SessionLocal
@@ -23,6 +24,7 @@ def wait_for_database(max_attempts: int = 30) -> None:
 
 
 def main() -> None:
+    validate_worker_startup()
     wait_for_database()
     print("Worker ready. Polling database-backed scan jobs.", flush=True)
     while True:
@@ -37,6 +39,10 @@ def main() -> None:
                     run_passive_scan_job(db, scan, settings.artifact_root, allowlist, zap_base_url=settings.zap_base_url)
                 continue
         time.sleep(5)
+
+
+def validate_worker_startup() -> None:
+    validate_auth_profile_secret_settings(settings)
 
 
 if __name__ == "__main__":
