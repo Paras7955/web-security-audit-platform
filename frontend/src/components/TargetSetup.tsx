@@ -62,6 +62,9 @@ export function TargetSetup() {
   const [comparisonScanId, setComparisonScanId] = useState("");
   const [selectedFindingId, setSelectedFindingId] = useState("");
   const [severityFilter, setSeverityFilter] = useState("all");
+  const [lifecycleFilter, setLifecycleFilter] = useState("all");
+  const [suppressionFilter, setSuppressionFilter] = useState("all");
+  const [suppressionReason, setSuppressionReason] = useState("");
   const [message, setMessage] = useState("Enter an allowlisted local/demo target.");
   const [authProfileMessage, setAuthProfileMessage] = useState("Create an optional target-app auth profile for passive scans.");
   const [reportMessage, setReportMessage] = useState("Reports are available after a passive, Active Demo, or Repo scan completes.");
@@ -92,8 +95,18 @@ export function TargetSetup() {
   const filteredFindings = useMemo(() => {
     return displayFindings
       .filter((finding) => severityFilter === "all" || finding.severity === severityFilter)
+      .filter((finding) => lifecycleFilter === "all" || finding.lifecycle_status === lifecycleFilter)
+      .filter((finding) => {
+        if (suppressionFilter === "active") {
+          return finding.suppressed;
+        }
+        if (suppressionFilter === "not_suppressed") {
+          return !finding.suppressed;
+        }
+        return true;
+      })
       .sort((left, right) => (severityRank[right.severity] ?? 0) - (severityRank[left.severity] ?? 0));
-  }, [displayFindings, severityFilter]);
+  }, [displayFindings, lifecycleFilter, severityFilter, suppressionFilter]);
   const selectedFinding = filteredFindings.find((finding) => finding.id === selectedFindingId) ?? filteredFindings[0] ?? null;
 
   useEffect(() => {
@@ -111,6 +124,10 @@ export function TargetSetup() {
   useEffect(() => {
     severityFilterRef.current = severityFilter;
   }, [severityFilter]);
+
+  useEffect(() => {
+    setSuppressionReason("");
+  }, [selectedFindingId]);
 
   useEffect(() => {
     if (!selectedScan || terminalStatuses.has(selectedScan.status)) {
@@ -489,6 +506,50 @@ export function TargetSetup() {
     }
   }
 
+  async function updateFindingLifecycle(findingId: string, lifecycleStatus: string) {
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/findings/${findingId}/lifecycle`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lifecycle_status: lifecycleStatus })
+      });
+      await readJson<Finding>(response, "Finding lifecycle update failed.");
+      if (selectedScanIdRef.current) {
+        await loadFindings(selectedScanIdRef.current, { onlyIfSelected: true });
+      }
+      setMessage("Finding lifecycle updated.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Finding lifecycle update failed.");
+    }
+  }
+
+  async function suppressFinding(finding: Finding) {
+    if (!finding.target_id || !suppressionReason.trim()) {
+      return;
+    }
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/suppressions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_id: finding.target_id,
+          dedupe_key: finding.dedupe_key,
+          severity: finding.severity,
+          source_tool: finding.source_tool,
+          reason: suppressionReason.trim()
+        })
+      });
+      await readJson<unknown>(response, "Suppression rule creation failed.");
+      setSuppressionReason("");
+      if (selectedScanIdRef.current) {
+        await loadFindings(selectedScanIdRef.current, { onlyIfSelected: true });
+      }
+      setMessage("Finding suppression saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Suppression rule creation failed.");
+    }
+  }
+
   async function loadReports(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
     try {
       const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}/reports`);
@@ -700,8 +761,16 @@ export function TargetSetup() {
           findings={filteredFindings}
           selectedFinding={selectedFinding}
           severityFilter={severityFilter}
+          lifecycleFilter={lifecycleFilter}
+          suppressionFilter={suppressionFilter}
+          suppressionReason={suppressionReason}
           onSeverityFilter={setSeverityFilter}
+          onLifecycleFilter={setLifecycleFilter}
+          onSuppressionFilter={setSuppressionFilter}
           onSelectFinding={setSelectedFindingId}
+          onUpdateLifecycle={updateFindingLifecycle}
+          onSuppressionReasonChange={setSuppressionReason}
+          onSuppressFinding={suppressFinding}
         />
       </div>
     </section>

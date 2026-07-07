@@ -1002,6 +1002,10 @@ select {
   color: white;
 }
 
+.filterBar select {
+  min-width: 150px;
+}
+
 .findingsTable {
   width: 100%;
   border-collapse: collapse;
@@ -1059,6 +1063,45 @@ select {
   border-color: #e2a39e;
 }
 
+.stateBadge {
+  display: inline-flex;
+  min-width: 94px;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.stateBadgeSuppressed {
+  color: #7a5a00;
+  border-color: #e2c36f;
+}
+
+.findingActions {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin: 12px 0 16px;
+}
+
+.findingActions label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.findingActions textarea {
+  min-height: 42px;
+  resize: vertical;
+}
+
 .findingDetail h4 {
   margin: 18px 0 8px;
   font-size: 0.9rem;
@@ -1097,6 +1140,10 @@ select {
   }
 
   .scanList li {
+    grid-template-columns: 1fr;
+  }
+
+  .findingActions {
     grid-template-columns: 1fr;
   }
 

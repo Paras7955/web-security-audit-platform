@@ -47,6 +47,7 @@ export type Scan = {
 export type Finding = {
   id: string;
   scan_id: string;
+  target_id: string | null;
   title: string;
   severity: string;
   confidence: string;
@@ -63,6 +64,10 @@ export type Finding = {
   false_positive_notes: string | null;
   redaction_applied: boolean;
   raw_artifact_ref: string | null;
+  lifecycle_status: string;
+  suppressed: boolean;
+  suppression_rule_id: string | null;
+  tags: string[];
   created_at: string;
 };
 
