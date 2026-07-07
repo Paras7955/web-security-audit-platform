@@ -14,17 +14,17 @@ For a new implementation session taking over from this point:
 - Read this `HANDOFF.md` next for the current architecture, phase history, verification state, known risks, and next planned phase.
 - Skim `README.md` and `SECURITY.md` before making changes, especially the auth, workspace, scan safety, repo-scan, AI, and auth-profile sections.
 - Confirm the active branch and clean worktree with `git status --short --branch`.
-- Current expected branch is `phase-14-auth-profiles`. Phase 14 is complete and reviewed.
-- Do not begin Phase 15 until the user confirms `phase-14-auth-profiles` has been merged back into the base branch.
+- Current expected branch is `main`. Phase 14 has been merged.
+- Do not begin Phase 15 until the user explicitly approves starting it from clean `main`.
 - If Docker Compose commands are needed, ensure a local `.env` or shell environment provides a real generated Fernet `AUTH_PROFILE_SECRET_KEY`. The placeholder in `.env.example` is intentionally unusable.
-- If starting Phase 15 after merge confirmation, switch to the updated base branch, verify it is clean, then create/switch to `phase-15-dashboards-risk`.
+- If starting Phase 15 after approval, verify `main` is clean, then create/switch to `phase-15-dashboards-risk`.
 
 ## Current Branch And Phase
 
-- Current branch: `phase-14-auth-profiles`
-- Current phase: Phase 14, Authentication Profiles For Target Scans, complete and awaiting merge
+- Current branch: `main`
+- Current phase: Phase 14, Authentication Profiles For Target Scans, complete and merged
 - Base branch at phase start: `main`
-- Phase gate: stop after Phase 14 is complete and reviewed. Do not start Phase 15 until the user confirms this branch has been merged back into the base branch.
+- Phase gate: Phase 15 is next, but do not start it until the user explicitly approves beginning Phase 15 from clean `main`.
 
 ## Mission And Safety Model
 
@@ -525,11 +525,11 @@ Phase 13, `phase-13-scan-profiles`:
 
 Phase 14, `phase-14-auth-profiles`:
 
-- Complete and awaiting merge.
+- Complete and merged.
 
 Phase 15, `phase-15-dashboards-risk`:
 
-- Next planned phase after Phase 14 merge confirmation.
+- Next planned phase after explicit user approval.
 - Add deterministic, versioned risk scores.
 - Add workspace/target dashboards and scan comparison.
 - Preserve Phase 11 workspace scoping on every dashboard, score, and comparison endpoint.
@@ -541,21 +541,47 @@ Phase 15, `phase-15-dashboards-risk`:
 
 Phase 16, `phase-16-finding-management`:
 
-- Add finding lifecycle, suppression, tags, and advanced filtering.
-- Suppression applies only after normalization and never consumes raw scanner output.
+- Add workspace-owned finding triage state keyed by target plus dedupe key, separate from immutable scan finding occurrences.
+- Add lifecycle statuses: `open`, `confirmed`, `in_progress`, `resolved`, `suppressed`, and `false_positive`.
+- Add suppression rules with required reason, user, timestamp, optional expiration, and match fields based on normalized target/finding identity.
+- Suppression must apply only after scanner output is normalized; scanners continue detecting normally, and raw scanner output must never be used as suppression input.
+- Persist occurrence-level suppression state/rule reference so reports, dashboards, and later AI invalidation can explain why a finding is hidden or reduced.
+- Add workspace-owned tags and tag assignments for targets, scans, and reports.
+- Expand scan/finding filters for target, profile, date, tags, status, risk score, severity, confidence, scanner, OWASP, CWE, lifecycle, and suppression state.
+- Preserve immutable occurrence history; lifecycle and suppression corrections should create/update management state, not rewrite scanner evidence.
+- Test suppression does not prevent detection, expired suppressions, lifecycle transitions, tag ownership, cross-workspace denial, and representative filter combinations.
 
 Phase 17, `phase-17-ai-rate-limits`:
 
-- Add AI request accounting, rate limiting, persisted/cached AI content, and invalidation rules.
-- AI explains deterministic risk inputs but does not compute risk.
+- Add DB-backed AI request accounting by workspace, user, action, provider/model/config, and time window.
+- Rate-limit interactive AI explanation requests and report-triggered AI generation; keep the deterministic template provider as the default path.
+- Persist/cache scan-level summaries and finding-level explanations using only normalized/redacted fields.
+- Define explicit cache invalidation/regeneration triggers for finding lifecycle changes, suppression changes or expiration, risk score/model changes, report input changes, report regeneration, and AI provider/model/config changes.
+- Add executive summary and risk-score-change explanation using deterministic Phase 15 score inputs.
+- AI must explain but never compute risk scores, and external AI providers must not receive raw artifacts, raw scanner output, secrets, unredacted evidence, or repo findings.
+- Keep repo findings excluded from external AI unless a later explicitly approved phase adds repo-specific redaction and approval.
+- Test rate limit enforcement, cache reuse, invalidation triggers, safe provider payloads, and absence of raw artifacts/secrets/evidence.
 
 Phase 18, `phase-18-platform-ops`:
 
-- Add general rate limiting, append-only audit log, scan cancellation, and health dashboard.
+- Add general DB-backed rate limits for scan creation and selected expensive endpoints.
+- Add append-only audit log records for login/session events, target changes, scan creation/cancellation, report generation, AI requests, finding lifecycle changes, suppression, and auth profile changes.
+- Audit records are immutable; corrections must create new audit events rather than modifying old records.
+- Add scan cancellation endpoint `POST /scans/{scan_id}/cancel`.
+- Queued scans should become `cancelled`; running scans should record a cancellation request and workers should stop at safe checkpoints.
+- ZAP Active Demo/AJAX cancellation should use scoped scan IDs/context where supported and must not broaden scanner scope.
+- Add health dashboard API for backend, DB, worker heartbeat, queue depth, ZAP availability, and artifact root checks.
+- Test rate limits, append-only audit behavior, audit ownership/workspace scoping, cancellation transitions, worker checkpoint behavior, and degraded health responses.
 
 Phase 19, `phase-19-demo-seed-docs`:
 
-- Add deterministic demo seed command and documentation hardening.
+- Add deterministic demo seed command, not an always-on public endpoint.
+- Seed a demo user/workspace, demo targets, completed scans, normalized findings, reports, lifecycle/suppression/tag examples, and versioned risk scores.
+- Gate seed behavior behind an explicit command/env setting and make it idempotent.
+- Seeded demo data must never bypass workspace isolation, scan safety, redaction, auth-profile secrecy, report safety, or AI payload safety.
+- Update README, SECURITY, AGENTS, and this handoff with the final post-v1 state and any changed public rules.
+- Document local provider-agnostic auth, Auth0 configuration, dev auth, generated `AUTH_PROFILE_SECRET_KEY`, seeded demo workflow, and full Docker verification.
+- Test seed idempotency, workspace isolation, demo data invariants, and that seeded data does not weaken safety/redaction behavior.
 
 ## Workflow Rules
 
