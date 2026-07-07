@@ -8,10 +8,10 @@ Do not include private reviewer-loop instructions or any information that should
 
 ## Current Branch And Phase
 
-- Current branch: `frontend-ai-progress-fixes`
-- Current state: inter-phase frontend quality-of-life fix after Phase 13 was merged to `main`
-- Base branch for current fix: `main`
-- Phase gate: do not start Phase 14 until the current frontend fix branch has been reviewed/merged or the user explicitly decides to abandon it. Phase 14 should start from updated `main` on `phase-14-auth-profiles`.
+- Current branch: `phase-14-auth-profiles`
+- Current phase: Phase 14, Authentication Profiles For Target Scans, complete and awaiting merge
+- Base branch at phase start: `main`
+- Phase gate: stop after Phase 14 is complete and reviewed. Do not start Phase 15 until the user confirms this branch has been merged back into the base branch.
 
 ## Mission And Safety Model
 
@@ -30,6 +30,9 @@ Core safety rules:
 - Active Demo and AJAX Short scans remain local/demo only and require explicit acknowledgement.
 - Repo scans require a saved allowlisted target with a configured local repo path under `REPO_SCAN_ROOT`.
 - Repo scans must not clone, fetch, install dependencies, run package scripts, build, or execute repository code.
+- Auth profiles are workspace-owned target-application credentials, not platform user authentication.
+- Auth profiles are supported only for guarded passive-web scanner requests in Phase 14.
+- Active Demo, AJAX Short, browser/ZAP authenticated behavior, repo scans, login automation, password-form workflows, and business-logic auth testing remain out of scope.
 - Store normalized/redacted findings only.
 - Do not store full HTTP response bodies by default.
 - Never send raw artifacts, raw HTTP bodies, raw scanner output, unredacted evidence, cookies, credentials, or secrets to AI providers or reports.
@@ -52,6 +55,18 @@ Current scan profiles:
 - `ajax-short` -> internal mode `ajax_short`
 - `repository` -> internal mode `repo`
 
+Current auth profile types:
+
+- `bearer_token`
+- `custom_header`
+
+Allowed custom auth headers in Phase 14:
+
+- `Api-Key`
+- `X-API-Key`
+- `X-Auth-Token`
+- `X-Access-Token`
+
 Current internal worker scan modes:
 
 - `passive`
@@ -60,6 +75,8 @@ Current internal worker scan modes:
 - `repo`
 
 Reports and AI eligibility are determined by scan profile metadata. In the current profile set, reports are available for completed `passive-web`, `active-demo`, and `repository` scans. AI explanations are available for completed `passive-web` and `active-demo` scans only; repository findings remain excluded from AI.
+
+`AUTH_PROFILE_SECRET_KEY` is required for backend and worker startup/readiness. It must be a valid Fernet key. Production-like environments must not use the local development example key. Docker Compose now expects this value from the caller environment or a local `.env`; `.env.example` intentionally contains a non-usable placeholder.
 
 ## Phase History
 
@@ -75,6 +92,7 @@ Reports and AI eligibility are determined by scan profile metadata. In the curre
 - Phase 11: platform auth, workspace isolation, worker job context, initial repo-visible handoff.
 - Phase 12: frontend decomposition and authenticated workspace app shell.
 - Phase 13: code-defined scan profiles, `scan_profile_id` persistence, compatibility mode input, profile-driven eligibility, and frontend profile selection. Merged to `main`.
+- Phase 14: workspace-owned bearer/custom-header auth profiles, encrypted secret storage, target attachment, passive scan header injection, and frontend auth-profile controls.
 
 ## Phase 11 Design
 
@@ -321,40 +339,128 @@ Residual risk:
 - Frontend profile metadata is mirrored in TypeScript while backend reads `shared/contracts.json`; this is acceptable for Phase 13 but creates future drift risk. A later hardening pass should generate frontend contracts from the shared file or fetch profile metadata from `/contracts`.
 - Frontend profile-selection behavior is covered by production build rather than dedicated interaction tests.
 
-## Current Frontend Quality-Of-Life Fix
-
-Branch: `frontend-ai-progress-fixes`
-
-Context:
-
-- This is not a new roadmap phase.
-- It addresses user-reported frontend issues found after Phase 13 was merged:
-  - AI explanation cards could still render duplicate cards side by side for findings with identical rendered explanation content.
-  - Scan progress displayed abrupt backend checkpoint jumps, such as jumping quickly to 75-80 percent, pausing, then jumping to 100 percent.
+## Phase 14 Implementation State
 
 Implemented:
 
-- AI explanation cards now de-duplicate by normalized rendered explanation content rather than primarily by finding ID or dedupe key.
-- AI explanation group counts are recomputed from the retained explanation cards.
-- Scan progress now smooths locally between backend progress checkpoints and advances gradually while scans are running.
-- Backend worker progress semantics were not changed.
-- `frontend/src/components/dashboard/ScanControls.tsx` is explicitly marked as a client module because it now owns the progress-smoothing hook.
+- Added auth-profile secret fields to `auth_profiles`:
+  - `profile_type`
+  - `header_name`
+  - `encrypted_secret`
+  - `secret_hint`
+- Added `scans.auth_profile_id` so scan jobs snapshot the target's selected auth profile at creation time.
+- Added Alembic revision `0004_auth_profile_secrets`.
+- Added centralized auth-profile validation/encryption service in `backend/app/auth_profiles.py`.
+- Added workspace-scoped `/auth-profiles` API:
+  - `POST /auth-profiles`
+  - `GET /auth-profiles`
+  - `GET /auth-profiles/{auth_profile_id}`
+- Auth-profile API responses return metadata and `secret_hint` only; they never return secret material.
+- Added `PATCH /targets/{target_id}/auth-profile` for attaching/detaching a workspace-owned profile.
+- `POST /targets` now accepts an optional `auth_profile_id` after workspace ownership checks.
+- `POST /targets` now validates `repo_path` with the same `REPO_SCAN_ROOT` safety checks as the repo-path PATCH endpoint.
+- `POST /scans` snapshots `target.auth_profile_id` into `Scan.auth_profile_id`.
+- Backend scan creation rejects auth-profile use for non-passive profiles.
+- Worker lifecycle validation rejects non-passive jobs that carry an auth profile.
+- Worker startup validates auth-profile crypto settings before polling/claiming jobs.
+- Guarded custom scanner HTTP requests can inject auth headers while preserving destination-IP pinning and the original `Host` header.
+- Auth material is decrypted only inside worker scan execution after scan/target workspace validation.
+- ZAP/browser-driven authenticated behavior remains disabled in Phase 14.
+- Reports, AI explanations, findings, artifacts, API reads, and scan status messages do not receive auth-profile secrets.
+- Frontend auth-profile controls support creating bearer/custom-header profiles, selecting a saved profile, and attaching/detaching it from the selected target.
+- Frontend scan launcher blocks authenticated non-passive scan starts and displays the passive-only auth-profile boundary.
+- README, SECURITY, and AGENTS document Phase 14 auth-profile safety rules and the required `AUTH_PROFILE_SECRET_KEY`.
 
-Commits:
+Phase 14 commits:
 
-- `e45a985 fix: dedupe ai cards and smooth progress`
-- `HANDOFF.md` was updated on the same branch as an explicit out-of-band documentation update requested by the user.
+- `a486f45 feat: add encrypted auth profile API`
+- `d6e39a1 feat: inject auth profiles into passive scans`
+- `73c4832 feat: add auth profile frontend controls`
+- `ff983be fix: harden auth profile review findings`
+- `f380f4d fix: validate worker auth profile config`
+- `e8e9469 docs: document auth profile requirements`
+- `3fab121 fix: reject blank auth profile labels`
+- `62a4557 fix: align auth profile UI labels`
 
 Verification:
 
-- `docker compose run --rm frontend npm run build`
+- `python3 -m py_compile` for changed backend files/tests
   - Result: passed.
+- `env AUTH_PROFILE_SECRET_KEY=<temporary local dev Fernet key> docker compose build backend migrate frontend`
+  - Result: passed.
+- `env AUTH_PROFILE_SECRET_KEY=<temporary local dev Fernet key> docker compose run --rm migrate`
+  - Result: applied `0004_auth_profile_secrets`.
+- `env AUTH_PROFILE_SECRET_KEY=<temporary local dev Fernet key> docker compose run --rm backend python -m unittest tests.test_auth_profiles_api tests.test_targets_api tests.test_scans_api`
+  - Result: 30 tests OK before review fixes.
+- `env AUTH_PROFILE_SECRET_KEY=<temporary local dev Fernet key> docker compose run --rm backend python -m unittest tests.test_scanner_http tests.test_scans_api tests.test_scan_worker tests.test_reports tests.test_ai_explanations`
+  - Result: 81 tests OK before review fixes.
+- `env AUTH_PROFILE_SECRET_KEY=<temporary local dev Fernet key> docker compose run --rm backend python -m unittest tests.test_auth_workspaces tests.test_targets_api tests.test_scans_api tests.test_auth_profiles_api`
+  - Result: 38 tests OK after first review fixes.
+- `env AUTH_PROFILE_SECRET_KEY=<temporary local dev Fernet key> docker compose run --rm backend python -m unittest tests.test_auth_profiles_api tests.test_scan_worker`
+  - Result: 30 tests OK after second review fixes.
+- `env AUTH_PROFILE_SECRET_KEY=<temporary local dev Fernet key> docker compose run --rm backend python -m unittest tests.test_auth_profiles_api`
+  - Result: 8 tests OK after blank-label fix.
+- `env AUTH_PROFILE_SECRET_KEY=<temporary local dev Fernet key> docker compose run --rm backend python -m unittest discover tests`
+  - Result: 172 tests OK final.
+- `env AUTH_PROFILE_SECRET_KEY=<temporary local dev Fernet key> docker compose run --rm frontend npm run build`
+  - Result: passed final.
 
-Current close status:
+Phase 14 close status:
 
-- The implementation commit is complete.
-- The handoff has been updated to reflect Phase 13 merge status and this pending frontend fix branch.
-- The branch should be merged back to `main` before Phase 14 begins, unless the user explicitly decides not to keep this follow-up fix.
+- Review loop used one fresh `gpt-5.4` reviewer with repeated broad passes.
+- First pass found three accepted findings: committed key/default, missing startup crypto validation, and create-time repo-path validation gap.
+- Second pass found two accepted findings: worker startup did not validate crypto settings and custom header profile names were too broad.
+- Third pass found one accepted low-severity finding: blank auth-profile labels.
+- Fourth pass found one accepted low-severity finding: stale Phase 13 UI labels on the auth-profile-enabled screen.
+- Final broad pass found no remaining actionable issues at the review bar.
+- Phase 14 is ready for the user to merge back into the base branch.
+
+Review decision:
+- Finding: Static repo-committed auth-profile encryption key and functional settings default weakened encryption-at-rest.
+- Decision: Accepted.
+- Rationale: Real deployments must not share a key from the repository, and config should fail closed instead of silently using a known key.
+- Follow-up: Removed the functional settings default, changed `.env.example` to a non-usable placeholder, made Docker Compose require `AUTH_PROFILE_SECRET_KEY`, and added production/non-local rejection of the local development example key.
+
+Review decision:
+- Finding: Backend/readiness did not validate `AUTH_PROFILE_SECRET_KEY`.
+- Decision: Accepted.
+- Rationale: Invalid auth-profile crypto configuration should fail startup/readiness rather than surfacing at profile creation or scan execution time.
+- Follow-up: Added auth-profile crypto settings validation to backend startup and `/ready`, plus config tests.
+
+Review decision:
+- Finding: `POST /targets` stored `repo_path` without the validation used by `PATCH /targets/{target_id}/repo-path`.
+- Decision: Accepted.
+- Rationale: Repo path safety must be enforced consistently before persistence.
+- Follow-up: Added create-time repo path validation and regression coverage.
+
+Review decision:
+- Finding: Worker process did not validate `AUTH_PROFILE_SECRET_KEY` before polling jobs.
+- Decision: Accepted.
+- Rationale: Worker crypto misconfiguration should fail before jobs are claimed.
+- Follow-up: Added worker startup validation and focused test coverage.
+
+Review decision:
+- Finding: Custom header auth profiles allowed arbitrary header names except a short denylist.
+- Decision: Accepted.
+- Rationale: Phase 14 scope is API-key/static auth headers, not general request mutation or routing header injection.
+- Follow-up: Replaced denylist with an API-key/auth-token header allowlist and added rejection tests for forwarding/routing headers.
+
+Review decision:
+- Finding: Whitespace-only auth-profile labels were accepted and stored as empty strings.
+- Decision: Accepted.
+- Rationale: Blank labels make workspace auth profiles harder to operate and audit.
+- Follow-up: Added stripped-label validation and regression coverage.
+
+Review decision:
+- Finding: Frontend still displayed Phase 13 labels on the Phase 14 auth-profile workflow.
+- Decision: Accepted.
+- Rationale: Stale phase labels are confusing in a security workflow and are easy to avoid with capability-based labels.
+- Follow-up: Replaced stale phase labels with capability labels.
+
+Residual risk:
+
+- Frontend auth-profile workflow coverage remains production-build-only. There are no UI-level tests that would catch auth-profile copy/state regressions, scan gating drift, or capability-label drift.
+- Frontend profile metadata is still mirrored in TypeScript while backend reads `shared/contracts.json`; this drift risk remains from Phase 13.
 
 ## Current API Surface
 
@@ -365,6 +471,10 @@ Protected by bearer auth:
 - `GET /targets`
 - `GET /targets/{target_id}`
 - `PATCH /targets/{target_id}/repo-path`
+- `PATCH /targets/{target_id}/auth-profile`
+- `POST /auth-profiles`
+- `GET /auth-profiles`
+- `GET /auth-profiles/{auth_profile_id}`
 - `POST /scans`
 - `GET /scans`
 - `GET /scans/{scan_id}`
@@ -394,12 +504,11 @@ Phase 13, `phase-13-scan-profiles`:
 
 Phase 14, `phase-14-auth-profiles`:
 
-- Add target-application auth profiles separate from platform user auth.
-- Support conservative bearer/custom header profiles first.
-- Encrypt stored secret material and never expose secrets to findings, reports, AI, logs, artifacts, or audit events.
+- Complete and awaiting merge.
 
 Phase 15, `phase-15-dashboards-risk`:
 
+- Next planned phase after Phase 14 merge confirmation.
 - Add deterministic, versioned risk scores.
 - Add workspace/target dashboards and scan comparison.
 
