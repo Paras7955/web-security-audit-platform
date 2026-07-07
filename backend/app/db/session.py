@@ -18,6 +18,7 @@ def check_database_ready() -> bool:
             "targets",
             "scans",
             "findings",
+            "risk_scores",
             "evidence_artifacts",
             "report_artifacts",
         }
