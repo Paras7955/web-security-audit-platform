@@ -241,6 +241,32 @@ class RiskDashboardTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["latest_risk_score"]["scan_id"], created_earlier_completed_later)
 
+    def test_latest_selection_has_stable_id_tie_breaker(self) -> None:
+        target_id = self.create_target()
+        lower_scan_id = self.create_scan(
+            target_id,
+            scan_id="00000000-0000-0000-0000-000000000001",
+            created_offset=9999,
+            completed_offset=10000,
+        )
+        higher_scan_id = self.create_scan(
+            target_id,
+            scan_id="00000000-0000-0000-0000-000000000002",
+            created_offset=9999,
+            completed_offset=10000,
+        )
+        self.create_finding(lower_scan_id, "lower", severity="low", confidence="high")
+        self.create_finding(higher_scan_id, "higher", severity="medium", confidence="high")
+
+        latest = self.client.get(f"/targets/{target_id}/latest-comparison", headers=DEV_AUTH_HEADERS)
+        overview = self.client.get("/dashboard/overview", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(latest.status_code, 200)
+        self.assertEqual(latest.json()["comparison_scan_id"], higher_scan_id)
+        self.assertEqual(latest.json()["baseline_scan_id"], lower_scan_id)
+        self.assertEqual(overview.status_code, 200)
+        self.assertEqual(overview.json()["latest_risk_score"]["scan_id"], higher_scan_id)
+
     def create_target(self, *, workspace_id: str = DEV_WORKSPACE_ID, user_id: str = DEV_USER_ID, name: str = "Juice Shop") -> str:
         target_id = str(uuid4())
         with SessionLocal() as db:
@@ -272,8 +298,9 @@ class RiskDashboardTests(unittest.TestCase):
         status: str = "completed",
         created_offset: int = 0,
         completed_offset: int | None = None,
+        scan_id: str | None = None,
     ) -> str:
-        scan_id = str(uuid4())
+        scan_id = scan_id or str(uuid4())
         created_at = datetime(2026, 7, 7, tzinfo=timezone.utc) + timedelta(minutes=created_offset)
         is_completed = status in {"completed", "completed_with_warnings"}
         completed_at = datetime(2026, 7, 7, tzinfo=timezone.utc) + timedelta(minutes=completed_offset if completed_offset is not None else created_offset + 1)

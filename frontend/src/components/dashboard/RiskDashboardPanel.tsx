@@ -39,7 +39,7 @@ export function RiskDashboardPanel({
   return (
     <div className="riskDashboard">
       <div className="riskMetricGrid">
-        <RiskScoreCard title="Workspace risk" score={overview?.latest_risk_score ?? null} />
+        <RiskScoreCard title="Latest scan risk" score={overview?.latest_risk_score ?? null} />
         <RiskScoreCard title="Target risk" score={latestScore} />
         <MetricCard label="Targets" value={overview?.targets_count ?? 0} context="Workspace" />
         <MetricCard label="Completed scans" value={overview?.completed_scans_count ?? 0} context="Workspace" />

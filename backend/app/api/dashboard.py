@@ -114,7 +114,7 @@ def latest_target_comparison(
         db.scalars(
             select(Scan)
             .where(Scan.workspace_id == principal.workspace_id, Scan.target_id == target_id, Scan.status.in_(COMPLETED_SCAN_STATUSES))
-            .order_by(Scan.completed_at.desc().nullslast(), Scan.created_at.desc())
+            .order_by(Scan.completed_at.desc().nullslast(), Scan.created_at.desc(), Scan.id.desc())
             .limit(2)
         ).all()
     )
@@ -222,7 +222,7 @@ def targets_by_id(targets: list[Target]) -> dict[str, Target]:
 
 
 def sort_completed_scans(scans: list[Scan]) -> list[Scan]:
-    return sorted(scans, key=lambda scan: (scan.completed_at or scan.created_at, scan.created_at), reverse=True)
+    return sorted(scans, key=lambda scan: (scan.completed_at or scan.created_at, scan.created_at, scan.id), reverse=True)
 
 
 def findings_for_scan(findings: list[Finding], scan_id: str) -> list[Finding]:
