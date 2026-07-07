@@ -7,7 +7,7 @@ from sqlalchemy import delete
 
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import Finding, RiskScore, Scan, Target
+from app.models import AuthIdentity, Finding, PlatformUser, RiskScore, Scan, Target, Workspace
 from app.risk import SCORING_MODEL_VERSION, calculate_scan_risk_score
 from app.security.auth import ensure_user_workspace_identity
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
@@ -19,6 +19,8 @@ class RiskDashboardTests(unittest.TestCase):
         self.target_ids: list[str] = []
         self.scan_ids: list[str] = []
         self.finding_ids: list[str] = []
+        self.extra_workspace_ids: list[str] = []
+        self.extra_user_ids: list[str] = []
 
     def tearDown(self) -> None:
         with SessionLocal() as db:
@@ -30,6 +32,12 @@ class RiskDashboardTests(unittest.TestCase):
                 db.execute(delete(Scan).where(Scan.id.in_(self.scan_ids)))
             if self.target_ids:
                 db.execute(delete(Target).where(Target.id.in_(self.target_ids)))
+            if self.extra_user_ids:
+                db.execute(delete(AuthIdentity).where(AuthIdentity.user_id.in_(self.extra_user_ids)))
+            if self.extra_workspace_ids:
+                db.execute(delete(Workspace).where(Workspace.id.in_(self.extra_workspace_ids)))
+            if self.extra_user_ids:
+                db.execute(delete(PlatformUser).where(PlatformUser.id.in_(self.extra_user_ids)))
             db.commit()
 
     def test_risk_v1_snapshot_is_deterministic(self) -> None:
@@ -74,9 +82,11 @@ class RiskDashboardTests(unittest.TestCase):
         target_id = self.create_target()
         scan_id = self.create_scan(target_id)
         self.create_finding(scan_id, "dev-finding", severity="low", confidence="high")
-        other_target_id = self.create_target(workspace_id="other-workspace", user_id="other-user")
-        other_scan_id = self.create_scan(other_target_id, workspace_id="other-workspace", user_id="other-user")
-        self.create_finding(other_scan_id, "other-finding", workspace_id="other-workspace", severity="critical", confidence="confirmed")
+        other_workspace_id = f"risk-test-workspace-{uuid4()}"
+        other_user_id = f"risk-test-user-{uuid4()}"
+        other_target_id = self.create_target(workspace_id=other_workspace_id, user_id=other_user_id)
+        other_scan_id = self.create_scan(other_target_id, workspace_id=other_workspace_id, user_id=other_user_id)
+        self.create_finding(other_scan_id, "other-finding", workspace_id=other_workspace_id, severity="critical", confidence="confirmed")
 
         overview = self.client.get("/dashboard/overview", headers=DEV_AUTH_HEADERS)
         target_dashboard = self.client.get(f"/targets/{target_id}/dashboard", headers=DEV_AUTH_HEADERS)
@@ -163,6 +173,10 @@ class RiskDashboardTests(unittest.TestCase):
             db.add(target)
             db.commit()
         self.target_ids.append(target_id)
+        if workspace_id != DEV_WORKSPACE_ID and workspace_id not in self.extra_workspace_ids:
+            self.extra_workspace_ids.append(workspace_id)
+        if user_id != DEV_USER_ID and user_id not in self.extra_user_ids:
+            self.extra_user_ids.append(user_id)
         return target_id
 
     def create_scan(
