@@ -10,7 +10,7 @@ from sqlalchemy import delete
 from app.api.deps import get_scan_allowlist
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import Scan, Target
+from app.models import AuthProfile, Scan, Target
 from app.security.allowlist import ScanAllowlist
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
@@ -20,6 +20,7 @@ class ScanApiTests(unittest.TestCase):
         self.client = TestClient(app)
         self.created_scan_ids: list[str] = []
         self.created_target_ids: list[str] = []
+        self.created_auth_profile_ids: list[str] = []
 
     def tearDown(self) -> None:
         with SessionLocal() as db:
@@ -27,14 +28,24 @@ class ScanApiTests(unittest.TestCase):
                 db.execute(delete(Scan).where(Scan.id.in_(self.created_scan_ids)))
             if self.created_target_ids:
                 db.execute(delete(Target).where(Target.id.in_(self.created_target_ids)))
+            if self.created_auth_profile_ids:
+                db.execute(delete(AuthProfile).where(AuthProfile.id.in_(self.created_auth_profile_ids)))
             db.commit()
 
     def create_target(self, *, repo_path: str | None = None) -> dict[str, object]:
-        response = self.client.post(
-            "/targets",
-            json={"target_url": "http://juice-shop:3000", "permission_confirmed": True, "repo_path": repo_path},
-            headers=DEV_AUTH_HEADERS,
-        )
+        if repo_path is None:
+            response = self.client.post(
+                "/targets",
+                json={"target_url": "http://juice-shop:3000", "permission_confirmed": True},
+                headers=DEV_AUTH_HEADERS,
+            )
+        else:
+            with patch("app.api.targets.settings.repo_scan_root", str(Path(repo_path).parent)):
+                response = self.client.post(
+                    "/targets",
+                    json={"target_url": "http://juice-shop:3000", "permission_confirmed": True, "repo_path": repo_path},
+                    headers=DEV_AUTH_HEADERS,
+                )
         self.assertEqual(response.status_code, 201)
         body = response.json()
         self.created_target_ids.append(body["id"])
@@ -140,6 +151,37 @@ class ScanApiTests(unittest.TestCase):
         self.assertEqual(body["scan_profile_id"], "active-demo")
         self.assertEqual(body["mode"], "active_demo")
         self.assertEqual(body["status"], "queued")
+
+    def test_create_non_passive_scan_rejects_target_auth_profile(self) -> None:
+        profile = self.client.post(
+            "/auth-profiles",
+            json={"label": "Bearer", "profile_type": "bearer_token", "secret": "demo-token"},
+            headers=DEV_AUTH_HEADERS,
+        )
+        self.assertEqual(profile.status_code, 201)
+        profile_id = profile.json()["id"]
+        self.created_auth_profile_ids.append(profile_id)
+        target = self.client.post(
+            "/targets",
+            json={
+                "target_url": "http://juice-shop:3000",
+                "permission_confirmed": True,
+                "auth_profile_id": profile_id,
+            },
+            headers=DEV_AUTH_HEADERS,
+        )
+        self.assertEqual(target.status_code, 201)
+        target_id = target.json()["id"]
+        self.created_target_ids.append(target_id)
+
+        response = self.client.post(
+            "/scans",
+            json={"target_id": target_id, "scan_profile_id": "active-demo", "active_demo_acknowledged": True},
+            headers=DEV_AUTH_HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("supported only for passive-web", response.json()["detail"])
 
     def test_create_ajax_short_scan_requires_acknowledgement(self) -> None:
         target = self.create_target()

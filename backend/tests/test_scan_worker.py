@@ -6,10 +6,11 @@ from uuid import uuid4
 
 from sqlalchemy import delete, select
 
+from app.auth_profiles import AuthProfileError, encrypt_secret
 from app.core.contracts import Confidence, ScanStatus, ScanStep, Severity
 from app.db.session import SessionLocal
 from app.findings.schemas import NormalizedFindingInput
-from app.models import LEGACY_USER_ID, Finding, Scan, Target, Workspace
+from app.models import LEGACY_USER_ID, LEGACY_WORKSPACE_ID, AuthProfile, Finding, Scan, Target, Workspace
 from app.repo_scanner.stubs import RepoScanResult
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
 from app.scans.lifecycle import claim_next_queued_scan, run_internal_lifecycle_job, run_passive_scan_job, run_repo_scan_job
@@ -18,6 +19,7 @@ from app.security.allowlist import ScanAllowlist
 from app.zap.active import ZapActiveDemoResult
 from app.zap.ajax import ZapAjaxShortResult
 from app.zap.passive import ZapPassiveResult
+from worker.main import validate_worker_startup
 
 
 class ScanWorkerTests(unittest.TestCase):
@@ -52,6 +54,7 @@ class ScanWorkerTests(unittest.TestCase):
             db.execute(delete(Finding).where(Finding.scan_id == self.scan_id))
             db.execute(delete(Scan).where(Scan.id == self.scan_id))
             db.execute(delete(Target).where(Target.id == self.target_id))
+            db.execute(delete(AuthProfile).where(AuthProfile.id == "auth-profile-1"))
             db.execute(delete(Workspace).where(Workspace.id == "different-workspace"))
             db.commit()
 
@@ -65,6 +68,11 @@ class ScanWorkerTests(unittest.TestCase):
             self.assertEqual(scan.current_step, "target_validation")
             self.assertEqual(scan.progress_percent, 5)
             self.assertIsNotNone(scan.started_at)
+
+    def test_worker_startup_fails_on_invalid_auth_profile_secret_key(self) -> None:
+        with patch("worker.main.settings.auth_profile_secret_key", "not-a-fernet-key"):
+            with self.assertRaises(AuthProfileError):
+                validate_worker_startup()
 
     def test_internal_lifecycle_job_completes_scan_and_writes_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -212,6 +220,64 @@ class ScanWorkerTests(unittest.TestCase):
                 self.assertEqual(len(persisted), 1)
                 self.assertEqual(persisted[0].source_tool, "custom-passive")
                 self.assertEqual(persisted[0].scanner_rule_id, "header:content-security-policy")
+
+    def test_passive_scan_job_passes_decrypted_auth_headers_to_custom_scanner(self) -> None:
+        allowlist = build_test_allowlist(allowed_modes=("passive",))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_result = PassiveScanResult(pages=(), findings=(), errors=(), artifact_dir=Path(temp_dir) / "scans" / self.scan_id)
+            with SessionLocal() as db:
+                db.add(
+                    AuthProfile(
+                        id="auth-profile-1",
+                        workspace_id=LEGACY_WORKSPACE_ID,
+                        created_by_user_id=LEGACY_USER_ID,
+                        label="Bearer",
+                        profile_type="bearer_token",
+                        encrypted_secret=encrypt_secret("worker-token"),
+                        secret_hint="****oken",
+                    )
+                )
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(scan)
+                scan.auth_profile_id = "auth-profile-1"
+                db.add(scan)
+                db.commit()
+                db.refresh(scan)
+
+                with patch("app.scans.lifecycle.run_passive_scan", return_value=fake_result) as passive_scan:
+                    run_passive_scan_job(db, scan, temp_dir, allowlist)
+
+                passive_scan.assert_called_once()
+                self.assertEqual(passive_scan.call_args.kwargs["auth_headers"], {"Authorization": "Bearer worker-token"})
+
+    def test_non_passive_scan_job_fails_when_auth_profile_is_attached(self) -> None:
+        allowlist = build_test_allowlist(allowed_modes=("passive", "active_demo"))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with SessionLocal() as db:
+                db.add(
+                    AuthProfile(
+                        id="auth-profile-1",
+                        workspace_id=LEGACY_WORKSPACE_ID,
+                        created_by_user_id=LEGACY_USER_ID,
+                        label="Bearer",
+                        profile_type="bearer_token",
+                        encrypted_secret=encrypt_secret("worker-token"),
+                        secret_hint="****oken",
+                    )
+                )
+                scan = db.get(Scan, self.scan_id)
+                self.assertIsNotNone(scan)
+                scan.mode = "active_demo"
+                scan.auth_profile_id = "auth-profile-1"
+                db.add(scan)
+                db.commit()
+                db.refresh(scan)
+
+                run_passive_scan_job(db, scan, temp_dir, allowlist, zap_base_url="http://zap:8080")
+
+                self.assertEqual(scan.status, "failed")
+                self.assertEqual(scan.error_code, "scan_worker_failed")
+                self.assertIn("supported only for passive-web", scan.error_detail)
 
     def test_passive_scan_job_persists_zap_passive_findings(self) -> None:
         allowlist = build_test_allowlist(allowed_modes=("passive", "active_demo"))

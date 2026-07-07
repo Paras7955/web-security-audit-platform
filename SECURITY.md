@@ -34,6 +34,8 @@ Do not use this platform for:
 - Repo scans require a saved allowlisted target with a configured local repo path.
 - Repo paths must be absolute, existing directories under the configured `REPO_SCAN_ROOT`, and must not be symlinks.
 - Repo scans must not clone remote code, install dependencies, fetch remote repositories, run package scripts, run builds, or execute repository code.
+- Target-application auth profiles are supported only for guarded passive-web scanner requests in Phase 14.
+- Active Demo, AJAX Short, browser/ZAP authenticated behavior, repo scans, login automation, password-form workflows, and business-logic auth testing must not use auth profiles in Phase 14.
 - Cloud demos must use sample data only and must not allow arbitrary active scans.
 
 ## Evidence And Secret Handling
@@ -45,6 +47,10 @@ Do not use this platform for:
 - Reports are available for completed passive, Active Demo, and Repo scans after normalization and redaction.
 - AI is available for completed passive and Active Demo scans only; repo findings must not be sent to AI providers in Phase 10.
 - Secret scan results must be redacted.
+- Auth profile secrets must be encrypted with a deployment-specific `AUTH_PROFILE_SECRET_KEY`.
+- `AUTH_PROFILE_SECRET_KEY` must be present and valid at startup/readiness; production-like environments must not use the local development example key.
+- Auth profile API reads must never return secret material.
+- Auth profile secrets must not appear in findings, reports, AI payloads, artifacts, logs, scan status messages, or audit-style records.
 - Never send raw response bodies, raw ZAP output, raw secret scanner output, or unredacted evidence to AI providers.
 
 ## AI Provider Safety

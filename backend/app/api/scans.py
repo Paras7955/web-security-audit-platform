@@ -44,6 +44,7 @@ def create_scan(
         workspace_id=principal.workspace_id,
         created_by_user_id=principal.user_id,
         target_id=target.id,
+        auth_profile_id=target.auth_profile_id,
         scan_profile_id=profile.id,
         mode=mode.value,
         status=ScanStatus.QUEUED.value,
@@ -147,6 +148,12 @@ def validate_scan_profile(
             validate_repo_path(target.repo_path, repo_scan_root=settings.repo_scan_root)
         except RepoPathError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if target.auth_profile_id is not None and mode != ScanMode.PASSIVE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Auth profiles are currently supported only for passive-web scans.",
+        )
 
     revalidate_target_record(target, allowlist)
     return mode

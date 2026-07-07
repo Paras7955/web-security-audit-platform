@@ -26,11 +26,13 @@ def run_passive_scan(
     target_url: str,
     allowlist_target: AllowlistTarget,
     artifact_root: str | Path,
+    auth_headers: dict[str, str] | None = None,
     client: GuardedHttpClient | None = None,
 ) -> PassiveScanResult:
     scanner_client = client or GuardedHttpClient(
         allowlist_target=allowlist_target,
         timeout_seconds=int(DEFAULT_LIMITS["request_timeout_seconds"]),
+        default_headers=auth_headers,
     )
     crawl_result = crawl_site(
         start_url=target_url,

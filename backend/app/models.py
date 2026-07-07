@@ -54,6 +54,10 @@ class AuthProfile(Base):
         server_default=LEGACY_WORKSPACE_ID,
     )
     label: Mapped[str] = mapped_column(String(200), nullable=False)
+    profile_type: Mapped[str] = mapped_column(String(40), nullable=False, default="bearer_token", server_default="bearer_token")
+    header_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    encrypted_secret: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    secret_hint: Mapped[str] = mapped_column(String(80), nullable=False, default="", server_default="")
     created_by_user_id: Mapped[str] = mapped_column(
         String(64),
         ForeignKey("platform_users.id"),
@@ -112,6 +116,7 @@ class Scan(Base):
         server_default=LEGACY_USER_ID,
     )
     target_id: Mapped[str] = mapped_column(String(64), ForeignKey("targets.id"), nullable=False)
+    auth_profile_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("auth_profiles.id"), nullable=True)
     mode: Mapped[str] = mapped_column(String(40), nullable=False)
     scan_profile_id: Mapped[str] = mapped_column(String(80), nullable=False, default="passive-web", server_default="passive-web")
     status: Mapped[str] = mapped_column(String(40), nullable=False)

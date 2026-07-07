@@ -14,6 +14,7 @@ def check_database_ready() -> bool:
             "platform_users",
             "auth_identities",
             "workspaces",
+            "auth_profiles",
             "targets",
             "scans",
             "findings",

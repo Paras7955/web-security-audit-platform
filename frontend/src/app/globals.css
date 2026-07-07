@@ -290,6 +290,7 @@ dd {
 }
 
 .targetForm input[type="text"],
+.targetForm input[type="password"],
 .targetForm input:not([type]) {
   width: 100%;
 }
@@ -466,6 +467,25 @@ select {
   overflow-wrap: anywhere;
 }
 
+.authProfileAttach {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.authProfileAttach dl {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
+.authProfileAttach dd {
+  overflow-wrap: anywhere;
+}
+
 .inlineAction {
   display: flex;
   align-items: center;
@@ -555,7 +575,7 @@ select {
 }
 
 .scanMeta {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   margin-top: 14px;
 }
 

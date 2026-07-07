@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { AiExplanationsPanel } from "@/components/dashboard/AiExplanationsPanel";
+import { AuthProfilesPanel } from "@/components/dashboard/AuthProfilesPanel";
 import { FindingsDashboard, severityRank } from "@/components/dashboard/FindingsDashboard";
 import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
 import {
@@ -18,6 +19,7 @@ import { SCAN_PROFILES } from "@/lib/contracts";
 import { TargetForm } from "@/components/dashboard/TargetForm";
 import {
   AiExplanation,
+  AuthProfile,
   Finding,
   ReportArtifact,
   Scan,
@@ -34,6 +36,12 @@ export function TargetSetup() {
   const [repoPath, setRepoPath] = useState("/app/repositories/security-project");
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
+  const [authProfiles, setAuthProfiles] = useState<AuthProfile[]>([]);
+  const [selectedAuthProfileId, setSelectedAuthProfileId] = useState("");
+  const [authProfileLabel, setAuthProfileLabel] = useState("");
+  const [authProfileType, setAuthProfileType] = useState("bearer_token");
+  const [authProfileHeaderName, setAuthProfileHeaderName] = useState("");
+  const [authProfileSecret, setAuthProfileSecret] = useState("");
   const [selectedTargetId, setSelectedTargetId] = useState("");
   const [scanProfileId, setScanProfileId] = useState("passive-web");
   const [activeDemoAcknowledged, setActiveDemoAcknowledged] = useState(false);
@@ -46,6 +54,7 @@ export function TargetSetup() {
   const [selectedFindingId, setSelectedFindingId] = useState("");
   const [severityFilter, setSeverityFilter] = useState("all");
   const [message, setMessage] = useState("Enter an allowlisted local/demo target.");
+  const [authProfileMessage, setAuthProfileMessage] = useState("Create an optional target-app auth profile for passive scans.");
   const [reportMessage, setReportMessage] = useState("Reports are available after a passive, Active Demo, or Repo scan completes.");
   const [aiMessage, setAiMessage] = useState("AI explanations are available after a passive or Active Demo scan completes.");
   const [bootstrapError, setBootstrapError] = useState("");
@@ -63,6 +72,7 @@ export function TargetSetup() {
       selectedTarget.allowed_modes.includes(selectedProfile.mode) &&
       !isBusy &&
       (!selectedProfile.requires_repo_path || Boolean(selectedTarget.repo_path)) &&
+      (!selectedTarget.auth_profile_id || selectedProfile.mode === "passive") &&
       (!selectedProfile.requires_active_demo_acknowledgement || activeDemoAcknowledged) &&
       (!selectedProfile.requires_ajax_short_acknowledgement || ajaxShortAcknowledged)
   );
@@ -123,7 +133,7 @@ export function TargetSetup() {
 
   async function loadInitialData() {
     setBootstrapError("");
-    const results = await Promise.allSettled([loadTargets(), loadScanHistory()]);
+    const results = await Promise.allSettled([loadTargets(), loadAuthProfiles(), loadScanHistory()]);
     const failed = results.find((result) => result.status === "rejected");
     if (failed?.status === "rejected") {
       const error = failed.reason;
@@ -160,7 +170,8 @@ export function TargetSetup() {
         body: JSON.stringify({
           target_url: targetUrl,
           permission_confirmed: permissionConfirmed,
-          repo_path: repoPath.trim() || null
+          repo_path: repoPath.trim() || null,
+          auth_profile_id: selectedAuthProfileId || null
         })
       });
       const body = await readJson<Target>(response, "Target creation failed.");
@@ -175,6 +186,10 @@ export function TargetSetup() {
 
   async function startScan() {
     if (!selectedTarget) {
+      return;
+    }
+    if (selectedTarget.auth_profile_id && selectedProfile.mode !== "passive") {
+      setMessage("Auth profiles are currently supported only for passive-web scans.");
       return;
     }
 
@@ -234,6 +249,60 @@ export function TargetSetup() {
     }
   }
 
+  async function createAuthProfile() {
+    setIsBusy(true);
+    setAuthProfileMessage("Saving auth profile...");
+
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/auth-profiles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: authProfileLabel,
+          profile_type: authProfileType,
+          header_name: authProfileType === "custom_header" ? authProfileHeaderName : null,
+          secret: authProfileSecret
+        })
+      });
+      const profile = await readJson<AuthProfile>(response, "Auth profile creation failed.");
+      setSelectedAuthProfileId(profile.id);
+      setAuthProfileLabel("");
+      setAuthProfileHeaderName("");
+      setAuthProfileSecret("");
+      await loadAuthProfiles(profile.id);
+      setAuthProfileMessage("Auth profile saved. Attach it to a target before starting an authenticated passive scan.");
+    } catch (error) {
+      setAuthProfileMessage(error instanceof Error ? error.message : "Auth profile creation failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function updateSelectedTargetAuthProfile() {
+    if (!selectedTarget) {
+      return;
+    }
+
+    setIsBusy(true);
+    setAuthProfileMessage(selectedAuthProfileId ? "Attaching auth profile to target..." : "Detaching auth profile from target...");
+
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/targets/${selectedTarget.id}/auth-profile`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auth_profile_id: selectedAuthProfileId || null })
+      });
+      const updatedTarget = await readJson<Target>(response, "Auth profile update failed.");
+      setTargets((current) => current.map((target) => (target.id === updatedTarget.id ? updatedTarget : target)));
+      setSelectedTargetId(updatedTarget.id);
+      setAuthProfileMessage(updatedTarget.auth_profile_id ? "Auth profile attached to selected target." : "Auth profile detached from selected target.");
+    } catch (error) {
+      setAuthProfileMessage(error instanceof Error ? error.message : "Auth profile update failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function refreshScan(scanId: string) {
     try {
       const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}`);
@@ -264,6 +333,14 @@ export function TargetSetup() {
     const body = await readJson<Target[]>(response, "Target list load failed.");
     setTargets(body);
     setSelectedTargetId(preferredTargetId ?? selectedTargetId ?? body[0]?.id ?? "");
+    setBootstrapError("");
+  }
+
+  async function loadAuthProfiles(preferredAuthProfileId?: string) {
+    const response = await apiFetch(`${apiBaseUrl}/auth-profiles`);
+    const body = await readJson<AuthProfile[]>(response, "Auth profile list load failed.");
+    setAuthProfiles(body);
+    setSelectedAuthProfileId(preferredAuthProfileId ?? selectedAuthProfileId ?? body[0]?.id ?? "");
     setBootstrapError("");
   }
 
@@ -412,7 +489,7 @@ export function TargetSetup() {
           <p className="eyebrow">Workspace Console</p>
           <h2 id="dashboard-heading">Run authorized scans, review normalized findings, and manage reportable evidence</h2>
         </div>
-        <span className="phaseBadge">Phase 13 profiles</span>
+        <span className="phaseBadge">Profiles + auth</span>
       </div>
 
       {bootstrapError ? (
@@ -436,6 +513,24 @@ export function TargetSetup() {
             onPermissionChange={setPermissionConfirmed}
             onValidate={validateTarget}
             onCreateTarget={createTarget}
+          />
+          <AuthProfilesPanel
+            authProfiles={authProfiles}
+            selectedTarget={selectedTarget}
+            selectedAuthProfileId={selectedAuthProfileId}
+            label={authProfileLabel}
+            profileType={authProfileType}
+            headerName={authProfileHeaderName}
+            secret={authProfileSecret}
+            message={authProfileMessage}
+            isBusy={isBusy}
+            onSelectAuthProfile={setSelectedAuthProfileId}
+            onLabelChange={setAuthProfileLabel}
+            onProfileTypeChange={setAuthProfileType}
+            onHeaderNameChange={setAuthProfileHeaderName}
+            onSecretChange={setAuthProfileSecret}
+            onCreateProfile={createAuthProfile}
+            onAttachProfile={updateSelectedTargetAuthProfile}
           />
           <ScanLauncher
             targets={targets}

@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
 
+from app.auth_profiles import AuthProfileError, LOCAL_DEV_EXAMPLE_SECRET_KEY, validate_auth_profile_secret_settings
 from app.core.config import Settings
 from app.db.session import SessionLocal
 from app.main import app
@@ -163,6 +164,21 @@ class AuthWorkspaceTests(unittest.TestCase):
                 auth_oidc_audience="security-audit-api",
                 auth_oidc_jwks_url="https://tenant.example/.well-known/jwks.json",
             )
+        )
+
+    def test_invalid_auth_profile_secret_configuration_fails_closed(self) -> None:
+        invalid_configs = [
+            Settings(app_env="local", auth_profile_secret_key=""),
+            Settings(app_env="local", auth_profile_secret_key="not-a-fernet-key"),
+            Settings(app_env="production", auth_profile_secret_key=LOCAL_DEV_EXAMPLE_SECRET_KEY),
+        ]
+
+        for config in invalid_configs:
+            with self.assertRaises(AuthProfileError):
+                validate_auth_profile_secret_settings(config)
+
+        validate_auth_profile_secret_settings(
+            Settings(app_env="local", auth_profile_secret_key=LOCAL_DEV_EXAMPLE_SECRET_KEY)
         )
 
     def test_required_auth_runtime_token_errors_return_401(self) -> None:

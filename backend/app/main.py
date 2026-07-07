@@ -2,10 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.ai import router as ai_router
+from app.api.auth_profiles import router as auth_profiles_router
 from app.api.findings import router as findings_router
 from app.api.reports import router as reports_router
 from app.api.scans import router as scans_router
 from app.api.targets import router as targets_router
+from app.auth_profiles import validate_auth_profile_secret_settings
 from app.core.config import settings
 from app.core.contracts import CONTRACTS
 from app.db.session import check_database_ready
@@ -26,6 +28,7 @@ app.add_middleware(
 )
 
 app.include_router(targets_router)
+app.include_router(auth_profiles_router)
 app.include_router(scans_router)
 app.include_router(findings_router)
 app.include_router(reports_router)
@@ -35,6 +38,7 @@ app.include_router(ai_router)
 @app.on_event("startup")
 def validate_startup_configuration() -> None:
     validate_auth_settings(settings)
+    validate_auth_profile_secret_settings(settings)
 
 
 @app.get("/health")
@@ -44,6 +48,7 @@ def health() -> dict[str, str]:
 
 @app.get("/ready")
 def ready() -> dict[str, str]:
+    validate_auth_profile_secret_settings(settings)
     check_database_ready()
     return {"status": "ready"}
 
