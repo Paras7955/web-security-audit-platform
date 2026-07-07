@@ -34,6 +34,7 @@ class ScanRead(BaseModel):
 class FindingRead(BaseModel):
     id: str
     scan_id: str
+    target_id: str | None = None
     title: str
     severity: str
     confidence: str
@@ -50,6 +51,64 @@ class FindingRead(BaseModel):
     false_positive_notes: str | None
     redaction_applied: bool
     raw_artifact_ref: str | None
+    lifecycle_status: str = "open"
+    suppressed: bool = False
+    suppression_rule_id: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FindingLifecycleUpdate(BaseModel):
+    lifecycle_status: str = Field(min_length=1, max_length=40)
+
+
+class SuppressionRuleCreate(BaseModel):
+    target_id: str = Field(min_length=1, max_length=64)
+    dedupe_key: str | None = Field(default=None, max_length=500)
+    severity: str | None = Field(default=None, max_length=40)
+    source_tool: str | None = Field(default=None, max_length=100)
+    reason: str = Field(min_length=1, max_length=2000)
+    expires_at: datetime | None = None
+
+
+class SuppressionRuleRead(BaseModel):
+    id: str
+    target_id: str
+    dedupe_key: str | None
+    severity: str | None
+    source_tool: str | None
+    reason: str
+    expires_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TagCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
+
+
+class TagRead(BaseModel):
+    id: str
+    label: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TagAssignmentCreate(BaseModel):
+    tag_id: str = Field(min_length=1, max_length=64)
+    resource_type: str = Field(min_length=1, max_length=40)
+    resource_id: str = Field(min_length=1, max_length=64)
+
+
+class TagAssignmentRead(BaseModel):
+    id: str
+    tag_id: str
+    resource_type: str
+    resource_id: str
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

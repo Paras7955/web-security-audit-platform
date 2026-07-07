@@ -1,0 +1,123 @@
+from datetime import datetime, timezone
+from uuid import uuid4
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models import Finding, FindingOccurrenceState, FindingState, Scan, SuppressionRule, Tag, TagAssignment
+
+LIFECYCLE_STATUSES = {"open", "confirmed", "in_progress", "resolved", "suppressed", "false_positive"}
+RESOURCE_TYPES = {"target", "scan", "report"}
+
+
+def normalize_status(value: str) -> str:
+    status = value.strip().lower()
+    if status not in LIFECYCLE_STATUSES:
+        raise ValueError("Unsupported lifecycle status.")
+    return status
+
+
+def normalize_resource_type(value: str) -> str:
+    resource_type = value.strip().lower()
+    if resource_type not in RESOURCE_TYPES:
+        raise ValueError("Unsupported tag resource type.")
+    return resource_type
+
+
+def finding_target_id(db: Session, finding: Finding) -> str | None:
+    scan = db.get(Scan, finding.scan_id)
+    return scan.target_id if scan is not None else None
+
+
+def get_or_create_finding_state(db: Session, finding: Finding, scan: Scan, user_id: str) -> FindingState:
+    state = db.scalar(
+        select(FindingState).where(
+            FindingState.workspace_id == finding.workspace_id,
+            FindingState.target_id == scan.target_id,
+            FindingState.dedupe_key == finding.dedupe_key,
+        )
+    )
+    if state is not None:
+        return state
+
+    state = FindingState(
+        id=str(uuid4()),
+        workspace_id=finding.workspace_id,
+        target_id=scan.target_id,
+        dedupe_key=finding.dedupe_key,
+        lifecycle_status="open",
+        updated_by_user_id=user_id,
+    )
+    db.add(state)
+    db.flush()
+    return state
+
+
+def get_or_create_occurrence_state(db: Session, finding: Finding) -> FindingOccurrenceState:
+    occurrence = db.scalar(select(FindingOccurrenceState).where(FindingOccurrenceState.finding_id == finding.id))
+    if occurrence is not None:
+        return occurrence
+
+    occurrence = FindingOccurrenceState(
+        id=str(uuid4()),
+        workspace_id=finding.workspace_id,
+        finding_id=finding.id,
+        lifecycle_status="open",
+        suppressed=False,
+    )
+    db.add(occurrence)
+    db.flush()
+    return occurrence
+
+
+def active_suppression_for_finding(db: Session, finding: Finding, scan: Scan) -> SuppressionRule | None:
+    now = datetime.now(timezone.utc)
+    rules = list(
+        db.scalars(
+            select(SuppressionRule)
+            .where(
+                SuppressionRule.workspace_id == finding.workspace_id,
+                SuppressionRule.target_id == scan.target_id,
+            )
+            .order_by(SuppressionRule.created_at.desc())
+        ).all()
+    )
+    for rule in rules:
+        expires_at = rule.expires_at
+        if expires_at is not None and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at is not None and expires_at <= now:
+            continue
+        if rule.dedupe_key is not None and rule.dedupe_key != finding.dedupe_key:
+            continue
+        if rule.severity is not None and rule.severity != finding.severity:
+            continue
+        if rule.source_tool is not None and rule.source_tool != finding.source_tool:
+            continue
+        return rule
+    return None
+
+
+def sync_occurrence_state(db: Session, finding: Finding, scan: Scan, user_id: str) -> FindingOccurrenceState:
+    state = get_or_create_finding_state(db, finding, scan, user_id)
+    occurrence = get_or_create_occurrence_state(db, finding)
+    rule = active_suppression_for_finding(db, finding, scan)
+    occurrence.suppressed = rule is not None
+    occurrence.suppression_rule_id = rule.id if rule is not None else None
+    occurrence.lifecycle_status = "suppressed" if rule is not None else state.lifecycle_status
+    return occurrence
+
+
+def tags_for_resource(db: Session, workspace_id: str, resource_type: str, resource_id: str) -> list[Tag]:
+    return list(
+        db.scalars(
+            select(Tag)
+            .join(TagAssignment, TagAssignment.tag_id == Tag.id)
+            .where(
+                TagAssignment.workspace_id == workspace_id,
+                TagAssignment.resource_type == resource_type,
+                TagAssignment.resource_id == resource_id,
+            )
+            .order_by(Tag.label.asc())
+        ).all()
+    )

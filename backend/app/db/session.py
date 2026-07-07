@@ -19,6 +19,11 @@ def check_database_ready() -> bool:
             "scans",
             "findings",
             "risk_scores",
+            "finding_states",
+            "suppression_rules",
+            "finding_occurrence_states",
+            "tags",
+            "tag_assignments",
             "evidence_artifacts",
             "report_artifacts",
         }

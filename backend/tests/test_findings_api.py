@@ -6,7 +6,7 @@ from sqlalchemy import delete
 
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import Finding, Scan, Target
+from app.models import Finding, FindingOccurrenceState, FindingState, Scan, Target
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
@@ -64,6 +64,8 @@ class FindingsApiTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         with SessionLocal() as db:
+            db.execute(delete(FindingOccurrenceState).where(FindingOccurrenceState.finding_id == self.finding_id))
+            db.execute(delete(FindingState).where(FindingState.target_id == self.target_id))
             db.execute(delete(Finding).where(Finding.scan_id == self.scan_id))
             db.execute(delete(Scan).where(Scan.id == self.scan_id))
             db.execute(delete(Target).where(Target.id == self.target_id))
