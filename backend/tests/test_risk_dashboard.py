@@ -102,6 +102,31 @@ class RiskDashboardTests(unittest.TestCase):
         self.assertEqual(hidden_target_dashboard.status_code, 404)
         self.assertEqual(hidden_score.status_code, 404)
 
+    def test_workspace_overview_dedupes_by_target_and_key(self) -> None:
+        first_target_id = self.create_target(name="First target")
+        second_target_id = self.create_target(name="Second target")
+        first_scan_id = self.create_scan(first_target_id)
+        second_scan_id = self.create_scan(second_target_id)
+        self.create_finding(first_scan_id, "shared-key", severity="medium", confidence="high")
+        self.create_finding(second_scan_id, "shared-key", severity="medium", confidence="high")
+
+        overview = self.client.get("/dashboard/overview", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(overview.status_code, 200)
+        self.assertGreaterEqual(overview.json()["severity_counts"]["medium"], 2)
+
+    def test_duplicate_dedupe_keys_use_deterministic_highest_risk_finding(self) -> None:
+        scan = self.make_scan_object()
+        older_low = self.make_finding_object(scan.id, "duplicate-key", severity="low", confidence="low")
+        newer_high = self.make_finding_object(scan.id, "duplicate-key", severity="high", confidence="confirmed")
+
+        score = calculate_scan_risk_score(scan, [older_low, newer_high])
+        reversed_score = calculate_scan_risk_score(scan, [newer_high, older_low])
+
+        self.assertEqual(score.score, 70)
+        self.assertEqual(reversed_score.score, score.score)
+        self.assertEqual(score.input_summary["weighted_findings"][0]["severity"], "high")
+
     def test_scan_comparison_classifies_changes(self) -> None:
         target_id = self.create_target()
         baseline_scan_id = self.create_scan(target_id, created_offset=0)
@@ -141,6 +166,37 @@ class RiskDashboardTests(unittest.TestCase):
         self.assertIn("same target", cross_target.json()["detail"])
         self.assertEqual(incomplete.status_code, 400)
         self.assertIn("completed scan", incomplete.json()["detail"])
+
+    def test_completed_with_warnings_is_accepted_for_scores_and_comparison(self) -> None:
+        target_id = self.create_target()
+        baseline_scan_id = self.create_scan(target_id, status="completed_with_warnings", created_offset=0)
+        comparison_scan_id = self.create_scan(target_id, status="completed_with_warnings", created_offset=1)
+        self.create_finding(baseline_scan_id, "baseline", severity="low", confidence="high")
+        self.create_finding(comparison_scan_id, "comparison", severity="medium", confidence="high")
+
+        score = self.client.get(f"/scans/{baseline_scan_id}/risk-score", headers=DEV_AUTH_HEADERS)
+        comparison = self.client.get(
+            f"/scans/{comparison_scan_id}/comparison?baseline_scan_id={baseline_scan_id}",
+            headers=DEV_AUTH_HEADERS,
+        )
+
+        self.assertEqual(score.status_code, 200)
+        self.assertEqual(comparison.status_code, 200)
+        self.assertEqual(comparison.json()["baseline_scan_id"], baseline_scan_id)
+
+    def test_existing_risk_score_row_is_returned_without_duplicate_insert(self) -> None:
+        target_id = self.create_target()
+        scan_id = self.create_scan(target_id)
+        self.create_finding(scan_id, "medium-high", severity="medium", confidence="high")
+        first = self.client.get(f"/scans/{scan_id}/risk-score", headers=DEV_AUTH_HEADERS)
+        second = self.client.get(f"/scans/{scan_id}/risk-score", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.json()["id"], second.json()["id"])
+        with SessionLocal() as db:
+            rows = db.query(RiskScore).filter(RiskScore.scan_id == scan_id, RiskScore.scoring_model_version == SCORING_MODEL_VERSION).all()
+            self.assertEqual(len(rows), 1)
 
     def test_latest_target_comparison_uses_two_newest_completed_scans(self) -> None:
         target_id = self.create_target()

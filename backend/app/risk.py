@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.contracts import ScanStatus
@@ -107,21 +108,60 @@ def persist_scan_risk_score(db: Session, scan: Scan, findings: list[Finding]) ->
         input_summary=calculated.input_summary,
     )
     db.add(risk_score)
-    db.commit()
-    db.refresh(risk_score)
-    return risk_score
+    try:
+        db.commit()
+        db.refresh(risk_score)
+        return risk_score
+    except IntegrityError:
+        db.rollback()
+        concurrent = db.scalar(
+            select(RiskScore).where(
+                RiskScore.workspace_id == scan.workspace_id,
+                RiskScore.target_id == scan.target_id,
+                RiskScore.scan_id == scan.id,
+                RiskScore.scoring_model_version == calculated.scoring_model_version,
+            )
+        )
+        if concurrent is None:
+            raise
+        return concurrent
 
 
 def dedupe_findings(findings: list[Finding]) -> list[Finding]:
-    seen: set[str] = set()
-    unique: list[Finding] = []
-    for finding in findings:
+    best_by_key: dict[str, Finding] = {}
+    for finding in sorted(findings, key=finding_sort_key):
         key = finding.dedupe_key or finding.id
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(finding)
-    return unique
+        current = best_by_key.get(key)
+        if current is None or finding_priority(finding) > finding_priority(current):
+            best_by_key[key] = finding
+    return [best_by_key[key] for key in sorted(best_by_key)]
+
+
+def dedupe_findings_by_target(findings: list[tuple[str, Finding]]) -> list[tuple[str, Finding]]:
+    best_by_key: dict[tuple[str, str], tuple[str, Finding]] = {}
+    for target_id, finding in sorted(findings, key=lambda item: (item[0], finding_sort_key(item[1]))):
+        key = (target_id, finding.dedupe_key or finding.id)
+        current = best_by_key.get(key)
+        if current is None or finding_priority(finding) > finding_priority(current[1]):
+            best_by_key[key] = (target_id, finding)
+    return [best_by_key[key] for key in sorted(best_by_key)]
+
+
+def finding_priority(finding: Finding) -> tuple[int, int, str, str]:
+    return (
+        SEVERITY_WEIGHTS.get(normalize_bucket(finding.severity, "info"), SEVERITY_WEIGHTS["info"]),
+        int(CONFIDENCE_MULTIPLIERS.get(normalize_bucket(finding.confidence, "low"), CONFIDENCE_MULTIPLIERS["low"]) * 100),
+        finding.created_at.isoformat() if finding.created_at is not None else "",
+        finding.id,
+    )
+
+
+def finding_sort_key(finding: Finding) -> tuple[str, str, str]:
+    return (
+        finding.dedupe_key or finding.id,
+        finding.created_at.isoformat() if finding.created_at is not None else "",
+        finding.id,
+    )
 
 
 def risk_label(score: int) -> str:

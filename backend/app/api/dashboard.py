@@ -14,7 +14,7 @@ from app.api.schemas import (
     TargetDashboardRead,
 )
 from app.models import Finding, RiskScore, Scan, Target
-from app.risk import COMPLETED_SCAN_STATUSES, SCORING_MODEL_VERSION, dedupe_findings, persist_scan_risk_score
+from app.risk import COMPLETED_SCAN_STATUSES, SCORING_MODEL_VERSION, dedupe_findings, dedupe_findings_by_target, persist_scan_risk_score
 from app.security.auth import AuthenticatedPrincipal
 
 router = APIRouter(tags=["dashboard"])
@@ -29,6 +29,7 @@ def dashboard_overview(
     scans = list(db.scalars(select(Scan).where(Scan.workspace_id == principal.workspace_id).order_by(Scan.created_at.desc())).all())
     completed_scans = [scan for scan in scans if scan.status in COMPLETED_SCAN_STATUSES]
     findings = list(db.scalars(select(Finding).where(Finding.workspace_id == principal.workspace_id)).all())
+    target_id_by_scan_id = {scan.id: scan.target_id for scan in scans}
     latest_score = persist_scan_risk_score(db, completed_scans[0], findings_for_scan(findings, completed_scans[0].id)) if completed_scans else None
 
     return DashboardOverviewRead(
@@ -36,7 +37,7 @@ def dashboard_overview(
         scans_count=len(scans),
         completed_scans_count=len(completed_scans),
         findings_count=len(findings),
-        severity_counts=severity_counts(findings),
+        severity_counts=workspace_severity_counts(findings, target_id_by_scan_id),
         latest_risk_score=latest_score,
         recent_scans=scan_summaries(db, scans[:8], targets_by_id(targets)),
     )
@@ -226,6 +227,12 @@ def findings_for_scan(findings: list[Finding], scan_id: str) -> list[Finding]:
 
 def finding_map(findings: list[Finding]) -> dict[str, Finding]:
     return {finding.dedupe_key: finding for finding in dedupe_findings(findings)}
+
+
+def workspace_severity_counts(findings: list[Finding], target_id_by_scan_id: dict[str, str]) -> dict[str, int]:
+    target_findings = [(target_id_by_scan_id[finding.scan_id], finding) for finding in findings if finding.scan_id in target_id_by_scan_id]
+    counts = Counter(finding.severity for _, finding in dedupe_findings_by_target(target_findings))
+    return {severity: counts.get(severity, 0) for severity in ("critical", "high", "medium", "low", "info")}
 
 
 def severity_counts(findings: list[Finding]) -> dict[str, int]:
