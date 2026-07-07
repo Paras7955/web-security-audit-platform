@@ -6,6 +6,19 @@ This file gives a new implementation session the project context needed to conti
 
 Do not include private reviewer-loop instructions or any information that should be hidden from review sub-agents. Treat this file as repo-visible project documentation.
 
+## Immediate Handoff Checklist
+
+For a new implementation session taking over from this point:
+
+- Read `AGENTS.md` first. It contains the binding project workflow, phase gate, safety boundaries, review model pin, commit rules, and summary/user-action requirements.
+- Read this `HANDOFF.md` next for the current architecture, phase history, verification state, known risks, and next planned phase.
+- Skim `README.md` and `SECURITY.md` before making changes, especially the auth, workspace, scan safety, repo-scan, AI, and auth-profile sections.
+- Confirm the active branch and clean worktree with `git status --short --branch`.
+- Current expected branch is `phase-14-auth-profiles`. Phase 14 is complete and reviewed.
+- Do not begin Phase 15 until the user confirms `phase-14-auth-profiles` has been merged back into the base branch.
+- If Docker Compose commands are needed, ensure a local `.env` or shell environment provides a real generated Fernet `AUTH_PROFILE_SECRET_KEY`. The placeholder in `.env.example` is intentionally unusable.
+- If starting Phase 15 after merge confirmation, switch to the updated base branch, verify it is clean, then create/switch to `phase-15-dashboards-risk`.
+
 ## Current Branch And Phase
 
 - Current branch: `phase-14-auth-profiles`
@@ -77,6 +90,13 @@ Current internal worker scan modes:
 Reports and AI eligibility are determined by scan profile metadata. In the current profile set, reports are available for completed `passive-web`, `active-demo`, and `repository` scans. AI explanations are available for completed `passive-web` and `active-demo` scans only; repository findings remain excluded from AI.
 
 `AUTH_PROFILE_SECRET_KEY` is required for backend and worker startup/readiness. It must be a valid Fernet key. Production-like environments must not use the local development example key. Docker Compose now expects this value from the caller environment or a local `.env`; `.env.example` intentionally contains a non-usable placeholder.
+
+Local setup note:
+
+- Any developer or future agent running Docker Compose after Phase 14 must provide `AUTH_PROFILE_SECRET_KEY`.
+- Generate a deployment-specific Fernet key using a Python environment with `cryptography` available, or another trusted Fernet-key generator.
+- Do not commit local `.env` values or real auth-profile keys.
+- Most backend/worker test and build commands now need to be prefixed with `AUTH_PROFILE_SECRET_KEY=<generated-fernet-key>` unless the value is already present in the environment.
 
 ## Phase History
 
@@ -381,6 +401,7 @@ Phase 14 commits:
 - `e8e9469 docs: document auth profile requirements`
 - `3fab121 fix: reject blank auth profile labels`
 - `62a4557 fix: align auth profile UI labels`
+- `8bfd8ff docs: close phase 14 handoff`
 
 Verification:
 
@@ -511,6 +532,12 @@ Phase 15, `phase-15-dashboards-risk`:
 - Next planned phase after Phase 14 merge confirmation.
 - Add deterministic, versioned risk scores.
 - Add workspace/target dashboards and scan comparison.
+- Preserve Phase 11 workspace scoping on every dashboard, score, and comparison endpoint.
+- Store every persisted/generated score with `scoring_model_version`.
+- Keep the scoring service deterministic; AI may later explain score inputs but must not compute the score.
+- Design risk inputs so Phase 16 lifecycle/suppression data can be incorporated cleanly later. If Phase 15 needs interim behavior before Phase 16 exists, document that behavior clearly and avoid pretending suppression/lifecycle data already exists.
+- Compare scans only within the same authenticated workspace and same target, using stable normalized finding identity from target plus dedupe key.
+- Add focused tests for deterministic score snapshots, workspace scoping, comparison correctness, and score-version persistence.
 
 Phase 16, `phase-16-finding-management`:
 
