@@ -34,15 +34,15 @@ export function RiskDashboardPanel({
     .filter((scan) => scan.target_id === selectedTargetId && completedStatuses.has(scan.status))
     .sort((left, right) => right.created_at.localeCompare(left.created_at));
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
-  const latestScore = targetDashboard?.latest_risk_score ?? overview?.latest_risk_score ?? null;
+  const latestScore = targetDashboard?.latest_risk_score ?? null;
 
   return (
     <div className="riskDashboard">
       <div className="riskMetricGrid">
         <RiskScoreCard title="Workspace risk" score={overview?.latest_risk_score ?? null} />
         <RiskScoreCard title="Target risk" score={latestScore} />
-        <MetricCard label="Targets" value={overview?.targets_count ?? 0} />
-        <MetricCard label="Completed scans" value={overview?.completed_scans_count ?? 0} />
+        <MetricCard label="Targets" value={overview?.targets_count ?? 0} context="Workspace" />
+        <MetricCard label="Completed scans" value={overview?.completed_scans_count ?? 0} context="Workspace" />
       </div>
 
       <div className="riskDashboardGrid">
@@ -134,12 +134,12 @@ function RiskScoreCard({ title, score }: { title: string; score: DashboardOvervi
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: number | string }) {
+function MetricCard({ label, value, context }: { label: string; value: number | string; context: string }) {
   return (
     <div className="riskScoreCard">
       <span>{label}</span>
       <strong>{value}</strong>
-      <em className="riskLabel">Workspace</em>
+      <em className="riskLabel">{context}</em>
     </div>
   );
 }
@@ -223,8 +223,8 @@ function ComparisonSummary({ comparison }: { comparison: ScanComparison }) {
       <div className="riskMetricGrid riskMetricGridCompact">
         <RiskScoreCard title="Baseline" score={comparison.baseline_score} />
         <RiskScoreCard title="Comparison" score={comparison.comparison_score} />
-        <MetricCard label="Score delta" value={comparison.score_delta > 0 ? `+${comparison.score_delta}` : comparison.score_delta} />
-        <MetricCard label="Model" value={comparison.scoring_model_version} />
+        <MetricCard label="Score delta" value={comparison.score_delta > 0 ? `+${comparison.score_delta}` : comparison.score_delta} context="Comparison" />
+        <MetricCard label="Model" value={comparison.scoring_model_version} context="Version" />
       </div>
       <div className="changeGrid">
         <ChangeList title="New" items={comparison.new_findings} />
