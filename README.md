@@ -315,6 +315,24 @@ AUTH_PROFILE_SECRET_KEY=<generated-fernet-key>
 
 For local Docker Compose, place this value in a local `.env` file or export it before running Compose commands. Production-like environments fail startup if the key is missing, invalid, or still using the local development example value.
 
+## Phase 15 Status
+
+Phase 15 adds workspace and target dashboards, deterministic versioned risk scoring, and same-target scan comparison.
+
+Implemented Phase 15 capabilities:
+
+- Persists generated scan risk scores with `scoring_model_version`.
+- Uses deterministic `risk-v1` scoring from normalized findings, severity counts, confidence weighting, and scan metadata.
+- Displays risk as a `0-100` score plus labels: Low, Moderate, High, and Critical.
+- Adds workspace-scoped dashboard overview and target dashboard APIs.
+- Adds scan risk-score APIs for completed scans.
+- Adds latest-vs-previous and manual scan comparison for compatible scans from the same workspace and target.
+- Compares findings using stable normalized identity from target plus `dedupe_key`.
+- Classifies comparison findings as new, resolved, unchanged, or severity changed.
+- Adds dense operational dashboard UI with compact risk cards, severity mix, recent scans, and comparison detail.
+
+Risk scoring uses normalized/redacted persisted finding fields only. AI may explain deterministic score inputs in a later phase, but AI must not compute risk scores.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.
