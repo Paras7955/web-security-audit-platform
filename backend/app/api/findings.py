@@ -18,7 +18,10 @@ from app.api.schemas import (
 )
 from app.finding_management import (
     normalize_resource_type,
+    normalize_suppression_severity,
+    normalize_suppression_source_tool,
     normalize_status,
+    occurrence_state_for_read,
     sync_occurrence_state,
     tags_for_resource,
 )
@@ -36,6 +39,8 @@ def list_scan_findings(
     scanner: str | None = None,
     owasp: str | None = None,
     cwe: str | None = None,
+    created_after: datetime | None = None,
+    created_before: datetime | None = None,
     lifecycle_status: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
     suppressed: bool | None = None,
@@ -58,6 +63,8 @@ def list_scan_findings(
         scanner=scanner,
         owasp=owasp,
         cwe=cwe,
+        created_after=created_after,
+        created_before=created_before,
         lifecycle_status=lifecycle_status or status_filter,
         suppressed=suppressed,
         tag_id=tag_id,
@@ -121,9 +128,7 @@ def get_finding(
     scan = db.scalar(select(Scan).where(Scan.id == finding.scan_id, Scan.workspace_id == principal.workspace_id))
     if scan is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Finding not found.")
-    row = serialize_finding(db, finding, scan, principal.user_id)
-    db.commit()
-    return row
+    return serialize_finding(db, finding, scan)
 
 
 @router.patch("/findings/{finding_id}/lifecycle", response_model=FindingRead)
@@ -183,9 +188,7 @@ def update_finding_lifecycle(
 
     db.commit()
     db.refresh(finding)
-    row = serialize_finding(db, finding, scan, principal.user_id)
-    db.commit()
-    return row
+    return serialize_finding(db, finding, scan)
 
 
 @router.post("/suppressions", response_model=SuppressionRuleRead, status_code=status.HTTP_201_CREATED)
@@ -196,13 +199,19 @@ def create_suppression_rule(
 ) -> SuppressionRule:
     if db.scalar(select(Target.id).where(Target.id == payload.target_id, Target.workspace_id == principal.workspace_id)) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
+    try:
+        severity = normalize_suppression_severity(payload.severity)
+        source_tool = normalize_suppression_source_tool(payload.source_tool)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
     rule = SuppressionRule(
         id=str(uuid4()),
         workspace_id=principal.workspace_id,
         target_id=payload.target_id,
         dedupe_key=payload.dedupe_key.strip() if payload.dedupe_key else None,
-        severity=payload.severity.strip().lower() if payload.severity else None,
-        source_tool=payload.source_tool.strip() if payload.source_tool else None,
+        severity=severity,
+        source_tool=source_tool,
         reason=payload.reason.strip(),
         created_by_user_id=principal.user_id,
         expires_at=payload.expires_at,
@@ -373,7 +382,7 @@ def query_findings(
         scan = db.get(Scan, finding.scan_id)
         if scan is None:
             continue
-        row = serialize_finding(db, finding, scan, principal.user_id)
+        row = serialize_finding(db, finding, scan)
         if lifecycle_status is not None and row.lifecycle_status != lifecycle_status:
             continue
         if suppressed is not None and row.suppressed is not suppressed:
@@ -383,12 +392,11 @@ def query_findings(
         if not scan_risk_in_range(db, principal.workspace_id, scan.id, risk_min, risk_max):
             continue
         rows.append(row)
-    db.commit()
     return rows
 
 
-def serialize_finding(db: Session, finding: Finding, scan: Scan, user_id: str) -> FindingRead:
-    occurrence = sync_occurrence_state(db, finding, scan, user_id)
+def serialize_finding(db: Session, finding: Finding, scan: Scan) -> FindingRead:
+    occurrence = occurrence_state_for_read(db, finding, scan)
     labels = sorted(
         {
             tag.label
@@ -418,9 +426,9 @@ def serialize_finding(db: Session, finding: Finding, scan: Scan, user_id: str) -
         false_positive_notes=finding.false_positive_notes,
         redaction_applied=finding.redaction_applied,
         raw_artifact_ref=finding.raw_artifact_ref,
-        lifecycle_status=occurrence.lifecycle_status,
-        suppressed=occurrence.suppressed,
-        suppression_rule_id=occurrence.suppression_rule_id,
+        lifecycle_status=occurrence.lifecycle_status if occurrence is not None else "open",
+        suppressed=occurrence.suppressed if occurrence is not None else False,
+        suppression_rule_id=occurrence.suppression_rule_id if occurrence is not None else None,
         tags=labels,
         created_at=finding.created_at,
     )

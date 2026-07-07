@@ -1,7 +1,8 @@
-import type { Finding } from "@/lib/securityAuditApi";
+import type { Finding, Tag } from "@/lib/securityAuditApi";
 
 const severityFilters = ["all", "info", "low", "medium", "high", "critical"];
 const lifecycleStatuses = ["open", "confirmed", "in_progress", "resolved", "suppressed", "false_positive"];
+const confidenceFilters = ["all", "confirmed", "high", "medium", "low"];
 
 export const severityRank: Record<string, number> = {
   critical: 5,
@@ -17,10 +18,35 @@ export function FindingsDashboard({
   severityFilter,
   lifecycleFilter,
   suppressionFilter,
+  confidenceFilter,
+  scannerFilter,
+  owaspFilter,
+  cweFilter,
+  tagFilter,
+  dateAfterFilter,
+  dateBeforeFilter,
+  riskMinFilter,
+  riskMaxFilter,
+  tags,
+  tagLabel,
+  tagResourceType,
   suppressionReason,
   onSeverityFilter,
   onLifecycleFilter,
   onSuppressionFilter,
+  onConfidenceFilter,
+  onScannerFilter,
+  onOwaspFilter,
+  onCweFilter,
+  onTagFilter,
+  onDateAfterFilter,
+  onDateBeforeFilter,
+  onRiskMinFilter,
+  onRiskMaxFilter,
+  onTagLabelChange,
+  onTagResourceTypeChange,
+  onCreateTag,
+  onAssignTag,
   onSelectFinding,
   onUpdateLifecycle,
   onSuppressionReasonChange,
@@ -31,10 +57,35 @@ export function FindingsDashboard({
   severityFilter: string;
   lifecycleFilter: string;
   suppressionFilter: string;
+  confidenceFilter: string;
+  scannerFilter: string;
+  owaspFilter: string;
+  cweFilter: string;
+  tagFilter: string;
+  dateAfterFilter: string;
+  dateBeforeFilter: string;
+  riskMinFilter: string;
+  riskMaxFilter: string;
+  tags: Tag[];
+  tagLabel: string;
+  tagResourceType: string;
   suppressionReason: string;
   onSeverityFilter: (severity: string) => void;
   onLifecycleFilter: (status: string) => void;
   onSuppressionFilter: (status: string) => void;
+  onConfidenceFilter: (confidence: string) => void;
+  onScannerFilter: (scanner: string) => void;
+  onOwaspFilter: (owasp: string) => void;
+  onCweFilter: (cwe: string) => void;
+  onTagFilter: (tagId: string) => void;
+  onDateAfterFilter: (date: string) => void;
+  onDateBeforeFilter: (date: string) => void;
+  onRiskMinFilter: (value: string) => void;
+  onRiskMaxFilter: (value: string) => void;
+  onTagLabelChange: (label: string) => void;
+  onTagResourceTypeChange: (resourceType: string) => void;
+  onCreateTag: () => void;
+  onAssignTag: () => void;
   onSelectFinding: (findingId: string) => void;
   onUpdateLifecycle: (findingId: string, lifecycleStatus: string) => void;
   onSuppressionReasonChange: (reason: string) => void;
@@ -70,11 +121,71 @@ export function FindingsDashboard({
               </option>
             ))}
           </select>
+          <select value={confidenceFilter} onChange={(event) => onConfidenceFilter(event.target.value)} aria-label="Confidence filter">
+            {confidenceFilters.map((item) => (
+              <option value={item} key={item}>
+                {item === "all" ? "all confidence" : item}
+              </option>
+            ))}
+          </select>
           <select value={suppressionFilter} onChange={(event) => onSuppressionFilter(event.target.value)} aria-label="Suppression filter">
             <option value="all">all suppression</option>
             <option value="active">suppressed</option>
             <option value="not_suppressed">not suppressed</option>
           </select>
+          <select value={tagFilter} onChange={(event) => onTagFilter(event.target.value)} aria-label="Tag filter">
+            <option value="">all tags</option>
+            {tags.map((tag) => (
+              <option value={tag.id} key={tag.id}>
+                {tag.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="filterGrid" aria-label="Advanced finding filters">
+          <label>
+            Scanner
+            <input value={scannerFilter} onChange={(event) => onScannerFilter(event.target.value)} />
+          </label>
+          <label>
+            OWASP
+            <input value={owaspFilter} onChange={(event) => onOwaspFilter(event.target.value)} />
+          </label>
+          <label>
+            CWE
+            <input value={cweFilter} onChange={(event) => onCweFilter(event.target.value)} />
+          </label>
+          <label>
+            From
+            <input type="datetime-local" value={dateAfterFilter} onChange={(event) => onDateAfterFilter(event.target.value)} />
+          </label>
+          <label>
+            To
+            <input type="datetime-local" value={dateBeforeFilter} onChange={(event) => onDateBeforeFilter(event.target.value)} />
+          </label>
+          <label>
+            Risk min
+            <input type="number" min="0" max="100" value={riskMinFilter} onChange={(event) => onRiskMinFilter(event.target.value)} />
+          </label>
+          <label>
+            Risk max
+            <input type="number" min="0" max="100" value={riskMaxFilter} onChange={(event) => onRiskMaxFilter(event.target.value)} />
+          </label>
+        </div>
+
+        <div className="tagManagement">
+          <input value={tagLabel} onChange={(event) => onTagLabelChange(event.target.value)} placeholder="Tag label" />
+          <button type="button" onClick={onCreateTag} disabled={!tagLabel.trim()}>
+            Create Tag
+          </button>
+          <select value={tagResourceType} onChange={(event) => onTagResourceTypeChange(event.target.value)} aria-label="Tag resource type">
+            <option value="target">target</option>
+            <option value="scan">scan</option>
+          </select>
+          <button type="button" onClick={onAssignTag} disabled={!tagFilter}>
+            Assign Tag
+          </button>
         </div>
 
         {findings.length > 0 ? (

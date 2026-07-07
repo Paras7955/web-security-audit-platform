@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import tempfile
 import unittest
 from uuid import uuid4
 
@@ -6,6 +7,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
 
 from app.db.session import SessionLocal
+from app.findings.schemas import NormalizedFindingInput
+from app.findings.service import persist_normalized_findings
 from app.main import app
 from app.models import (
     Finding,
@@ -154,11 +157,10 @@ class FindingManagementTests(unittest.TestCase):
             },
         )
         self.assertEqual(suppression.status_code, 201)
+        self.assertEqual(suppression.json()["created_by_user_id"], DEV_USER_ID)
 
         later_scan_id = str(uuid4())
-        later_finding_id = str(uuid4())
         self.scan_ids.append(later_scan_id)
-        self.finding_ids.append(later_finding_id)
         with SessionLocal() as db:
             db.add(
                 Scan(
@@ -172,9 +174,30 @@ class FindingManagementTests(unittest.TestCase):
                     progress_percent=100,
                 )
             )
-            db.flush()
-            db.add(self.make_finding(later_finding_id, later_scan_id, self.dedupe_key))
             db.commit()
+            with tempfile.TemporaryDirectory() as temp_dir:
+                persisted = persist_normalized_findings(
+                    db,
+                    scan_id=later_scan_id,
+                    findings=[
+                        NormalizedFindingInput(
+                            title="Missing Content Security Policy",
+                            severity="low",
+                            confidence="high",
+                            affected_url="http://juice-shop:3000/",
+                            evidence="Header was not present.",
+                            source_tool="custom-passive",
+                            scanner_rule_id="header:content-security-policy",
+                            dedupe_key=self.dedupe_key,
+                            owasp_category="A05:2021",
+                            cwe="CWE-693",
+                            redaction_applied=False,
+                        )
+                    ],
+                    artifact_root=temp_dir,
+                )
+            later_finding_id = persisted[0].id
+            self.finding_ids.append(later_finding_id)
 
         response = self.client.get(f"/scans/{later_scan_id}/findings", headers=DEV_AUTH_HEADERS)
 
@@ -204,6 +227,31 @@ class FindingManagementTests(unittest.TestCase):
         self.assertEqual(finding.status_code, 200)
         self.assertFalse(finding.json()["suppressed"])
         self.assertEqual(finding.json()["lifecycle_status"], "open")
+
+    def test_suppression_rejects_invalid_match_fields(self) -> None:
+        invalid_severity = self.client.post(
+            "/suppressions",
+            headers=DEV_AUTH_HEADERS,
+            json={
+                "target_id": self.target_id,
+                "dedupe_key": self.dedupe_key,
+                "severity": "urgent",
+                "reason": "Bad match field.",
+            },
+        )
+        self.assertEqual(invalid_severity.status_code, 422)
+
+        invalid_source = self.client.post(
+            "/suppressions",
+            headers=DEV_AUTH_HEADERS,
+            json={
+                "target_id": self.target_id,
+                "dedupe_key": self.dedupe_key,
+                "source_tool": "   ",
+                "reason": "Bad match field.",
+            },
+        )
+        self.assertEqual(invalid_source.status_code, 422)
 
     def test_tags_are_workspace_scoped_and_can_filter_findings(self) -> None:
         tag = self.client.post("/tags", headers=DEV_AUTH_HEADERS, json={"label": self.tag_label})

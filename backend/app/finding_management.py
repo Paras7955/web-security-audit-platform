@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models import Finding, FindingOccurrenceState, FindingState, Scan, SuppressionRule, Tag, TagAssignment
 
 LIFECYCLE_STATUSES = {"open", "confirmed", "in_progress", "resolved", "suppressed", "false_positive"}
+SEVERITIES = {"critical", "high", "medium", "low", "info"}
 RESOURCE_TYPES = {"target", "scan", "report"}
 
 
@@ -22,6 +23,24 @@ def normalize_resource_type(value: str) -> str:
     if resource_type not in RESOURCE_TYPES:
         raise ValueError("Unsupported tag resource type.")
     return resource_type
+
+
+def normalize_suppression_severity(value: str | None) -> str | None:
+    if value is None:
+        return None
+    severity = value.strip().lower()
+    if severity not in SEVERITIES:
+        raise ValueError("Unsupported suppression severity.")
+    return severity
+
+
+def normalize_suppression_source_tool(value: str | None) -> str | None:
+    if value is None:
+        return None
+    source_tool = value.strip().lower()
+    if not source_tool:
+        raise ValueError("Suppression source tool must not be blank.")
+    return source_tool
 
 
 def finding_target_id(db: Session, finding: Finding) -> str | None:
@@ -70,6 +89,12 @@ def get_or_create_occurrence_state(db: Session, finding: Finding) -> FindingOccu
     return occurrence
 
 
+def initialize_finding_management_state(db: Session, finding: Finding, scan: Scan) -> FindingOccurrenceState:
+    occurrence = sync_occurrence_state(db, finding, scan, scan.created_by_user_id)
+    db.flush()
+    return occurrence
+
+
 def active_suppression_for_finding(db: Session, finding: Finding, scan: Scan) -> SuppressionRule | None:
     now = datetime.now(timezone.utc)
     rules = list(
@@ -92,7 +117,7 @@ def active_suppression_for_finding(db: Session, finding: Finding, scan: Scan) ->
             continue
         if rule.severity is not None and rule.severity != finding.severity:
             continue
-        if rule.source_tool is not None and rule.source_tool != finding.source_tool:
+        if rule.source_tool is not None and rule.source_tool != finding.source_tool.lower():
             continue
         return rule
     return None
@@ -106,6 +131,30 @@ def sync_occurrence_state(db: Session, finding: Finding, scan: Scan, user_id: st
     occurrence.suppression_rule_id = rule.id if rule is not None else None
     occurrence.lifecycle_status = "suppressed" if rule is not None else state.lifecycle_status
     return occurrence
+
+
+def occurrence_state_for_read(db: Session, finding: Finding, scan: Scan) -> FindingOccurrenceState | None:
+    occurrence = db.scalar(select(FindingOccurrenceState).where(FindingOccurrenceState.finding_id == finding.id))
+    if occurrence is not None:
+        return occurrence
+
+    state = db.scalar(
+        select(FindingState).where(
+            FindingState.workspace_id == finding.workspace_id,
+            FindingState.target_id == scan.target_id,
+            FindingState.dedupe_key == finding.dedupe_key,
+        )
+    )
+    if state is None:
+        return None
+    return FindingOccurrenceState(
+        id="",
+        workspace_id=finding.workspace_id,
+        finding_id=finding.id,
+        lifecycle_status=state.lifecycle_status,
+        suppressed=False,
+        suppression_rule_id=None,
+    )
 
 
 def tags_for_resource(db: Session, workspace_id: str, resource_type: str, resource_id: str) -> list[Tag]:

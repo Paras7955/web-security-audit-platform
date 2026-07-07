@@ -71,6 +71,12 @@ export type Finding = {
   created_at: string;
 };
 
+export type Tag = {
+  id: string;
+  label: string;
+  created_at: string;
+};
+
 export type ReportArtifact = {
   id: string;
   scan_id: string;

@@ -80,6 +80,7 @@ class SuppressionRuleRead(BaseModel):
     severity: str | None
     source_tool: str | None
     reason: str
+    created_by_user_id: str
     expires_at: datetime | None
     created_at: datetime
 
