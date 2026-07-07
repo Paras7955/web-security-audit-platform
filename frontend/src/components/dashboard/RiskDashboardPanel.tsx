@@ -32,7 +32,7 @@ export function RiskDashboardPanel({
 }) {
   const comparableScans = scans
     .filter((scan) => scan.target_id === selectedTargetId && completedStatuses.has(scan.status))
-    .sort((left, right) => right.created_at.localeCompare(left.created_at));
+    .sort((left, right) => scanCompletionTime(right).localeCompare(scanCompletionTime(left)));
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
   const latestScore = targetDashboard?.latest_risk_score ?? null;
 
@@ -262,4 +262,8 @@ function ChangeList({ title, items }: { title: string; items: ScanComparison["ne
 
 function formatDate(value: string) {
   return new Date(value).toLocaleString();
+}
+
+function scanCompletionTime(scan: Scan) {
+  return scan.completed_at ?? scan.created_at;
 }

@@ -27,7 +27,7 @@ def dashboard_overview(
 ) -> DashboardOverviewRead:
     targets = list(db.scalars(select(Target).where(Target.workspace_id == principal.workspace_id)).all())
     scans = list(db.scalars(select(Scan).where(Scan.workspace_id == principal.workspace_id).order_by(Scan.created_at.desc())).all())
-    completed_scans = [scan for scan in scans if scan.status in COMPLETED_SCAN_STATUSES]
+    completed_scans = sort_completed_scans([scan for scan in scans if scan.status in COMPLETED_SCAN_STATUSES])
     findings = list(db.scalars(select(Finding).where(Finding.workspace_id == principal.workspace_id)).all())
     target_id_by_scan_id = {scan.id: scan.target_id for scan in scans}
     latest_score = persist_scan_risk_score(db, completed_scans[0], findings_for_scan(findings, completed_scans[0].id)) if completed_scans else None
@@ -57,7 +57,7 @@ def target_dashboard(
             .order_by(Scan.created_at.desc())
         ).all()
     )
-    completed_scans = [scan for scan in scans if scan.status in COMPLETED_SCAN_STATUSES]
+    completed_scans = sort_completed_scans([scan for scan in scans if scan.status in COMPLETED_SCAN_STATUSES])
     findings = list(
         db.scalars(
             select(Finding)
@@ -114,7 +114,7 @@ def latest_target_comparison(
         db.scalars(
             select(Scan)
             .where(Scan.workspace_id == principal.workspace_id, Scan.target_id == target_id, Scan.status.in_(COMPLETED_SCAN_STATUSES))
-            .order_by(Scan.created_at.desc())
+            .order_by(Scan.completed_at.desc().nullslast(), Scan.created_at.desc())
             .limit(2)
         ).all()
     )
@@ -219,6 +219,10 @@ def scan_summaries(db: Session, scans: list[Scan], target_lookup: dict[str, Targ
 
 def targets_by_id(targets: list[Target]) -> dict[str, Target]:
     return {target.id: target for target in targets}
+
+
+def sort_completed_scans(scans: list[Scan]) -> list[Scan]:
+    return sorted(scans, key=lambda scan: (scan.completed_at or scan.created_at, scan.created_at), reverse=True)
 
 
 def findings_for_scan(findings: list[Finding], scan_id: str) -> list[Finding]:

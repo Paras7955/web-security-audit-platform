@@ -71,6 +71,7 @@ export function TargetSetup() {
   const [isBusy, setIsBusy] = useState(false);
   const [isGeneratingReports, setIsGeneratingReports] = useState(false);
   const selectedScanIdRef = useRef("");
+  const selectedTargetIdRef = useRef("");
   const severityFilterRef = useRef("all");
 
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
@@ -102,6 +103,10 @@ export function TargetSetup() {
   useEffect(() => {
     selectedScanIdRef.current = selectedScanId;
   }, [selectedScanId]);
+
+  useEffect(() => {
+    selectedTargetIdRef.current = selectedTargetId;
+  }, [selectedTargetId]);
 
   useEffect(() => {
     severityFilterRef.current = severityFilter;
@@ -375,8 +380,14 @@ export function TargetSetup() {
     try {
       const response = await apiFetch(`${apiBaseUrl}/targets/${targetId}/dashboard`);
       const body = await readJson<TargetDashboard>(response, "Target dashboard load failed.");
+      if (selectedTargetIdRef.current !== targetId) {
+        return;
+      }
       setTargetDashboard(body);
     } catch (error) {
+      if (selectedTargetIdRef.current !== targetId) {
+        return;
+      }
       setTargetDashboard(null);
       setRiskMessage(error instanceof Error ? error.message : "Target dashboard load failed.");
     }
@@ -386,16 +397,25 @@ export function TargetSetup() {
     try {
       const response = await apiFetch(`${apiBaseUrl}/targets/${targetId}/latest-comparison`);
       if (!response.ok) {
+        if (selectedTargetIdRef.current !== targetId) {
+          return;
+        }
         setScanComparison(null);
         setRiskMessage("At least two completed scans are required for latest-vs-previous comparison.");
         return;
       }
       const body = (await response.json()) as ScanComparison;
+      if (selectedTargetIdRef.current !== targetId) {
+        return;
+      }
       setScanComparison(body);
       setBaselineScanId(body.baseline_scan_id);
       setComparisonScanId(body.comparison_scan_id);
       setRiskMessage("Latest-vs-previous comparison is ready.");
     } catch {
+      if (selectedTargetIdRef.current !== targetId) {
+        return;
+      }
       setScanComparison(null);
       setRiskMessage("Latest comparison could not be loaded.");
     }

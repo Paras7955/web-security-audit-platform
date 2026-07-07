@@ -213,6 +213,22 @@ class RiskDashboardTests(unittest.TestCase):
         self.assertEqual(body["comparison_scan_id"], newest_scan_id)
         self.assertEqual([item["dedupe_key"] for item in body["new_findings"]], ["new"])
 
+    def test_latest_comparison_uses_completion_order_not_creation_order(self) -> None:
+        target_id = self.create_target()
+        created_later_completed_earlier = self.create_scan(target_id, created_offset=2, completed_offset=3)
+        created_earlier_completed_later = self.create_scan(target_id, created_offset=1, completed_offset=4)
+        self.create_finding(created_later_completed_earlier, "baseline", severity="low", confidence="high")
+        self.create_finding(created_earlier_completed_later, "latest", severity="medium", confidence="high")
+
+        response = self.client.get(f"/targets/{target_id}/latest-comparison", headers=DEV_AUTH_HEADERS)
+        target_dashboard = self.client.get(f"/targets/{target_id}/dashboard", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["baseline_scan_id"], created_later_completed_earlier)
+        self.assertEqual(response.json()["comparison_scan_id"], created_earlier_completed_later)
+        self.assertEqual(target_dashboard.status_code, 200)
+        self.assertEqual(target_dashboard.json()["latest_risk_score"]["scan_id"], created_earlier_completed_later)
+
     def create_target(self, *, workspace_id: str = DEV_WORKSPACE_ID, user_id: str = DEV_USER_ID, name: str = "Juice Shop") -> str:
         target_id = str(uuid4())
         with SessionLocal() as db:
@@ -243,9 +259,12 @@ class RiskDashboardTests(unittest.TestCase):
         user_id: str = DEV_USER_ID,
         status: str = "completed",
         created_offset: int = 0,
+        completed_offset: int | None = None,
     ) -> str:
         scan_id = str(uuid4())
         created_at = datetime(2026, 7, 7, tzinfo=timezone.utc) + timedelta(minutes=created_offset)
+        is_completed = status in {"completed", "completed_with_warnings"}
+        completed_at = datetime(2026, 7, 7, tzinfo=timezone.utc) + timedelta(minutes=completed_offset if completed_offset is not None else created_offset + 1)
         with SessionLocal() as db:
             scan = Scan(
                 id=scan_id,
@@ -255,11 +274,11 @@ class RiskDashboardTests(unittest.TestCase):
                 mode="passive",
                 scan_profile_id="passive-web",
                 status=status,
-                current_step="normalizing_findings" if status == "completed" else "target_validation",
-                status_message="Completed." if status == "completed" else "Queued.",
-                progress_percent=100 if status == "completed" else 0,
+                current_step="normalizing_findings" if is_completed else "target_validation",
+                status_message="Completed." if is_completed else "Queued.",
+                progress_percent=100 if is_completed else 0,
                 started_at=created_at,
-                completed_at=created_at + timedelta(minutes=1) if status == "completed" else None,
+                completed_at=completed_at if is_completed else None,
                 created_at=created_at,
             )
             db.add(scan)
