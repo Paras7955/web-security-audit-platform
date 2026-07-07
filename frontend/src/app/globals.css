@@ -574,6 +574,187 @@ select {
   color: var(--muted);
 }
 
+.riskDashboard {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.riskMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.riskMetricGridCompact {
+  margin-bottom: 12px;
+}
+
+.riskScoreCard {
+  display: grid;
+  min-height: 116px;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+.riskScoreCard span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.riskScoreCard strong {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.riskLabel {
+  width: fit-content;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 700;
+  padding: 4px 8px;
+}
+
+.riskLabel-moderate {
+  border-color: #e2c36f;
+  color: #7a5a00;
+}
+
+.riskLabel-high,
+.riskLabel-critical {
+  border-color: #e2a39e;
+  color: #9f2d24;
+}
+
+.riskDashboardGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
+  gap: 14px;
+}
+
+.severityBars {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.severityBars div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 8px;
+}
+
+.severityBars span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-transform: capitalize;
+}
+
+.severityBars strong {
+  text-align: right;
+}
+
+.severityTrack {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8ebef;
+}
+
+.severityTrack i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.compactTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.compactTable th,
+.compactTable td {
+  border-top: 1px solid var(--border);
+  padding: 9px 8px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.compactTable th {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.scoreInputs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.comparisonPanel {
+  overflow: hidden;
+}
+
+.comparisonControls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.comparisonSummary {
+  margin-top: 14px;
+}
+
+.changeGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.changeList {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  padding: 10px;
+}
+
+.changeList h4 {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 0.88rem;
+}
+
+.changeList ul {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.changeList li {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  color: var(--foreground);
+}
+
+.changeList small {
+  color: var(--muted);
+}
+
 .scanMeta {
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   margin-top: 14px;
@@ -904,6 +1085,8 @@ select {
   .hero,
   .grid,
   .metricStrip,
+  .riskMetricGrid,
+  .riskDashboardGrid,
   .dashboardGrid,
   .findingsLayout {
     grid-template-columns: 1fr;
@@ -920,6 +1103,9 @@ select {
   .reportList li,
   .modeGrid,
   .scanMeta,
+  .scoreInputs,
+  .comparisonControls,
+  .changeGrid,
   .aiMeta,
   .aiFindingGrid {
     grid-template-columns: 1fr;

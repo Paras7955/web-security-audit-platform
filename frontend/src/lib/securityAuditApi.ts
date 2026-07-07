@@ -101,6 +101,82 @@ export type AiExplanation = {
   explanations: FindingExplanation[];
 };
 
+export type RiskScore = {
+  id: string;
+  target_id: string;
+  scan_id: string | null;
+  scoring_model_version: string;
+  score: number;
+  label: string;
+  input_summary: {
+    finding_count?: number;
+    severity_counts?: Record<string, number>;
+    confidence_counts?: Record<string, number>;
+    weighted_total?: number;
+    scan_profile_id?: string;
+    mode?: string;
+    [key: string]: unknown;
+  };
+  created_at: string;
+};
+
+export type DashboardScanSummary = {
+  id: string;
+  target_id: string;
+  target_name: string;
+  scan_profile_id: string;
+  mode: string;
+  status: string;
+  created_at: string;
+  completed_at: string | null;
+  risk_score: RiskScore | null;
+};
+
+export type DashboardOverview = {
+  targets_count: number;
+  scans_count: number;
+  completed_scans_count: number;
+  findings_count: number;
+  severity_counts: Record<string, number>;
+  latest_risk_score: RiskScore | null;
+  recent_scans: DashboardScanSummary[];
+};
+
+export type TargetDashboard = {
+  target_id: string;
+  target_name: string;
+  base_url: string;
+  scan_count: number;
+  completed_scan_count: number;
+  findings_count: number;
+  severity_counts: Record<string, number>;
+  latest_risk_score: RiskScore | null;
+  recent_scans: DashboardScanSummary[];
+};
+
+export type FindingChange = {
+  dedupe_key: string;
+  title: string;
+  source_tool: string;
+  location: string | null;
+  previous_severity: string | null;
+  current_severity: string | null;
+};
+
+export type ScanComparison = {
+  target_id: string;
+  baseline_scan_id: string;
+  comparison_scan_id: string;
+  scoring_model_version: string;
+  baseline_score: RiskScore;
+  comparison_score: RiskScore;
+  score_delta: number;
+  new_findings: FindingChange[];
+  resolved_findings: FindingChange[];
+  unchanged_findings: FindingChange[];
+  severity_changed_findings: FindingChange[];
+};
+
 export const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const devAuthToken = process.env.NEXT_PUBLIC_DEV_AUTH_TOKEN ?? "";
 
