@@ -6,6 +6,7 @@ import { AiExplanationsPanel } from "@/components/dashboard/AiExplanationsPanel"
 import { AuthProfilesPanel } from "@/components/dashboard/AuthProfilesPanel";
 import { FindingsDashboard, severityRank } from "@/components/dashboard/FindingsDashboard";
 import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
+import { RiskDashboardPanel } from "@/components/dashboard/RiskDashboardPanel";
 import {
   ScanHistory,
   ScanLauncher,
@@ -20,10 +21,13 @@ import { TargetForm } from "@/components/dashboard/TargetForm";
 import {
   AiExplanation,
   AuthProfile,
+  DashboardOverview,
   Finding,
   ReportArtifact,
+  ScanComparison,
   Scan,
   Target,
+  TargetDashboard,
   ValidationResult,
   apiBaseUrl,
   apiFetch,
@@ -51,16 +55,23 @@ export function TargetSetup() {
   const [findings, setFindings] = useState<Finding[]>([]);
   const [reports, setReports] = useState<ReportArtifact[]>([]);
   const [aiExplanation, setAiExplanation] = useState<AiExplanation | null>(null);
+  const [dashboardOverview, setDashboardOverview] = useState<DashboardOverview | null>(null);
+  const [targetDashboard, setTargetDashboard] = useState<TargetDashboard | null>(null);
+  const [scanComparison, setScanComparison] = useState<ScanComparison | null>(null);
+  const [baselineScanId, setBaselineScanId] = useState("");
+  const [comparisonScanId, setComparisonScanId] = useState("");
   const [selectedFindingId, setSelectedFindingId] = useState("");
   const [severityFilter, setSeverityFilter] = useState("all");
   const [message, setMessage] = useState("Enter an allowlisted local/demo target.");
   const [authProfileMessage, setAuthProfileMessage] = useState("Create an optional target-app auth profile for passive scans.");
   const [reportMessage, setReportMessage] = useState("Reports are available after a passive, Active Demo, or Repo scan completes.");
   const [aiMessage, setAiMessage] = useState("AI explanations are available after a passive or Active Demo scan completes.");
+  const [riskMessage, setRiskMessage] = useState("Risk scores are generated for completed scans using risk-v1.");
   const [bootstrapError, setBootstrapError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [isGeneratingReports, setIsGeneratingReports] = useState(false);
   const selectedScanIdRef = useRef("");
+  const selectedTargetIdRef = useRef("");
   const severityFilterRef = useRef("all");
 
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
@@ -92,6 +103,10 @@ export function TargetSetup() {
   useEffect(() => {
     selectedScanIdRef.current = selectedScanId;
   }, [selectedScanId]);
+
+  useEffect(() => {
+    selectedTargetIdRef.current = selectedTargetId;
+  }, [selectedTargetId]);
 
   useEffect(() => {
     severityFilterRef.current = severityFilter;
@@ -131,9 +146,21 @@ export function TargetSetup() {
     setAiMessage("AI explanations remain available for passive and Active Demo scans.");
   }, [selectedScanId, selectedScan?.mode]);
 
+  useEffect(() => {
+    if (!selectedTargetId) {
+      setTargetDashboard(null);
+      setScanComparison(null);
+      setBaselineScanId("");
+      setComparisonScanId("");
+      return;
+    }
+    void loadTargetDashboard(selectedTargetId);
+    void loadLatestComparison(selectedTargetId);
+  }, [selectedTargetId]);
+
   async function loadInitialData() {
     setBootstrapError("");
-    const results = await Promise.allSettled([loadTargets(), loadAuthProfiles(), loadScanHistory()]);
+    const results = await Promise.allSettled([loadTargets(), loadAuthProfiles(), loadScanHistory(), loadDashboardOverview()]);
     const failed = results.find((result) => result.status === "rejected");
     if (failed?.status === "rejected") {
       const error = failed.reason;
@@ -217,6 +244,9 @@ export function TargetSetup() {
       setAiMessage("AI explanations are available after this passive or Active Demo scan completes.");
       setMessage("Scan queued. Worker status will update below.");
       await loadScanHistory(scan.id);
+      await loadDashboardOverview();
+      await loadTargetDashboard(selectedTarget.id);
+      await loadLatestComparison(selectedTarget.id);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Scan creation failed.");
     } finally {
@@ -322,6 +352,9 @@ export function TargetSetup() {
           setAiExplanation(null);
           setAiMessage("AI explanations remain available for passive and Active Demo scans.");
         }
+        await loadDashboardOverview();
+        await loadTargetDashboard(scan.target_id);
+        await loadLatestComparison(scan.target_id);
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Scan status refresh failed.");
@@ -334,6 +367,82 @@ export function TargetSetup() {
     setTargets(body);
     setSelectedTargetId(preferredTargetId ?? selectedTargetId ?? body[0]?.id ?? "");
     setBootstrapError("");
+  }
+
+  async function loadDashboardOverview() {
+    const response = await apiFetch(`${apiBaseUrl}/dashboard/overview`);
+    const body = await readJson<DashboardOverview>(response, "Dashboard overview load failed.");
+    setDashboardOverview(body);
+    setBootstrapError("");
+  }
+
+  async function loadTargetDashboard(targetId: string) {
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/targets/${targetId}/dashboard`);
+      const body = await readJson<TargetDashboard>(response, "Target dashboard load failed.");
+      if (selectedTargetIdRef.current !== targetId) {
+        return;
+      }
+      setTargetDashboard(body);
+    } catch (error) {
+      if (selectedTargetIdRef.current !== targetId) {
+        return;
+      }
+      setTargetDashboard(null);
+      setRiskMessage(error instanceof Error ? error.message : "Target dashboard load failed.");
+    }
+  }
+
+  async function loadLatestComparison(targetId: string) {
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/targets/${targetId}/latest-comparison`);
+      if (!response.ok) {
+        if (selectedTargetIdRef.current !== targetId) {
+          return;
+        }
+        setScanComparison(null);
+        setRiskMessage("At least two completed scans are required for latest-vs-previous comparison.");
+        return;
+      }
+      const body = (await response.json()) as ScanComparison;
+      if (selectedTargetIdRef.current !== targetId) {
+        return;
+      }
+      setScanComparison(body);
+      setBaselineScanId(body.baseline_scan_id);
+      setComparisonScanId(body.comparison_scan_id);
+      setRiskMessage("Latest-vs-previous comparison is ready.");
+    } catch {
+      if (selectedTargetIdRef.current !== targetId) {
+        return;
+      }
+      setScanComparison(null);
+      setRiskMessage("Latest comparison could not be loaded.");
+    }
+  }
+
+  async function loadManualComparison() {
+    if (!baselineScanId || !comparisonScanId || baselineScanId === comparisonScanId) {
+      setRiskMessage("Choose two different completed scans for the same target.");
+      return;
+    }
+
+    const requestTargetId = selectedTargetIdRef.current;
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/scans/${comparisonScanId}/comparison?baseline_scan_id=${encodeURIComponent(baselineScanId)}`);
+      const body = await readJson<ScanComparison>(response, "Scan comparison failed.");
+      if (selectedTargetIdRef.current !== requestTargetId) {
+        return;
+      }
+      setScanComparison(body);
+      setRiskMessage("Manual scan comparison is ready.");
+    } catch (error) {
+      if (selectedTargetIdRef.current !== requestTargetId) {
+        return;
+      }
+      setScanComparison(null);
+      setRiskMessage(error instanceof Error ? error.message : "Scan comparison failed.");
+    }
   }
 
   async function loadAuthProfiles(preferredAuthProfileId?: string) {
@@ -556,6 +665,21 @@ export function TargetSetup() {
       </div>
 
       {selectedScan ? <ScanProgress scan={selectedScan} /> : null}
+
+      <RiskDashboardPanel
+        overview={dashboardOverview}
+        targetDashboard={targetDashboard}
+        targets={targets}
+        scans={scanHistory}
+        selectedTargetId={selectedTargetId}
+        baselineScanId={baselineScanId}
+        comparisonScanId={comparisonScanId}
+        comparison={scanComparison}
+        message={riskMessage}
+        onBaselineScanChange={setBaselineScanId}
+        onComparisonScanChange={setComparisonScanId}
+        onCompare={loadManualComparison}
+      />
 
       <div id="reports">
         <ReportsPanel

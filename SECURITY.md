@@ -53,6 +53,15 @@ Do not use this platform for:
 - Auth profile secrets must not appear in findings, reports, AI payloads, artifacts, logs, scan status messages, or audit-style records.
 - Never send raw response bodies, raw ZAP output, raw secret scanner output, or unredacted evidence to AI providers.
 
+## Risk Scoring And Dashboards
+
+- Risk scores must be deterministic and versioned with `scoring_model_version`.
+- Risk scoring must use normalized/redacted persisted finding fields only.
+- Dashboard, risk-score, and scan-comparison APIs must enforce authenticated workspace scope.
+- Scan comparison must compare only compatible completed scans from the same workspace and target.
+- Stable comparison identity must come from normalized target plus finding `dedupe_key`, not raw scanner output.
+- AI providers may explain deterministic score inputs in later phases, but must not compute risk scores.
+
 ## AI Provider Safety
 
 - Use `AI_PROVIDER=template` by default for local deterministic explanations.

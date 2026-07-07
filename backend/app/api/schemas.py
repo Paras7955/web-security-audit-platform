@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -143,3 +144,73 @@ class AuthProfileRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RiskScoreRead(BaseModel):
+    id: str
+    target_id: str
+    scan_id: str | None
+    scoring_model_version: str
+    score: int
+    label: str
+    input_summary: dict[str, Any]
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DashboardScanSummaryRead(BaseModel):
+    id: str
+    target_id: str
+    target_name: str
+    scan_profile_id: str
+    mode: str
+    status: str
+    created_at: datetime
+    completed_at: datetime | None
+    risk_score: RiskScoreRead | None
+
+
+class DashboardOverviewRead(BaseModel):
+    targets_count: int
+    scans_count: int
+    completed_scans_count: int
+    findings_count: int
+    severity_counts: dict[str, int]
+    latest_risk_score: RiskScoreRead | None
+    recent_scans: list[DashboardScanSummaryRead]
+
+
+class TargetDashboardRead(BaseModel):
+    target_id: str
+    target_name: str
+    base_url: str
+    scan_count: int
+    completed_scan_count: int
+    findings_count: int
+    severity_counts: dict[str, int]
+    latest_risk_score: RiskScoreRead | None
+    recent_scans: list[DashboardScanSummaryRead]
+
+
+class FindingChangeRead(BaseModel):
+    dedupe_key: str
+    title: str
+    source_tool: str
+    location: str | None
+    previous_severity: str | None = None
+    current_severity: str | None = None
+
+
+class ScanComparisonRead(BaseModel):
+    target_id: str
+    baseline_scan_id: str
+    comparison_scan_id: str
+    scoring_model_version: str
+    baseline_score: RiskScoreRead
+    comparison_score: RiskScoreRead
+    score_delta: int
+    new_findings: list[FindingChangeRead]
+    resolved_findings: list[FindingChangeRead]
+    unchanged_findings: list[FindingChangeRead]
+    severity_changed_findings: list[FindingChangeRead]

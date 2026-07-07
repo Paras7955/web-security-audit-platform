@@ -14,17 +14,17 @@ For a new implementation session taking over from this point:
 - Read this `HANDOFF.md` next for the current architecture, phase history, verification state, known risks, and next planned phase.
 - Skim `README.md` and `SECURITY.md` before making changes, especially the auth, workspace, scan safety, repo-scan, AI, and auth-profile sections.
 - Confirm the active branch and clean worktree with `git status --short --branch`.
-- Current expected branch is `main`. Phase 14 has been merged.
-- Do not begin Phase 15 until the user explicitly approves starting it from clean `main`.
+- Current expected branch is `phase-15-dashboards-risk`. Phase 15 is complete and ready for user merge.
+- Do not begin Phase 16 until the user confirms Phase 15 has been merged back into the base branch and explicitly approves Phase 16.
 - If Docker Compose commands are needed, ensure a local `.env` or shell environment provides a real generated Fernet `AUTH_PROFILE_SECRET_KEY`. The placeholder in `.env.example` is intentionally unusable.
-- If starting Phase 15 after approval, verify `main` is clean, then create/switch to `phase-15-dashboards-risk`.
+- If starting Phase 16 after approval, verify the base branch is clean and includes the Phase 15 merge, then create/switch to `phase-16-finding-management`.
 
 ## Current Branch And Phase
 
-- Current branch: `main`
-- Current phase: Phase 14, Authentication Profiles For Target Scans, complete and merged
+- Current branch: `phase-15-dashboards-risk`
+- Current phase: Phase 15, Dashboards And Risk, complete and ready for merge
 - Base branch at phase start: `main`
-- Phase gate: Phase 15 is next, but do not start it until the user explicitly approves beginning Phase 15 from clean `main`.
+- Phase gate: Phase 16 is next after Phase 15 is merged, but do not start it until the user confirms the merge and explicitly approves beginning Phase 16.
 
 ## Mission And Safety Model
 
@@ -89,6 +89,8 @@ Current internal worker scan modes:
 
 Reports and AI eligibility are determined by scan profile metadata. In the current profile set, reports are available for completed `passive-web`, `active-demo`, and `repository` scans. AI explanations are available for completed `passive-web` and `active-demo` scans only; repository findings remain excluded from AI.
 
+Risk scoring is deterministic and versioned. Phase 15 uses `risk-v1`, persists generated scan scores in `risk_scores`, and displays scores as `0-100` plus Low/Moderate/High/Critical labels. Scores use normalized/redacted persisted finding fields only. AI may later explain score inputs, but must never compute risk scores.
+
 `AUTH_PROFILE_SECRET_KEY` is required for backend and worker startup/readiness. It must be a valid Fernet key. Production-like environments must not use the local development example key. Docker Compose now expects this value from the caller environment or a local `.env`; `.env.example` intentionally contains a non-usable placeholder.
 
 Local setup note:
@@ -113,6 +115,7 @@ Local setup note:
 - Phase 12: frontend decomposition and authenticated workspace app shell.
 - Phase 13: code-defined scan profiles, `scan_profile_id` persistence, compatibility mode input, profile-driven eligibility, and frontend profile selection. Merged to `main`.
 - Phase 14: workspace-owned bearer/custom-header auth profiles, encrypted secret storage, target attachment, passive scan header injection, and frontend auth-profile controls.
+- Phase 15: deterministic versioned risk scoring, workspace/target dashboard APIs, same-target scan comparison, and dense operational dashboard UI.
 
 ## Phase 11 Design
 
@@ -483,6 +486,125 @@ Residual risk:
 - Frontend auth-profile workflow coverage remains production-build-only. There are no UI-level tests that would catch auth-profile copy/state regressions, scan gating drift, or capability-label drift.
 - Frontend profile metadata is still mirrored in TypeScript while backend reads `shared/contracts.json`; this drift risk remains from Phase 13.
 
+## Phase 15 Implementation State
+
+Implemented:
+
+- Added Alembic revision `0005_risk_scores`.
+- Added `RiskScore` persistence with workspace, target, optional scan, `scoring_model_version`, score, label, and normalized input summary.
+- Added deterministic `risk-v1` scoring from normalized persisted findings:
+  - severity counts and weights across critical/high/medium/low/info
+  - confidence weighting
+  - dedupe by normalized finding `dedupe_key`
+  - scan profile and mode as metadata, not hidden score modifiers
+  - empty lifecycle/suppression adjustment arrays for Phase 16 integration
+- Added race-tolerant score persistence for duplicate concurrent read requests.
+- Added deterministic duplicate-key handling by choosing the highest-risk representative with stable severity/confidence/timestamp/ID tie-breakers.
+- Added target-aware workspace aggregation using target plus `dedupe_key` so same keys on different targets are not collapsed together.
+- Added workspace-scoped dashboard and comparison APIs:
+  - `GET /dashboard/overview`
+  - `GET /targets/{target_id}/dashboard`
+  - `GET /scans/{scan_id}/risk-score`
+  - `GET /scans/{scan_id}/comparison?baseline_scan_id=...`
+  - `GET /targets/{target_id}/latest-comparison`
+- Scan comparison accepts only completed or completed-with-warnings scans in the same authenticated workspace and same target.
+- Latest completed scan and latest comparison ordering use completion time, then creation time, then scan ID as a deterministic tie-breaker.
+- Added dense operational hybrid frontend risk dashboard:
+  - latest scan risk card
+  - selected target risk card
+  - target/workspace counts
+  - severity mix bars
+  - recent scan table
+  - target score inputs
+  - latest-vs-previous and manual comparison controls
+- Frontend target dashboard and comparison loaders ignore stale responses after target switches.
+- README and SECURITY document Phase 15 risk scoring/dashboard behavior and safety boundaries.
+
+Phase 15 commits:
+
+- `cd9f2e8 feat: add versioned risk dashboard APIs`
+- `2ce6bda feat: add risk dashboards to workspace UI`
+- `cc0582e test: isolate risk dashboard workspace fixtures`
+- `017e1f6 docs: document phase 15 risk dashboards`
+- `8fd15d4 fix: keep target risk card target scoped`
+- `c0c56dc fix: harden risk dashboard review findings`
+- `367a3c1 fix: use completion order for risk dashboards`
+- `c723733 fix: guard manual risk comparison state`
+- `5bb6689 fix: clarify latest scan risk metric`
+
+Verification:
+
+- `python3 -m py_compile backend/app/models.py backend/app/risk.py backend/app/api/schemas.py backend/app/api/dashboard.py backend/app/main.py backend/tests/test_risk_dashboard.py`
+  - Result: passed.
+- `env AUTH_PROFILE_SECRET_KEY=<temporary local dev Fernet key> docker compose build backend migrate frontend`
+  - Result: passed during the phase; later rebuilds of backend/frontend also passed after review fixes.
+- `env AUTH_PROFILE_SECRET_KEY=<temporary local dev Fernet key> docker compose run --rm migrate`
+  - Result: applied `0005_risk_scores`.
+- `env AUTH_PROFILE_SECRET_KEY=<temporary local dev Fernet key> docker compose run --rm backend python -m unittest tests.test_risk_dashboard`
+  - Result: 13 tests OK final.
+- `env AUTH_PROFILE_SECRET_KEY=<temporary local dev Fernet key> docker compose run --rm backend python -m unittest discover tests`
+  - Result: 185 tests OK final.
+- `env AUTH_PROFILE_SECRET_KEY=<temporary local dev Fernet key> docker compose run --rm frontend npm run build`
+  - Result: passed final.
+
+Phase 15 close status:
+
+- Review loop used one fresh `gpt-5.4` reviewer with repeated broad passes.
+- First pass found three accepted findings: workspace overview dedupe ignored target identity, duplicate dedupe-key score selection was not deterministic, and score persistence was vulnerable to concurrent insert races.
+- Second pass found two accepted findings: latest scan behavior used creation time instead of completion time, and target dashboard/comparison loads could show stale target data after fast switches.
+- Third pass found one accepted finding and one accepted test gap: manual comparison could still show stale target data, and workspace overview latest-score completion ordering lacked direct coverage.
+- Fourth pass found two accepted findings: the UI label overstated latest scan risk as workspace risk, and latest ordering lacked a deterministic scan-ID tie-breaker for timestamp ties.
+- Final broad pass found no remaining actionable issues at the review bar.
+- Phase 15 is ready for the user to merge back into the base branch.
+
+Review decision:
+- Finding: Workspace overview collapsed findings with the same `dedupe_key` across different targets.
+- Decision: Accepted.
+- Rationale: Phase 15 comparison identity is target plus dedupe key; workspace severity aggregation must not undercount repeated issues on separate targets.
+- Follow-up: Added target-aware dedupe for workspace severity counts and regression coverage.
+
+Review decision:
+- Finding: Duplicate `dedupe_key` rows within a scan could make scoring nondeterministic.
+- Decision: Accepted.
+- Rationale: `risk-v1` must be deterministic even if duplicate normalized findings exist.
+- Follow-up: Dedupe now selects the highest-risk representative with stable tie-breakers and has regression coverage.
+
+Review decision:
+- Finding: Score persistence could raise a 500 during concurrent read requests.
+- Decision: Accepted.
+- Rationale: Dashboard read endpoints should tolerate duplicate concurrent score generation.
+- Follow-up: `IntegrityError` handling now rolls back and returns the concurrently-created score row.
+
+Review decision:
+- Finding: Latest risk/comparison behavior used scan creation time instead of completion time.
+- Decision: Accepted.
+- Rationale: In a worker-backed system, completed scans can finish out of creation order; latest completed scan should be completion ordered.
+- Follow-up: Latest ordering now uses completion time with deterministic fallbacks, and tests cover out-of-order completion.
+
+Review decision:
+- Finding: Frontend target dashboard and comparison requests could show stale data after target switches.
+- Decision: Accepted.
+- Rationale: Operators should not see one target's dashboard/comparison data under another selected target.
+- Follow-up: Target-scoped loaders now ignore stale responses after the selected target changes.
+
+Review decision:
+- Finding: The UI labeled latest scan risk as workspace risk.
+- Decision: Accepted.
+- Rationale: The metric is the latest completed scan score, not an aggregate workspace score.
+- Follow-up: Relabeled the card to `Latest scan risk`.
+
+Review decision:
+- Finding: Latest ordering lacked a final deterministic tie-breaker for identical timestamps.
+- Decision: Accepted.
+- Rationale: Deterministic phase behavior should not depend on database return order.
+- Follow-up: Added scan ID as the final tie-breaker in Python and SQL ordering plus regression coverage.
+
+Residual risk:
+
+- Dashboard APIs compute and persist scan risk scores on read paths. This is acceptable for Phase 15 after concurrency hardening, but a future optimization could precompute scores at scan completion or in a worker.
+- Frontend dashboard behavior remains covered by production build rather than dedicated UI interaction tests.
+- Frontend profile metadata is still mirrored in TypeScript while backend reads `shared/contracts.json`; this drift risk remains from Phase 13.
+
 ## Current API Surface
 
 Protected by bearer auth:
@@ -505,6 +627,11 @@ Protected by bearer auth:
 - `GET /scans/{scan_id}/reports`
 - `GET /reports/{report_id}`
 - `GET /reports/{report_id}/download`
+- `GET /dashboard/overview`
+- `GET /targets/{target_id}/dashboard`
+- `GET /scans/{scan_id}/risk-score`
+- `GET /scans/{scan_id}/comparison?baseline_scan_id=...`
+- `GET /targets/{target_id}/latest-comparison`
 - `GET /scans/{scan_id}/ai-explanations`
 
 Public operational endpoints:
@@ -529,18 +656,11 @@ Phase 14, `phase-14-auth-profiles`:
 
 Phase 15, `phase-15-dashboards-risk`:
 
-- Next planned phase after explicit user approval.
-- Add deterministic, versioned risk scores.
-- Add workspace/target dashboards and scan comparison.
-- Preserve Phase 11 workspace scoping on every dashboard, score, and comparison endpoint.
-- Store every persisted/generated score with `scoring_model_version`.
-- Keep the scoring service deterministic; AI may later explain score inputs but must not compute the score.
-- Design risk inputs so Phase 16 lifecycle/suppression data can be incorporated cleanly later. If Phase 15 needs interim behavior before Phase 16 exists, document that behavior clearly and avoid pretending suppression/lifecycle data already exists.
-- Compare scans only within the same authenticated workspace and same target, using stable normalized finding identity from target plus dedupe key.
-- Add focused tests for deterministic score snapshots, workspace scoping, comparison correctness, and score-version persistence.
+- Complete on `phase-15-dashboards-risk`; ready for user merge back into the base branch.
 
 Phase 16, `phase-16-finding-management`:
 
+- Next planned phase after the user confirms Phase 15 has been merged and explicitly approves Phase 16.
 - Add workspace-owned finding triage state keyed by target plus dedupe key, separate from immutable scan finding occurrences.
 - Add lifecycle statuses: `open`, `confirmed`, `in_progress`, `resolved`, `suppressed`, and `false_positive`.
 - Add suppression rules with required reason, user, timestamp, optional expiration, and match fields based on normalized target/finding identity.
