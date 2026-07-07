@@ -14,17 +14,17 @@ For a new implementation session taking over from this point:
 - Read this `HANDOFF.md` next for the current architecture, phase history, verification state, known risks, and next planned phase.
 - Skim `README.md` and `SECURITY.md` before making changes, especially the auth, workspace, scan safety, repo-scan, AI, and auth-profile sections.
 - Confirm the active branch and clean worktree with `git status --short --branch`.
-- Current expected branch is `phase-15-dashboards-risk`. Phase 15 is complete and ready for user merge.
-- Do not begin Phase 16 until the user confirms Phase 15 has been merged back into the base branch and explicitly approves Phase 16.
+- Current expected branch is `main`. Phase 15 has been merged.
+- Do not begin Phase 16 until the user explicitly approves starting it from clean `main`.
 - If Docker Compose commands are needed, ensure a local `.env` or shell environment provides a real generated Fernet `AUTH_PROFILE_SECRET_KEY`. The placeholder in `.env.example` is intentionally unusable.
 - If starting Phase 16 after approval, verify the base branch is clean and includes the Phase 15 merge, then create/switch to `phase-16-finding-management`.
 
 ## Current Branch And Phase
 
-- Current branch: `phase-15-dashboards-risk`
-- Current phase: Phase 15, Dashboards And Risk, complete and ready for merge
+- Current branch: `main`
+- Current phase: Phase 15, Dashboards And Risk, complete and merged
 - Base branch at phase start: `main`
-- Phase gate: Phase 16 is next after Phase 15 is merged, but do not start it until the user confirms the merge and explicitly approves beginning Phase 16.
+- Phase gate: Phase 16 is next, but do not start it until the user explicitly approves beginning Phase 16 from clean `main`.
 
 ## Mission And Safety Model
 
@@ -555,7 +555,7 @@ Phase 15 close status:
 - Third pass found one accepted finding and one accepted test gap: manual comparison could still show stale target data, and workspace overview latest-score completion ordering lacked direct coverage.
 - Fourth pass found two accepted findings: the UI label overstated latest scan risk as workspace risk, and latest ordering lacked a deterministic scan-ID tie-breaker for timestamp ties.
 - Final broad pass found no remaining actionable issues at the review bar.
-- Phase 15 is ready for the user to merge back into the base branch.
+- Phase 15 has been merged to `main`.
 
 Review decision:
 - Finding: Workspace overview collapsed findings with the same `dedupe_key` across different targets.
@@ -656,11 +656,11 @@ Phase 14, `phase-14-auth-profiles`:
 
 Phase 15, `phase-15-dashboards-risk`:
 
-- Complete on `phase-15-dashboards-risk`; ready for user merge back into the base branch.
+- Complete and merged.
 
 Phase 16, `phase-16-finding-management`:
 
-- Next planned phase after the user confirms Phase 15 has been merged and explicitly approves Phase 16.
+- Next planned phase after explicit user approval.
 - Add workspace-owned finding triage state keyed by target plus dedupe key, separate from immutable scan finding occurrences.
 - Add lifecycle statuses: `open`, `confirmed`, `in_progress`, `resolved`, `suppressed`, and `false_positive`.
 - Add suppression rules with required reason, user, timestamp, optional expiration, and match fields based on normalized target/finding identity.
