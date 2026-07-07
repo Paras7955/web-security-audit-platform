@@ -229,6 +229,18 @@ class RiskDashboardTests(unittest.TestCase):
         self.assertEqual(target_dashboard.status_code, 200)
         self.assertEqual(target_dashboard.json()["latest_risk_score"]["scan_id"], created_earlier_completed_later)
 
+    def test_workspace_overview_latest_risk_uses_completion_order(self) -> None:
+        target_id = self.create_target()
+        created_later_completed_earlier = self.create_scan(target_id, created_offset=2, completed_offset=3)
+        created_earlier_completed_later = self.create_scan(target_id, created_offset=1, completed_offset=4)
+        self.create_finding(created_later_completed_earlier, "earlier", severity="low", confidence="high")
+        self.create_finding(created_earlier_completed_later, "later", severity="medium", confidence="high")
+
+        response = self.client.get("/dashboard/overview", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["latest_risk_score"]["scan_id"], created_earlier_completed_later)
+
     def create_target(self, *, workspace_id: str = DEV_WORKSPACE_ID, user_id: str = DEV_USER_ID, name: str = "Juice Shop") -> str:
         target_id = str(uuid4())
         with SessionLocal() as db:

@@ -427,12 +427,19 @@ export function TargetSetup() {
       return;
     }
 
+    const requestTargetId = selectedTargetIdRef.current;
     try {
       const response = await apiFetch(`${apiBaseUrl}/scans/${comparisonScanId}/comparison?baseline_scan_id=${encodeURIComponent(baselineScanId)}`);
       const body = await readJson<ScanComparison>(response, "Scan comparison failed.");
+      if (selectedTargetIdRef.current !== requestTargetId) {
+        return;
+      }
       setScanComparison(body);
       setRiskMessage("Manual scan comparison is ready.");
     } catch (error) {
+      if (selectedTargetIdRef.current !== requestTargetId) {
+        return;
+      }
       setScanComparison(null);
       setRiskMessage(error instanceof Error ? error.message : "Scan comparison failed.");
     }
