@@ -14,17 +14,15 @@ For a new implementation session taking over from this point:
 - Read this `HANDOFF.md` next for the current architecture, phase history, verification state, known risks, and next planned phase.
 - Skim `README.md` and `SECURITY.md` before making changes, especially the auth, workspace, scan safety, repo-scan, AI, and auth-profile sections.
 - Confirm the active branch and clean worktree with `git status --short --branch`.
-- Current expected branch is `main`. Phase 17 is complete.
-- Do not begin Phase 18 until the user explicitly approves starting it from clean `main`.
+- Current expected branch is `main`. Phase 18 is complete.
 - If Docker Compose commands are needed, ensure a local `.env` or shell environment provides a real generated Fernet `AUTH_PROFILE_SECRET_KEY`. The placeholder in `.env.example` is intentionally unusable.
-- If starting Phase 18 after approval, verify the base branch is clean, then create/switch to `phase-18-platform-ops`.
 
 ## Current Branch And Phase
 
 - Current branch: `main`
-- Current phase: Phase 17, AI Rate Limits, complete
+- Current phase: Phase 18, Platform Ops, complete
 - Base branch at phase start: `main`
-- Phase gate: Phase 18 is next, but do not start it until the user explicitly approves beginning Phase 18 from clean `main`.
+- Phase gate: Phase 19 is next, but do not start it until the user explicitly approves beginning Phase 19 from clean `main`.
 
 ## Mission And Safety Model
 
@@ -122,6 +120,7 @@ Local setup note:
 - Phase 15: deterministic versioned risk scoring, workspace/target dashboard APIs, same-target scan comparison, and dense operational dashboard UI.
 - Phase 16: finding lifecycle management, suppression rules with expiration, tags, expanded finding filters, and dense management UI.
 - Phase 17: AI request accounting, rate limits, safe explanation cache, executive/risk explanation metadata, and cache invalidation inputs.
+- Phase 18: platform ops controls, API rate limits, audit logs, cooperative scan cancellation, worker heartbeat, and health dashboard.
 
 ## Phase 11 Design
 
@@ -760,6 +759,85 @@ Residual risk:
 - Phase 17 rate limits are simple rolling-window database checks and are suitable for local/V1 scale, but high-concurrency production use may need atomic counters or advisory locking.
 - Tag changes are not included in the Phase 17 AI cache fingerprint because AI provider inputs and AI output do not currently include tag labels. If tags become part of AI prompts or report AI context later, add tag assignments to the fingerprint.
 
+## Phase 18 Implementation State
+
+Implemented:
+
+- Alembic revision `0008_platform_ops` adds scan cancellation fields plus `api_rate_limit_logs`, `audit_logs`, and `worker_heartbeats`.
+- General API rate-limit logs now protect scan creation, report generation, and AI explanation requests. Phase 18 uses a PostgreSQL transaction advisory lock per workspace/user/action before admission checks to avoid count-and-insert race bursts.
+- Append-only workspace audit records are written for target changes, scan creation/cancellation, report generation, AI requests, finding lifecycle changes, suppressions, tags, and auth profile creation. Audit records store normalized metadata and redact secret-like keys.
+- `POST /scans/{scan_id}/cancel` supports cooperative cancellation. Queued scans are cancelled immediately under a row lock. Running scans record a cancellation request and keep the original requester/audit event if cancellation is requested again.
+- Worker lifecycle checkpoints stop cancelled scans at safe boundaries for passive, repo, ZAP passive, Active Demo, and AJAX Short work without broadening scanner scope.
+- Worker heartbeat records expose worker status, current scan context, and queue depth for health reporting.
+- `GET /ops/health` reports database reachability, worker heartbeat freshness, queue depth, ZAP availability, and artifact-root writability without exposing local filesystem paths.
+- `GET /audit-logs` returns workspace-scoped audit events.
+- The frontend dashboard shell displays platform health and exposes scan cancellation controls for non-terminal scans.
+- `.env.example`, `README.md`, and `SECURITY.md` document Phase 18 operational settings and safety boundaries.
+
+Phase 18 commits:
+
+- `16f82e7 feat: add platform ops controls`
+- `b250d2d feat: add ops health UI`
+- `cf9c50b docs: document platform ops controls`
+- `8f402a3 fix: harden platform ops edge cases`
+- `d38c05d fix: make scan cancellation requests idempotent`
+
+Verification:
+
+- `python3 -m py_compile backend/app/api/scans.py backend/app/api/ops.py backend/app/ops/rate_limits.py backend/tests/test_platform_ops.py`
+  - Result: passed after accepted review fixes.
+- `docker compose build backend migrate`
+  - Result: passed.
+- `docker compose run --rm migrate`
+  - Result: passed after applying Phase 18 migration.
+- `docker compose run --rm backend python -m unittest tests.test_platform_ops`
+  - Result: 8 tests OK after accepted review fixes and backend rebuild.
+- `docker compose run --rm backend python -m unittest tests.test_platform_ops tests.test_scan_worker tests.test_reports tests.test_ai_explanations tests.test_targets_api`
+  - Result: 83 tests OK after accepted review fixes.
+- Clean temporary database migrations from zero through head:
+  - `docker compose run --rm -e DATABASE_URL=postgresql+psycopg://security_audit:security_audit@postgres:5432/phase18_final migrate`
+  - Result: passed.
+- Clean temporary database full backend suite:
+  - `docker compose run --rm -e DATABASE_URL=postgresql+psycopg://security_audit:security_audit@postgres:5432/phase18_final backend python -m unittest discover tests`
+  - Result: 209 tests OK after accepted review fixes.
+- `docker compose run --rm frontend npm run build`
+  - Result: passed after accepted review fixes.
+
+Review decision:
+- Finding: Queued scan cancellation could race with worker claim and overwrite a worker-claimed scan as `cancelled`.
+- Decision: Accepted.
+- Rationale: The cancellation endpoint must make the queued-vs-running decision against a locked row.
+- Follow-up: Added `FOR UPDATE` locking to scan cancellation before status decisions.
+
+Review decision:
+- Finding: DB-backed API rate limiting used a count-then-insert flow without serialization, allowing concurrent requests to exceed the limit.
+- Decision: Accepted.
+- Rationale: Expensive endpoint protection should hold under local concurrent load.
+- Follow-up: Added a PostgreSQL transaction advisory lock per workspace/user/action before rate-limit counting and logging.
+
+Review decision:
+- Finding: `/ops/health` returned the absolute artifact-root path to authenticated users.
+- Decision: Accepted.
+- Rationale: Health endpoints should not expose sensitive local filesystem details.
+- Follow-up: Replaced artifact-root details with generic writable/unavailable messages and added regression coverage.
+
+Review decision:
+- Finding: Docs advertised login/session audit records even though the app uses stateless bearer authentication without a durable session boundary.
+- Decision: Accepted as a documentation correction.
+- Rationale: Per-request auth-success audit rows would be noisy and are not the intended durable platform-state audit surface.
+- Follow-up: Narrowed Phase 18 audit language to authenticated API actions that change durable platform state.
+
+Review decision:
+- Finding: Repeated cancellation requests for the same running scan could overwrite the original requester and append duplicate audit events.
+- Decision: Accepted.
+- Rationale: Cancellation requests should be idempotent once recorded so the audit trail preserves who initiated cancellation.
+- Follow-up: Returned the current scan unchanged when cancellation was already requested and added regression coverage.
+
+Residual risk:
+
+- True concurrent Postgres contention for cancel-vs-worker-claim and simultaneous rate-limited requests is covered by locking design and focused unit/API tests, but not by a two-live-session integration test.
+- Frontend behavior is verified by production build, not end-to-end browser interaction tests.
+
 ## Current API Surface
 
 Protected by bearer auth:
@@ -802,6 +880,8 @@ Public operational endpoints:
 - `GET /health`
 - `GET /ready`
 - `GET /contracts`
+- `GET /ops/health`
+- `GET /audit-logs`
 
 ## Roadmap Plan
 
@@ -827,18 +907,11 @@ Phase 16, `phase-16-finding-management`:
 
 Phase 17, `phase-17-ai-rate-limits`:
 
-- Complete.
+- Complete and merged.
 
 Phase 18, `phase-18-platform-ops`:
 
-- Add general DB-backed rate limits for scan creation and selected expensive endpoints.
-- Add append-only audit log records for authenticated API actions that change durable platform state: target changes, scan creation/cancellation, report generation, AI requests, finding lifecycle changes, suppression, tags, and auth profile changes.
-- Audit records are immutable; corrections must create new audit events rather than modifying old records.
-- Add scan cancellation endpoint `POST /scans/{scan_id}/cancel`.
-- Queued scans should become `cancelled`; running scans should record a cancellation request and workers should stop at safe checkpoints.
-- ZAP Active Demo/AJAX cancellation should use scoped scan IDs/context where supported and must not broaden scanner scope.
-- Add health dashboard API for backend, DB, worker heartbeat, queue depth, ZAP availability, and artifact root checks.
-- Test rate limits, append-only audit behavior, audit ownership/workspace scoping, cancellation transitions, worker checkpoint behavior, and degraded health responses.
+- Complete.
 
 Phase 19, `phase-19-demo-seed-docs`:
 
