@@ -371,6 +371,33 @@ Implemented Phase 17 capabilities:
 
 Default local settings keep the deterministic template provider enabled. `AI_CACHE_ENABLED=true`, `AI_RATE_LIMIT_WINDOW_SECONDS=3600`, and `AI_RATE_LIMIT_MAX_REQUESTS=20` can be adjusted per environment. OpenAI remains optional and should only be enabled with a configured API key and model.
 
+## Phase 18 Status
+
+Phase 18 adds platform operations controls: general API rate limits, append-only audit records, scan cancellation, worker heartbeat, and a health dashboard.
+
+Implemented Phase 18 capabilities:
+
+- Adds database-backed rate-limit logs for scan creation and report generation.
+- Adds append-only workspace audit records for target changes, scan creation/cancellation, report generation, AI explanation requests, finding lifecycle changes, suppression, tags, and auth profile creation.
+- Adds `POST /scans/{scan_id}/cancel`; queued scans become `cancelled`, while running scans record a cancellation request for the worker to honor at safe checkpoints.
+- Adds worker heartbeat records with queue depth and current scan context.
+- Adds `GET /ops/health` for database, worker heartbeat freshness, queue depth, ZAP availability, and artifact-root checks.
+- Adds `GET /audit-logs` for workspace-scoped audit review.
+- Adds dashboard controls for platform health and scan cancellation.
+
+Relevant environment settings:
+
+```text
+API_RATE_LIMIT_WINDOW_SECONDS=3600
+SCAN_CREATE_RATE_LIMIT_MAX_REQUESTS=1000
+REPORT_GENERATION_RATE_LIMIT_MAX_REQUESTS=200
+HEALTH_ZAP_TIMEOUT_SECONDS=1.5
+WORKER_ID=default-worker
+WORKER_STALE_AFTER_SECONDS=30
+```
+
+Phase 18 cancellation is cooperative. Long-running scanner adapters stop at explicit worker checkpoints and must not broaden scan scope while cancelling.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.
