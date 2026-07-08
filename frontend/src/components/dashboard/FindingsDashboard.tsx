@@ -1,4 +1,4 @@
-import type { Finding, Tag } from "@/lib/securityAuditApi";
+import type { Finding, Tag, Target } from "@/lib/securityAuditApi";
 
 const severityFilters = ["all", "info", "low", "medium", "high", "critical"];
 const lifecycleStatuses = ["open", "confirmed", "in_progress", "resolved", "suppressed", "false_positive"];
@@ -27,6 +27,11 @@ export function FindingsDashboard({
   dateBeforeFilter,
   riskMinFilter,
   riskMaxFilter,
+  findingScope,
+  targetFilter,
+  profileFilter,
+  targets,
+  scanProfiles,
   tags,
   tagLabel,
   tagResourceType,
@@ -43,6 +48,9 @@ export function FindingsDashboard({
   onDateBeforeFilter,
   onRiskMinFilter,
   onRiskMaxFilter,
+  onFindingScope,
+  onTargetFilter,
+  onProfileFilter,
   onTagLabelChange,
   onTagResourceTypeChange,
   onCreateTag,
@@ -66,6 +74,11 @@ export function FindingsDashboard({
   dateBeforeFilter: string;
   riskMinFilter: string;
   riskMaxFilter: string;
+  findingScope: string;
+  targetFilter: string;
+  profileFilter: string;
+  targets: Target[];
+  scanProfiles: readonly { id: string; label: string }[];
   tags: Tag[];
   tagLabel: string;
   tagResourceType: string;
@@ -82,6 +95,9 @@ export function FindingsDashboard({
   onDateBeforeFilter: (date: string) => void;
   onRiskMinFilter: (value: string) => void;
   onRiskMaxFilter: (value: string) => void;
+  onFindingScope: (scope: string) => void;
+  onTargetFilter: (targetId: string) => void;
+  onProfileFilter: (profileId: string) => void;
   onTagLabelChange: (label: string) => void;
   onTagResourceTypeChange: (resourceType: string) => void;
   onCreateTag: () => void;
@@ -110,6 +126,29 @@ export function FindingsDashboard({
               {severity}
             </button>
           ))}
+        </div>
+
+        <div className="filterBar" aria-label="Finding scope filter">
+          <select value={findingScope} onChange={(event) => onFindingScope(event.target.value)} aria-label="Finding scope">
+            <option value="scan">current scan</option>
+            <option value="workspace">workspace</option>
+          </select>
+          <select value={targetFilter} onChange={(event) => onTargetFilter(event.target.value)} aria-label="Target filter" disabled={findingScope !== "workspace"}>
+            <option value="">all targets</option>
+            {targets.map((target) => (
+              <option value={target.id} key={target.id}>
+                {target.name}
+              </option>
+            ))}
+          </select>
+          <select value={profileFilter} onChange={(event) => onProfileFilter(event.target.value)} aria-label="Scan profile filter" disabled={findingScope !== "workspace"}>
+            <option value="">all profiles</option>
+            {scanProfiles.map((profile) => (
+              <option value={profile.id} key={profile.id}>
+                {profile.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="filterBar" role="tablist" aria-label="Finding management filter">

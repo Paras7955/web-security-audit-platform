@@ -75,6 +75,9 @@ export function TargetSetup() {
   const [dateBeforeFilter, setDateBeforeFilter] = useState("");
   const [riskMinFilter, setRiskMinFilter] = useState("");
   const [riskMaxFilter, setRiskMaxFilter] = useState("");
+  const [findingScope, setFindingScope] = useState("scan");
+  const [targetFilter, setTargetFilter] = useState("");
+  const [profileFilter, setProfileFilter] = useState("");
   const [tagLabel, setTagLabel] = useState("");
   const [tagResourceType, setTagResourceType] = useState("target");
   const [suppressionReason, setSuppressionReason] = useState("");
@@ -171,7 +174,11 @@ export function TargetSetup() {
     dateAfterFilter,
     dateBeforeFilter,
     riskMinFilter,
-    riskMaxFilter
+    riskMaxFilter,
+    findingScope,
+    targetFilter,
+    profileFilter,
+    selectedTargetId
   ]);
 
   useEffect(() => {
@@ -501,7 +508,8 @@ export function TargetSetup() {
     try {
       const params = findingFilterParams();
       const query = params.toString();
-      const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}/findings${query ? `?${query}` : ""}`);
+      const endpoint = findingScope === "workspace" ? `${apiBaseUrl}/findings` : `${apiBaseUrl}/scans/${scanId}/findings`;
+      const response = await apiFetch(`${endpoint}${query ? `?${query}` : ""}`);
       if (!response.ok) {
         if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
           return;
@@ -527,6 +535,14 @@ export function TargetSetup() {
 
   function findingFilterParams() {
     const params = new URLSearchParams();
+    if (findingScope === "workspace") {
+      if (targetFilter) {
+        params.set("target_id", targetFilter);
+      }
+      if (profileFilter) {
+        params.set("scan_profile_id", profileFilter);
+      }
+    }
     if (severityFilter !== "all") {
       params.set("severity", severityFilter);
     }
@@ -878,6 +894,11 @@ export function TargetSetup() {
           dateBeforeFilter={dateBeforeFilter}
           riskMinFilter={riskMinFilter}
           riskMaxFilter={riskMaxFilter}
+          findingScope={findingScope}
+          targetFilter={targetFilter}
+          profileFilter={profileFilter}
+          targets={targets}
+          scanProfiles={SCAN_PROFILES}
           tags={tags}
           tagLabel={tagLabel}
           tagResourceType={tagResourceType}
@@ -894,6 +915,9 @@ export function TargetSetup() {
           onDateBeforeFilter={setDateBeforeFilter}
           onRiskMinFilter={setRiskMinFilter}
           onRiskMaxFilter={setRiskMaxFilter}
+          onFindingScope={setFindingScope}
+          onTargetFilter={setTargetFilter}
+          onProfileFilter={setProfileFilter}
           onTagLabelChange={setTagLabel}
           onTagResourceTypeChange={setTagResourceType}
           onCreateTag={createTag}

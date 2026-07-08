@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime
 from uuid import uuid4
 
@@ -377,35 +378,52 @@ def query_findings(
         statement = statement.where(Finding.cwe == cwe)
 
     findings = list(db.scalars(statement.order_by(Finding.severity.asc(), Finding.created_at.asc())).all())
+    scan_ids = {finding.scan_id for finding in findings}
+    scans_by_id = {
+        scan.id: scan
+        for scan in db.scalars(
+            select(Scan).where(
+                Scan.workspace_id == principal.workspace_id,
+                Scan.id.in_(scan_ids),
+            )
+        ).all()
+    } if scan_ids else {}
+    target_ids = {scan.target_id for scan in scans_by_id.values()}
+    tag_labels = tag_labels_by_resource(db, principal.workspace_id, target_ids, scan_ids)
+    tagged_resource_ids = tagged_resources_for_filter(db, principal.workspace_id, tag_id) if tag_id is not None else set()
+    risk_scores = latest_risk_scores_by_scan(db, principal.workspace_id, scan_ids) if risk_min is not None or risk_max is not None else {}
+
     rows: list[FindingRead] = []
     for finding in findings:
-        scan = db.get(Scan, finding.scan_id)
+        scan = scans_by_id.get(finding.scan_id)
         if scan is None:
             continue
-        row = serialize_finding(db, finding, scan)
+        row = serialize_finding(db, finding, scan, tags=sorted(tag_labels[("target", scan.target_id)] | tag_labels[("scan", scan.id)]))
         if lifecycle_status is not None and row.lifecycle_status != lifecycle_status:
             continue
         if suppressed is not None and row.suppressed is not suppressed:
             continue
-        if tag_id is not None and not finding_has_tag(db, principal.workspace_id, scan.target_id, scan.id, tag_id):
+        if tag_id is not None and ("target", scan.target_id) not in tagged_resource_ids and ("scan", scan.id) not in tagged_resource_ids:
             continue
-        if not scan_risk_in_range(db, principal.workspace_id, scan.id, risk_min, risk_max):
+        if not scan_risk_in_range(risk_scores, scan.id, risk_min, risk_max):
             continue
         rows.append(row)
     return rows
 
 
-def serialize_finding(db: Session, finding: Finding, scan: Scan) -> FindingRead:
+def serialize_finding(db: Session, finding: Finding, scan: Scan, tags: list[str] | None = None) -> FindingRead:
     occurrence = occurrence_state_for_read(db, finding, scan)
-    labels = sorted(
-        {
-            tag.label
-            for tag in [
-                *tags_for_resource(db, finding.workspace_id, "target", scan.target_id),
-                *tags_for_resource(db, finding.workspace_id, "scan", scan.id),
-            ]
-        }
-    )
+    labels = tags
+    if labels is None:
+        labels = sorted(
+            {
+                tag.label
+                for tag in [
+                    *tags_for_resource(db, finding.workspace_id, "target", scan.target_id),
+                    *tags_for_resource(db, finding.workspace_id, "scan", scan.id),
+                ]
+            }
+        )
     return FindingRead(
         id=finding.id,
         scan_id=finding.scan_id,
@@ -445,29 +463,62 @@ def ensure_resource_access(db: Session, workspace_id: str, resource_type: str, r
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag resource not found.")
 
 
-def finding_has_tag(db: Session, workspace_id: str, target_id: str, scan_id: str, tag_id: str) -> bool:
-    assignment = db.scalar(
-        select(TagAssignment.id).where(
-            TagAssignment.workspace_id == workspace_id,
-            TagAssignment.tag_id == tag_id,
-            TagAssignment.resource_type.in_(("target", "scan")),
-            TagAssignment.resource_id.in_((target_id, scan_id)),
-        )
-    )
-    return assignment is not None
-
-
-def scan_risk_in_range(db: Session, workspace_id: str, scan_id: str, risk_min: int | None, risk_max: int | None) -> bool:
+def scan_risk_in_range(scores_by_scan_id: dict[str, int], scan_id: str, risk_min: int | None, risk_max: int | None) -> bool:
     if risk_min is None and risk_max is None:
         return True
-    score = db.scalar(
-        select(RiskScore.score)
-        .where(RiskScore.workspace_id == workspace_id, RiskScore.scan_id == scan_id)
-        .order_by(RiskScore.created_at.desc())
-        .limit(1)
-    )
+    score = scores_by_scan_id.get(scan_id)
     if score is None:
         return False
     if risk_min is not None and score < risk_min:
         return False
     return not (risk_max is not None and score > risk_max)
+
+
+def tag_labels_by_resource(
+    db: Session,
+    workspace_id: str,
+    target_ids: set[str],
+    scan_ids: set[str],
+) -> defaultdict[tuple[str, str], set[str]]:
+    labels: defaultdict[tuple[str, str], set[str]] = defaultdict(set)
+    resource_ids = target_ids | scan_ids
+    if not resource_ids:
+        return labels
+    rows = db.execute(
+        select(TagAssignment.resource_type, TagAssignment.resource_id, Tag.label)
+        .join(Tag, Tag.id == TagAssignment.tag_id)
+        .where(
+            TagAssignment.workspace_id == workspace_id,
+            TagAssignment.resource_type.in_(("target", "scan")),
+            TagAssignment.resource_id.in_(resource_ids),
+        )
+    ).all()
+    for resource_type, resource_id, label in rows:
+        labels[(resource_type, resource_id)].add(label)
+    return labels
+
+
+def tagged_resources_for_filter(db: Session, workspace_id: str, tag_id: str) -> set[tuple[str, str]]:
+    rows = db.execute(
+        select(TagAssignment.resource_type, TagAssignment.resource_id).where(
+            TagAssignment.workspace_id == workspace_id,
+            TagAssignment.tag_id == tag_id,
+            TagAssignment.resource_type.in_(("target", "scan")),
+        )
+    ).all()
+    return {(resource_type, resource_id) for resource_type, resource_id in rows}
+
+
+def latest_risk_scores_by_scan(db: Session, workspace_id: str, scan_ids: set[str]) -> dict[str, int]:
+    if not scan_ids:
+        return {}
+    scores: dict[str, int] = {}
+    rows = db.scalars(
+        select(RiskScore)
+        .where(RiskScore.workspace_id == workspace_id, RiskScore.scan_id.in_(scan_ids))
+        .order_by(RiskScore.scan_id.asc(), RiskScore.created_at.desc())
+    ).all()
+    for score in rows:
+        if score.scan_id is not None and score.scan_id not in scores:
+            scores[score.scan_id] = score.score
+    return scores

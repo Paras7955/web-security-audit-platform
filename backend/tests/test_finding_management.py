@@ -228,6 +228,34 @@ class FindingManagementTests(unittest.TestCase):
         self.assertFalse(finding.json()["suppressed"])
         self.assertEqual(finding.json()["lifecycle_status"], "open")
 
+    def test_applied_suppression_stops_applying_after_expiration(self) -> None:
+        response = self.client.post(
+            "/suppressions",
+            headers=DEV_AUTH_HEADERS,
+            json={
+                "target_id": self.target_id,
+                "dedupe_key": self.dedupe_key,
+                "reason": "Temporary exception.",
+                "expires_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        rule_id = response.json()["id"]
+
+        suppressed = self.client.get(f"/findings/{self.finding_id}", headers=DEV_AUTH_HEADERS)
+        self.assertTrue(suppressed.json()["suppressed"])
+
+        with SessionLocal() as db:
+            rule = db.get(SuppressionRule, rule_id)
+            self.assertIsNotNone(rule)
+            rule.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+            db.commit()
+
+        unsuppressed = self.client.get(f"/findings/{self.finding_id}", headers=DEV_AUTH_HEADERS)
+        self.assertEqual(unsuppressed.status_code, 200)
+        self.assertFalse(unsuppressed.json()["suppressed"])
+        self.assertEqual(unsuppressed.json()["lifecycle_status"], "open")
+
     def test_suppression_rejects_invalid_match_fields(self) -> None:
         invalid_severity = self.client.post(
             "/suppressions",

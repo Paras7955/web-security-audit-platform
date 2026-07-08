@@ -96,7 +96,6 @@ def initialize_finding_management_state(db: Session, finding: Finding, scan: Sca
 
 
 def active_suppression_for_finding(db: Session, finding: Finding, scan: Scan) -> SuppressionRule | None:
-    now = datetime.now(timezone.utc)
     rules = list(
         db.scalars(
             select(SuppressionRule)
@@ -108,10 +107,7 @@ def active_suppression_for_finding(db: Session, finding: Finding, scan: Scan) ->
         ).all()
     )
     for rule in rules:
-        expires_at = rule.expires_at
-        if expires_at is not None and expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if expires_at is not None and expires_at <= now:
+        if not suppression_rule_is_active(rule):
             continue
         if rule.dedupe_key is not None and rule.dedupe_key != finding.dedupe_key:
             continue
@@ -136,6 +132,24 @@ def sync_occurrence_state(db: Session, finding: Finding, scan: Scan, user_id: st
 def occurrence_state_for_read(db: Session, finding: Finding, scan: Scan) -> FindingOccurrenceState | None:
     occurrence = db.scalar(select(FindingOccurrenceState).where(FindingOccurrenceState.finding_id == finding.id))
     if occurrence is not None:
+        if occurrence.suppressed and occurrence.suppression_rule_id is not None:
+            rule = db.get(SuppressionRule, occurrence.suppression_rule_id)
+            if rule is not None and not suppression_rule_is_active(rule):
+                state = db.scalar(
+                    select(FindingState).where(
+                        FindingState.workspace_id == finding.workspace_id,
+                        FindingState.target_id == scan.target_id,
+                        FindingState.dedupe_key == finding.dedupe_key,
+                    )
+                )
+                return FindingOccurrenceState(
+                    id=occurrence.id,
+                    workspace_id=occurrence.workspace_id,
+                    finding_id=occurrence.finding_id,
+                    lifecycle_status=state.lifecycle_status if state is not None else "open",
+                    suppressed=False,
+                    suppression_rule_id=None,
+                )
         return occurrence
 
     state = db.scalar(
@@ -155,6 +169,15 @@ def occurrence_state_for_read(db: Session, finding: Finding, scan: Scan) -> Find
         suppressed=False,
         suppression_rule_id=None,
     )
+
+
+def suppression_rule_is_active(rule: SuppressionRule) -> bool:
+    expires_at = rule.expires_at
+    if expires_at is None:
+        return True
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at > datetime.now(timezone.utc)
 
 
 def tags_for_resource(db: Session, workspace_id: str, resource_type: str, resource_id: str) -> list[Tag]:
