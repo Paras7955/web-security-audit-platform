@@ -115,7 +115,7 @@ def build_report_data(
                 provider_name=ai_provider,
                 openai_api_key=openai_api_key,
                 openai_model=openai_model,
-                cache_context_version=str(uuid4()),
+                cache_context_version="report-v1",
             )
             if profile.ai_enabled
             else disabled_ai_explanations(scan.id)
@@ -418,7 +418,6 @@ def render_markdown_ai_explanations(explanations: AiExplanationResult) -> str:
     lines = [
         f"- Provider used: {explanations.provider}",
         f"- Fallback used: {'yes' if explanations.fallback_used else 'no'}",
-        f"- Cache hit: {'yes' if explanations.cache_hit else 'no'}",
         f"- Executive summary: {explanations.executive_summary}",
         f"- Risk score explanation: {explanations.risk_score_explanation}",
         f"- Summary: {explanations.summary}",
@@ -545,7 +544,6 @@ def render_html_ai_explanations(explanations: AiExplanationResult) -> str:
   <table>
     <tr><th>Provider used</th><td>{escape(explanations.provider)}</td></tr>
     <tr><th>Fallback used</th><td>{"yes" if explanations.fallback_used else "no"}</td></tr>
-    <tr><th>Cache hit</th><td>{"yes" if explanations.cache_hit else "no"}</td></tr>
     <tr><th>Executive summary</th><td>{escape(explanations.executive_summary)}</td></tr>
     <tr><th>Risk score explanation</th><td>{escape(explanations.risk_score_explanation)}</td></tr>
     <tr><th>Summary</th><td>{escape(explanations.summary)}</td></tr>

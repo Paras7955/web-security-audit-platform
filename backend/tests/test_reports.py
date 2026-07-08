@@ -10,7 +10,7 @@ from sqlalchemy import delete, select
 
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import Finding, ReportArtifact, Scan, Target, Workspace
+from app.models import AiRequestLog, Finding, ReportArtifact, Scan, Target, Workspace
 from app.reports.service import ReportGenerationError, generate_report_artifacts, read_report_artifact_file
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
@@ -73,6 +73,7 @@ class ReportsTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         with SessionLocal() as db:
+            db.execute(delete(AiRequestLog).where(AiRequestLog.workspace_id == DEV_WORKSPACE_ID))
             db.execute(delete(ReportArtifact).where(ReportArtifact.scan_id == self.scan_id))
             db.execute(delete(Finding).where(Finding.scan_id == self.scan_id))
             db.execute(delete(Scan).where(Scan.id == self.scan_id))
@@ -126,6 +127,23 @@ class ReportsTests(unittest.TestCase):
                 download_response = self.client.get(markdown["download_url"], headers=DEV_AUTH_HEADERS)
                 self.assertEqual(download_response.status_code, 200)
                 self.assertIn("attachment;", download_response.headers["content-disposition"])
+
+    def test_report_generation_reuses_ai_cache_for_unchanged_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("app.api.reports.settings.artifact_root", temp_dir):
+                first = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+                second = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 201)
+        with SessionLocal() as db:
+            logs = (
+                db.query(AiRequestLog)
+                .filter(AiRequestLog.action == "report_ai_generation", AiRequestLog.workspace_id == DEV_WORKSPACE_ID)
+                .order_by(AiRequestLog.created_at.asc(), AiRequestLog.id.asc())
+                .all()
+            )
+        self.assertEqual([log.cache_hit for log in logs], [False, True])
 
     def test_reports_require_completed_scan(self) -> None:
         with SessionLocal() as db:

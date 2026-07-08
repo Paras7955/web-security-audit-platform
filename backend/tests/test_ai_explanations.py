@@ -348,6 +348,31 @@ class AiExplanationTests(unittest.TestCase):
         self.assertTrue(result.fallback_used)
         self.assertIn("OPENAI_API_KEY", result.provider_error or "")
 
+    def test_provider_fallback_results_are_not_cached(self) -> None:
+        provider = FailingProvider()
+        with SessionLocal() as db, patch("app.ai.service.build_provider", return_value=provider):
+            first = generate_ai_explanations(
+                db,
+                scan_id=self.scan_id,
+                provider_name="openai",
+                openai_api_key="test-key",
+                openai_model="test-model",
+            )
+            second = generate_ai_explanations(
+                db,
+                scan_id=self.scan_id,
+                provider_name="openai",
+                openai_api_key="test-key",
+                openai_model="test-model",
+            )
+
+        self.assertTrue(first.fallback_used)
+        self.assertTrue(second.fallback_used)
+        self.assertEqual(provider.calls, 2)
+        with SessionLocal() as db:
+            cache_rows = db.query(AiExplanationCache).filter(AiExplanationCache.scan_id == self.scan_id).all()
+        self.assertEqual(cache_rows, [])
+
     def test_unknown_provider_is_rejected(self) -> None:
         response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
         self.assertEqual(response.status_code, 200)
@@ -478,6 +503,17 @@ class CapturingProvider:
     def explain(self, *, scan_id: str, findings: tuple) -> AiExplanationResult:
         self.payload = findings
         return TemplateAiProvider().explain(scan_id=scan_id, findings=findings)
+
+
+class FailingProvider:
+    provider_name = "openai"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def explain(self, *, scan_id: str, findings: tuple) -> AiExplanationResult:
+        self.calls += 1
+        raise RuntimeError("temporary provider failure")
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.contracts import ScanStatus, scan_profile_for_values
-from app.models import AiExplanationCache, AiRequestLog, Finding, FindingOccurrenceState, FindingState, ReportArtifact, Scan, SuppressionRule
+from app.models import AiExplanationCache, AiRequestLog, Finding, FindingOccurrenceState, FindingState, Scan, SuppressionRule
 from app.risk import SCORING_MODEL_VERSION, calculate_scan_risk_score
 
 
@@ -322,7 +322,7 @@ def generate_ai_explanations(
             explanations=fallback.explanations,
         )
     result = enrich_result(result, scan=scan, findings=raw_findings, input_fingerprint=fingerprint, cache_hit=False)
-    if use_cache:
+    if use_cache and not result.fallback_used:
         store_cached_explanation(
             db,
             scan=scan,
@@ -585,11 +585,6 @@ def build_ai_input_fingerprint(
 ) -> str:
     finding_ids = [finding.id for finding in findings]
     states = load_state_inputs(db, scan=scan, findings=findings, finding_ids=finding_ids)
-    report_artifacts = db.scalars(
-        select(ReportArtifact)
-        .where(ReportArtifact.workspace_id == scan.workspace_id, ReportArtifact.scan_id == scan.id)
-        .order_by(ReportArtifact.report_type.asc(), ReportArtifact.created_at.asc())
-    ).all()
     risk = calculate_scan_risk_score(scan, findings)
     payload = {
         "version": "ai-input-v1",
@@ -609,15 +604,6 @@ def build_ai_input_fingerprint(
             "label": risk.label,
             "input_summary": risk.input_summary,
         },
-        "reports": [
-            {
-                "id": artifact.id,
-                "report_type": artifact.report_type,
-                "path": artifact.path,
-                "created_at": iso_or_none(artifact.created_at),
-            }
-            for artifact in report_artifacts
-        ],
         "cache_context_version": cache_context_version,
     }
     return stable_hash(payload)
