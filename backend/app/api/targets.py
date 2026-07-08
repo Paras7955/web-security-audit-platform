@@ -8,6 +8,7 @@ from app.api.deps import get_current_principal, get_db, get_scan_allowlist
 from app.api.schemas import TargetAuthProfileUpdate, TargetCreate, TargetRead, TargetRepoPathUpdate, TargetValidationRead
 from app.core.config import settings
 from app.models import AuthProfile, Target
+from app.ops.audit import record_audit_event
 from app.security.auth import AuthenticatedPrincipal
 from app.repo_scanner.paths import RepoPathError, validate_repo_path
 from app.security.allowlist import ScanAllowlist
@@ -70,6 +71,14 @@ def create_target(
         auth_profile_id=auth_profile_id,
     )
     db.add(target)
+    record_audit_event(
+        db,
+        principal,
+        event_type="target.created",
+        resource_type="target",
+        resource_id=target.id,
+        metadata={"allowlist_id": allowlist_target.id, "has_repo_path": repo_path is not None, "has_auth_profile": auth_profile_id is not None},
+    )
     db.commit()
     db.refresh(target)
     return target_to_read(target, allowlist)
@@ -110,6 +119,14 @@ def update_target_repo_path(
 
     target.repo_path = repo_path
     db.add(target)
+    record_audit_event(
+        db,
+        principal,
+        event_type="target.repo_path_updated",
+        resource_type="target",
+        resource_id=target.id,
+        metadata={"has_repo_path": repo_path is not None},
+    )
     db.commit()
     db.refresh(target)
     return target_to_read(target, allowlist)
@@ -129,6 +146,14 @@ def update_target_auth_profile(
 
     target.auth_profile_id = require_workspace_auth_profile(db, payload.auth_profile_id, principal)
     db.add(target)
+    record_audit_event(
+        db,
+        principal,
+        event_type="target.auth_profile_updated",
+        resource_type="target",
+        resource_id=target.id,
+        metadata={"has_auth_profile": target.auth_profile_id is not None},
+    )
     db.commit()
     db.refresh(target)
     return target_to_read(target, allowlist)

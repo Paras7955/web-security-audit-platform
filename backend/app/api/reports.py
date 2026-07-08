@@ -7,6 +7,8 @@ from app.api.deps import get_current_principal, get_db
 from app.api.schemas import ReportArtifactRead
 from app.core.config import settings
 from app.models import ReportArtifact, Scan
+from app.ops.audit import record_audit_event
+from app.ops.rate_limits import enforce_api_rate_limit
 from app.reports.service import (
     ReportGenerationError,
     ReportGenerationRateLimitError,
@@ -25,6 +27,13 @@ def generate_reports(
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> list[ReportArtifactRead]:
+    enforce_api_rate_limit(
+        db,
+        principal,
+        action="report_generation",
+        max_requests=settings.report_generation_rate_limit_max_requests,
+        window_seconds=settings.api_rate_limit_window_seconds,
+    )
     require_workspace_scan(db, scan_id, principal)
     try:
         artifacts = generate_report_artifacts(
@@ -39,6 +48,15 @@ def generate_reports(
         )
     except ReportGenerationError as exc:
         raise report_error(exc) from exc
+    record_audit_event(
+        db,
+        principal,
+        event_type="report.generated",
+        resource_type="scan",
+        resource_id=scan_id,
+        metadata={"artifact_count": len(artifacts)},
+    )
+    db.commit()
     return [to_report_read(artifact) for artifact in artifacts]
 
 

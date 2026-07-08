@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     ai_rate_limit_window_seconds: int = 3600
     ai_rate_limit_max_requests: int = 20
     ai_cache_enabled: bool = True
+    api_rate_limit_window_seconds: int = 3600
+    scan_create_rate_limit_max_requests: int = 1000
+    report_generation_rate_limit_max_requests: int = 200
+    health_zap_timeout_seconds: float = 1.5
+    worker_id: str = "default-worker"
+    worker_stale_after_seconds: int = 30
     openai_model: str | None = None
     openai_api_key: str | None = None
     zap_base_url: str = "http://zap:8080"

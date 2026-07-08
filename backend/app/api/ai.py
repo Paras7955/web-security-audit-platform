@@ -7,6 +7,7 @@ from app.api.deps import get_current_principal, get_db
 from app.api.schemas import AiExplanationGroupRead, AiExplanationRead, FindingExplanationRead
 from app.core.config import settings
 from app.models import Scan
+from app.ops.audit import record_audit_event
 from app.security.auth import AuthenticatedPrincipal
 
 router = APIRouter(tags=["ai"])
@@ -33,6 +34,15 @@ def get_ai_explanations(
         )
     except AiExplanationError as exc:
         raise ai_error(exc) from exc
+    record_audit_event(
+        db,
+        principal,
+        event_type="ai.explanation_requested",
+        resource_type="scan",
+        resource_id=scan_id,
+        metadata={"provider": result.provider, "cache_hit": result.cache_hit, "fallback_used": result.fallback_used},
+    )
+    db.commit()
     return to_ai_read(result)
 
 

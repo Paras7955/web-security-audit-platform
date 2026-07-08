@@ -24,6 +24,8 @@ class ScanRead(BaseModel):
     progress_percent: int
     started_at: datetime | None
     completed_at: datetime | None
+    cancellation_requested_at: datetime | None
+    cancellation_requested_by_user_id: str | None
     error_code: str | None
     error_detail: str | None
     created_at: datetime
@@ -153,6 +155,31 @@ class AiExplanationRead(BaseModel):
     cache_hit: bool
     groups: list[AiExplanationGroupRead]
     explanations: list[FindingExplanationRead]
+
+
+class AuditLogRead(BaseModel):
+    id: str
+    event_type: str
+    resource_type: str | None
+    resource_id: str | None
+    metadata_json: dict[str, Any]
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class HealthComponentRead(BaseModel):
+    status: str
+    detail: str | None = None
+
+
+class PlatformHealthRead(BaseModel):
+    status: str
+    database: HealthComponentRead
+    worker: HealthComponentRead
+    queue_depth: int
+    zap: HealthComponentRead
+    artifact_root: HealthComponentRead
 
 
 class TargetCreate(BaseModel):
