@@ -141,6 +141,14 @@ class ReportsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("completed scans", response.json()["detail"])
 
+    def test_report_ai_rate_limit_returns_429(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("app.api.reports.settings.artifact_root", temp_dir), patch("app.ai.service.settings.ai_rate_limit_max_requests", 0):
+                response = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("rate limit", response.json()["detail"].lower())
+
     def test_report_generation_rejects_scan_target_workspace_mismatch(self) -> None:
         mismatch_workspace_id = f"report-mismatch-{uuid4()}"
         with tempfile.TemporaryDirectory() as temp_dir:

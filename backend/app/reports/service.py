@@ -7,7 +7,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.service import AiExplanationResult, generate_ai_explanations, sanitize_provider_url
+from app.ai.service import AiExplanationError, AiExplanationResult, AiRateLimitExceeded, generate_ai_explanations, sanitize_provider_url
 from app.core.contracts import ScanMode, ScanStatus, scan_profile_for_values
 from app.models import Finding, ReportArtifact, Scan, Target
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
@@ -32,6 +32,10 @@ SEVERITY_ORDER = {
 
 
 class ReportGenerationError(ValueError):
+    pass
+
+
+class ReportGenerationRateLimitError(ReportGenerationError):
     pass
 
 
@@ -100,21 +104,26 @@ def build_report_data(
         safe_report_finding(finding)
         for finding in sorted(findings, key=lambda finding: (SEVERITY_ORDER.get(finding.severity, 99), finding.title.lower()))
     )
-    ai_explanations = (
-        generate_ai_explanations(
-            db,
-            scan_id=scan.id,
-            workspace_id=workspace_id,
-            user_id=user_id,
-            action="report_ai_generation",
-            provider_name=ai_provider,
-            openai_api_key=openai_api_key,
-            openai_model=openai_model,
-            cache_context_version=str(uuid4()),
+    try:
+        ai_explanations = (
+            generate_ai_explanations(
+                db,
+                scan_id=scan.id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                action="report_ai_generation",
+                provider_name=ai_provider,
+                openai_api_key=openai_api_key,
+                openai_model=openai_model,
+                cache_context_version=str(uuid4()),
+            )
+            if profile.ai_enabled
+            else disabled_ai_explanations(scan.id)
         )
-        if profile.ai_enabled
-        else disabled_ai_explanations(scan.id)
-    )
+    except AiRateLimitExceeded as exc:
+        raise ReportGenerationRateLimitError(str(exc)) from exc
+    except AiExplanationError as exc:
+        raise ReportGenerationError(str(exc)) from exc
     return ReportData(
         scan=scan,
         target=target,
