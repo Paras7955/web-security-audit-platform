@@ -133,6 +133,9 @@ Relevant environment settings:
 
 ```text
 AI_PROVIDER=template
+AI_RATE_LIMIT_WINDOW_SECONDS=3600
+AI_RATE_LIMIT_MAX_REQUESTS=20
+AI_CACHE_ENABLED=true
 OPENAI_MODEL=
 OPENAI_API_KEY=
 REPO_SCAN_ROOT=/app/repositories
@@ -350,6 +353,23 @@ Implemented Phase 16 capabilities:
 - Adds dense finding-management UI controls for lifecycle updates, suppression, tag creation/assignment, and expanded filters.
 
 Finding management state uses normalized persisted finding fields only. It must not use raw scanner output, raw artifacts, auth profile secrets, or unredacted evidence.
+
+## Phase 17 Status
+
+Phase 17 adds DB-backed AI request accounting, rate limits, explanation caching, and deterministic risk-score explanation context.
+
+Implemented Phase 17 capabilities:
+
+- Persists AI request accounting by workspace, user, action, provider, model, config hash, input fingerprint, cache hit, allow/deny outcome, and timestamp.
+- Applies configurable rate limits to uncached interactive AI explanations and report-triggered AI generation.
+- Caches scan-level summaries and finding-level explanations using only normalized/redacted fields.
+- Uses deterministic cache fingerprints that include safe finding projections, lifecycle state, suppression state and expiration, report context, AI provider/model/config, and `risk-v1` score inputs.
+- Adds executive summary and risk-score explanation text to AI responses and reports.
+- Keeps AI as an explanation layer only; deterministic backend code computes risk scores.
+- Keeps repo findings excluded from external AI providers.
+- Displays cache status and risk model metadata in the dashboard AI panel.
+
+Default local settings keep the deterministic template provider enabled. `AI_CACHE_ENABLED=true`, `AI_RATE_LIMIT_WINDOW_SECONDS=3600`, and `AI_RATE_LIMIT_MAX_REQUESTS=20` can be adjusted per environment. OpenAI remains optional and should only be enabled with a configured API key and model.
 
 ## Responsible Use
 

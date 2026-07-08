@@ -20,10 +20,20 @@ export function AiExplanationsPanel({ explanation, message }: { explanation: AiE
               <dd>{explanation.fallback_used ? "used" : "not used"}</dd>
             </div>
             <div>
+              <dt>Cache</dt>
+              <dd>{explanation.cache_hit ? "hit" : "generated"}</dd>
+            </div>
+            <div>
+              <dt>Risk model</dt>
+              <dd>{explanation.scoring_model_version}</dd>
+            </div>
+            <div>
               <dt>Groups</dt>
               <dd>{explanation.groups.length}</dd>
             </div>
           </dl>
+          <p>{explanation.executive_summary}</p>
+          <p>{explanation.risk_score_explanation}</p>
           <p>{explanation.summary}</p>
           {explanation.provider_error ? <p className="errorText">{explanation.provider_error}</p> : null}
 

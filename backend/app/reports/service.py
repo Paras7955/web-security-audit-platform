@@ -7,7 +7,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.service import AiExplanationResult, generate_ai_explanations, sanitize_provider_url
+from app.ai.service import AiExplanationError, AiExplanationResult, AiRateLimitExceeded, generate_ai_explanations, sanitize_provider_url
 from app.core.contracts import ScanMode, ScanStatus, scan_profile_for_values
 from app.models import Finding, ReportArtifact, Scan, Target
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
@@ -32,6 +32,10 @@ SEVERITY_ORDER = {
 
 
 class ReportGenerationError(ValueError):
+    pass
+
+
+class ReportGenerationRateLimitError(ReportGenerationError):
     pass
 
 
@@ -70,6 +74,7 @@ def build_report_data(
     scan_id: str,
     ai_provider: str,
     workspace_id: str | None = None,
+    user_id: str | None = None,
     openai_api_key: str | None = None,
     openai_model: str | None = None,
 ) -> ReportData:
@@ -99,18 +104,26 @@ def build_report_data(
         safe_report_finding(finding)
         for finding in sorted(findings, key=lambda finding: (SEVERITY_ORDER.get(finding.severity, 99), finding.title.lower()))
     )
-    ai_explanations = (
-        generate_ai_explanations(
-            db,
-            scan_id=scan.id,
-            workspace_id=workspace_id,
-            provider_name=ai_provider,
-            openai_api_key=openai_api_key,
-            openai_model=openai_model,
+    try:
+        ai_explanations = (
+            generate_ai_explanations(
+                db,
+                scan_id=scan.id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                action="report_ai_generation",
+                provider_name=ai_provider,
+                openai_api_key=openai_api_key,
+                openai_model=openai_model,
+                cache_context_version="report-v1",
+            )
+            if profile.ai_enabled
+            else disabled_ai_explanations(scan.id)
         )
-        if profile.ai_enabled
-        else disabled_ai_explanations(scan.id)
-    )
+    except AiRateLimitExceeded as exc:
+        raise ReportGenerationRateLimitError(str(exc)) from exc
+    except AiExplanationError as exc:
+        raise ReportGenerationError(str(exc)) from exc
     return ReportData(
         scan=scan,
         target=target,
@@ -125,6 +138,7 @@ def generate_report_artifacts(
     *,
     scan_id: str,
     workspace_id: str | None = None,
+    user_id: str | None = None,
     artifact_root: str | Path,
     ai_provider: str,
     openai_api_key: str | None = None,
@@ -134,6 +148,7 @@ def generate_report_artifacts(
         db,
         scan_id=scan_id,
         workspace_id=workspace_id,
+        user_id=user_id,
         ai_provider=ai_provider,
         openai_api_key=openai_api_key,
         openai_model=openai_model,
@@ -283,6 +298,11 @@ def disabled_ai_explanations(scan_id: str) -> AiExplanationResult:
         fallback_used=False,
         provider_error=None,
         summary="AI explanations are not generated for repo scans in Phase 10.",
+        executive_summary="AI explanations are not generated for this scan profile.",
+        risk_score_explanation="No AI risk explanation was generated.",
+        scoring_model_version="risk-v1",
+        input_fingerprint=None,
+        cache_hit=False,
         groups=(),
         explanations=(),
     )
@@ -398,6 +418,8 @@ def render_markdown_ai_explanations(explanations: AiExplanationResult) -> str:
     lines = [
         f"- Provider used: {explanations.provider}",
         f"- Fallback used: {'yes' if explanations.fallback_used else 'no'}",
+        f"- Executive summary: {explanations.executive_summary}",
+        f"- Risk score explanation: {explanations.risk_score_explanation}",
         f"- Summary: {explanations.summary}",
         "- Limitation: AI explanations are based only on normalized, redacted findings and do not add new vulnerability claims.",
     ]
@@ -522,6 +544,8 @@ def render_html_ai_explanations(explanations: AiExplanationResult) -> str:
   <table>
     <tr><th>Provider used</th><td>{escape(explanations.provider)}</td></tr>
     <tr><th>Fallback used</th><td>{"yes" if explanations.fallback_used else "no"}</td></tr>
+    <tr><th>Executive summary</th><td>{escape(explanations.executive_summary)}</td></tr>
+    <tr><th>Risk score explanation</th><td>{escape(explanations.risk_score_explanation)}</td></tr>
     <tr><th>Summary</th><td>{escape(explanations.summary)}</td></tr>
   </table>
   <p>AI explanations are based only on normalized, redacted findings and do not add new vulnerability claims.</p>

@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.models import ReportArtifact, Scan
 from app.reports.service import (
     ReportGenerationError,
+    ReportGenerationRateLimitError,
     generate_report_artifacts,
     list_report_artifacts,
     read_report_artifact,
@@ -30,6 +31,7 @@ def generate_reports(
             db,
             scan_id=scan_id,
             workspace_id=principal.workspace_id,
+            user_id=principal.user_id,
             artifact_root=settings.artifact_root,
             ai_provider=settings.ai_provider,
             openai_api_key=settings.openai_api_key,
@@ -105,6 +107,8 @@ def to_report_read(artifact: ReportArtifact) -> ReportArtifactRead:
 
 def report_error(error: ReportGenerationError) -> HTTPException:
     detail = str(error)
+    if isinstance(error, ReportGenerationRateLimitError):
+        return HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=detail)
     if detail.endswith("not found.") or detail == "Scan not found.":
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)

@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     dev_auth_subject: str = "dev-user"
     auth_profile_secret_key: str = ""
     ai_provider: str = "template"
+    ai_rate_limit_window_seconds: int = 3600
+    ai_rate_limit_max_requests: int = 20
+    ai_cache_enabled: bool = True
     openai_model: str | None = None
     openai_api_key: str | None = None
     zap_base_url: str = "http://zap:8080"

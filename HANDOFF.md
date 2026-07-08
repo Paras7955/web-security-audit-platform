@@ -14,17 +14,17 @@ For a new implementation session taking over from this point:
 - Read this `HANDOFF.md` next for the current architecture, phase history, verification state, known risks, and next planned phase.
 - Skim `README.md` and `SECURITY.md` before making changes, especially the auth, workspace, scan safety, repo-scan, AI, and auth-profile sections.
 - Confirm the active branch and clean worktree with `git status --short --branch`.
-- Current expected branch is `main`. Phase 16 is complete.
-- Do not begin Phase 17 until the user explicitly approves starting it from clean `main`.
+- Current expected branch is `main`. Phase 17 is complete.
+- Do not begin Phase 18 until the user explicitly approves starting it from clean `main`.
 - If Docker Compose commands are needed, ensure a local `.env` or shell environment provides a real generated Fernet `AUTH_PROFILE_SECRET_KEY`. The placeholder in `.env.example` is intentionally unusable.
-- If starting Phase 17 after approval, verify the base branch is clean, then create/switch to `phase-17-ai-rate-limits`.
+- If starting Phase 18 after approval, verify the base branch is clean, then create/switch to `phase-18-platform-ops`.
 
 ## Current Branch And Phase
 
 - Current branch: `main`
-- Current phase: Phase 16, Finding Management, complete
+- Current phase: Phase 17, AI Rate Limits, complete
 - Base branch at phase start: `main`
-- Phase gate: Phase 17 is next, but do not start it until the user explicitly approves beginning Phase 17 from clean `main`.
+- Phase gate: Phase 18 is next, but do not start it until the user explicitly approves beginning Phase 18 from clean `main`.
 
 ## Mission And Safety Model
 
@@ -93,6 +93,8 @@ Risk scoring is deterministic and versioned. Phase 15 uses `risk-v1`, persists g
 
 Finding management is workspace-scoped and layered on top of immutable normalized findings. Phase 16 persists lifecycle state by target plus `dedupe_key`, stores occurrence-level lifecycle/suppression state for each finding, and supports suppression rules and tags using normalized persisted fields only. Suppression does not stop scanners from detecting or storing matching findings, and expired suppressions stop applying when findings are read.
 
+AI explanation generation is workspace-scoped, rate-limited, and cached. Phase 17 records AI request accounting by workspace, user, action, provider/model/config hash, input fingerprint, cache hit, allowed/denied outcome, and timestamp. Cache fingerprints use normalized/redacted finding projections plus lifecycle, suppression, deterministic risk-score, provider/model/config, and report context inputs. AI may explain deterministic risk-score inputs but must not compute scores. Fallback results from transient external-provider failures are not cached under the failed provider config.
+
 `AUTH_PROFILE_SECRET_KEY` is required for backend and worker startup/readiness. It must be a valid Fernet key. Production-like environments must not use the local development example key. Docker Compose now expects this value from the caller environment or a local `.env`; `.env.example` intentionally contains a non-usable placeholder.
 
 Local setup note:
@@ -119,6 +121,7 @@ Local setup note:
 - Phase 14: workspace-owned bearer/custom-header auth profiles, encrypted secret storage, target attachment, passive scan header injection, and frontend auth-profile controls.
 - Phase 15: deterministic versioned risk scoring, workspace/target dashboard APIs, same-target scan comparison, and dense operational dashboard UI.
 - Phase 16: finding lifecycle management, suppression rules with expiration, tags, expanded finding filters, and dense management UI.
+- Phase 17: AI request accounting, rate limits, safe explanation cache, executive/risk explanation metadata, and cache invalidation inputs.
 
 ## Phase 11 Design
 
@@ -692,7 +695,70 @@ Residual risk:
 
 - Frontend behavior is verified by production build, not end-to-end browser interaction tests.
 - Phase 16 records management state but does not yet add audit-log entries; audit logging is planned for Phase 18.
-- Phase 17 must treat lifecycle, suppression, tag, and risk-score changes as AI cache invalidation inputs.
+
+## Phase 17 Implementation State
+
+Implemented:
+
+- Alembic revision `0007_ai_cache_rate_limits` creates `ai_request_logs` and `ai_explanation_cache`.
+- AI request accounting records workspace, user, action, provider, model, config hash, input fingerprint, cache-hit state, allow/deny outcome, and timestamp.
+- Interactive AI explanations use action `interactive_ai_explanations`; report-triggered AI generation uses action `report_ai_generation`.
+- Uncached AI generation is rate-limited by workspace/user/action/provider/model/config window.
+- Cache entries are keyed by workspace, scan, action, provider, model, config hash, and deterministic input fingerprint.
+- Cache fingerprints include safe finding projections, lifecycle state, occurrence suppression state, suppression rules and expiration state, deterministic `risk-v1` score inputs, scan metadata, provider/model/config, and report context.
+- AI responses include executive summary, deterministic risk-score explanation, scoring model version, input fingerprint, and cache-hit metadata.
+- Report artifacts include executive and risk-score explanation text, but not volatile cache-hit state.
+- External AI provider payloads still receive only normalized/redacted finding fields; repo findings remain excluded from external AI.
+- Transient external-provider fallback results are not cached under the failed provider config.
+- The dashboard AI panel displays provider, fallback, cache, groups, and risk-model metadata.
+- `.env.example`, `README.md`, and `SECURITY.md` document the new AI cache/rate-limit settings and safety boundaries.
+
+Phase 17 commits:
+
+- `2d7972c feat: add AI explanation caching and rate limits`
+- `c9cf3ab docs: document AI cache rate limits`
+- `8d030e6 fix: return 429 for report AI rate limits`
+- `43c4ee3 fix: reuse stable AI cache entries`
+
+Verification:
+
+- `docker compose run --rm migrate`
+  - Result: passed after applying Phase 17 migration.
+- `docker compose run --rm backend python -m unittest tests.test_ai_explanations tests.test_reports`
+  - Result: 42 tests OK after accepted review fixes.
+- Clean temporary database migrations from zero through head:
+  - `docker compose run --rm -e DATABASE_URL=postgresql+psycopg://security_audit:security_audit@postgres:5432/phase17_test migrate`
+  - Result: passed.
+- Clean temporary database full backend suite:
+  - `docker compose run --rm -e DATABASE_URL=postgresql+psycopg://security_audit:security_audit@postgres:5432/phase17_test backend python -m unittest discover tests`
+  - Result: 201 tests OK.
+- `docker compose run --rm frontend npm run build`
+  - Result: passed before the backend-only accepted review fixes.
+  - Final rerun was blocked by the app approval/usage limit, not by a code failure.
+
+Review decision:
+- Finding: Report-triggered AI caching initially used a fresh `uuid4()` cache context on every report generation, making unchanged report requests miss the cache and consume uncached rate-limit budget.
+- Decision: Accepted.
+- Rationale: Report-triggered AI generation must be cacheable for unchanged normalized inputs.
+- Follow-up: Replaced the random report cache context with stable `report-v1`, removed report artifacts from AI fingerprints, and added repeated report-generation cache reuse coverage.
+
+Review decision:
+- Finding: Transient external-provider failures were cached as template fallback results under the failed provider/config key.
+- Decision: Accepted.
+- Rationale: Temporary provider failures should not create a persistent downgrade that prevents retrying the configured provider.
+- Follow-up: Skipped cache writes for fallback results and added regression coverage proving repeated provider failures retry instead of hitting cache.
+
+Review decision:
+- Finding: Report AI rate-limit errors initially bubbled out through report generation as uncaught AI errors.
+- Decision: Accepted from local self-review.
+- Rationale: Report-triggered AI rate limits should return a clear `429` instead of an internal error.
+- Follow-up: Added `ReportGenerationRateLimitError`, API `429` mapping, and report API regression coverage.
+
+Residual risk:
+
+- Frontend behavior is verified by production build, not end-to-end browser interaction tests.
+- Phase 17 rate limits are simple rolling-window database checks and are suitable for local/V1 scale, but high-concurrency production use may need atomic counters or advisory locking.
+- Tag changes are not included in the Phase 17 AI cache fingerprint because AI provider inputs and AI output do not currently include tag labels. If tags become part of AI prompts or report AI context later, add tag assignments to the fingerprint.
 
 ## Current API Surface
 
@@ -757,18 +823,11 @@ Phase 15, `phase-15-dashboards-risk`:
 
 Phase 16, `phase-16-finding-management`:
 
-- Complete.
+- Complete and merged.
 
 Phase 17, `phase-17-ai-rate-limits`:
 
-- Add DB-backed AI request accounting by workspace, user, action, provider/model/config, and time window.
-- Rate-limit interactive AI explanation requests and report-triggered AI generation; keep the deterministic template provider as the default path.
-- Persist/cache scan-level summaries and finding-level explanations using only normalized/redacted fields.
-- Define explicit cache invalidation/regeneration triggers for finding lifecycle changes, suppression changes or expiration, risk score/model changes, report input changes, report regeneration, and AI provider/model/config changes.
-- Add executive summary and risk-score-change explanation using deterministic Phase 15 score inputs.
-- AI must explain but never compute risk scores, and external AI providers must not receive raw artifacts, raw scanner output, secrets, unredacted evidence, or repo findings.
-- Keep repo findings excluded from external AI unless a later explicitly approved phase adds repo-specific redaction and approval.
-- Test rate limit enforcement, cache reuse, invalidation triggers, safe provider payloads, and absence of raw artifacts/secrets/evidence.
+- Complete.
 
 Phase 18, `phase-18-platform-ops`:
 
