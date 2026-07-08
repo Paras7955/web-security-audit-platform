@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_principal, get_db
@@ -23,10 +23,11 @@ from app.finding_management import (
     normalize_suppression_source_tool,
     normalize_status,
     occurrence_state_for_read,
+    suppression_rule_is_active,
     sync_occurrence_state,
     tags_for_resource,
 )
-from app.models import Finding, FindingState, ReportArtifact, RiskScore, Scan, SuppressionRule, Tag, TagAssignment, Target
+from app.models import Finding, FindingOccurrenceState, FindingState, ReportArtifact, RiskScore, Scan, SuppressionRule, Tag, TagAssignment, Target
 from app.security.auth import AuthenticatedPrincipal
 
 router = APIRouter(tags=["findings"])
@@ -371,14 +372,15 @@ def query_findings(
     if confidence is not None:
         statement = statement.where(Finding.confidence == confidence)
     if scanner is not None:
-        statement = statement.where(Finding.source_tool == scanner)
+        statement = statement.where(func.lower(Finding.source_tool) == scanner.strip().lower())
     if owasp is not None:
-        statement = statement.where(Finding.owasp_category == owasp)
+        statement = statement.where(func.lower(Finding.owasp_category) == owasp.strip().lower())
     if cwe is not None:
-        statement = statement.where(Finding.cwe == cwe)
+        statement = statement.where(func.lower(Finding.cwe) == cwe.strip().lower())
 
     findings = list(db.scalars(statement.order_by(Finding.severity.asc(), Finding.created_at.asc())).all())
     scan_ids = {finding.scan_id for finding in findings}
+    finding_ids = {finding.id for finding in findings}
     scans_by_id = {
         scan.id: scan
         for scan in db.scalars(
@@ -392,13 +394,20 @@ def query_findings(
     tag_labels = tag_labels_by_resource(db, principal.workspace_id, target_ids, scan_ids)
     tagged_resource_ids = tagged_resources_for_filter(db, principal.workspace_id, tag_id) if tag_id is not None else set()
     risk_scores = latest_risk_scores_by_scan(db, principal.workspace_id, scan_ids) if risk_min is not None or risk_max is not None else {}
+    occurrence_lookup = occurrence_display_lookup(db, principal.workspace_id, findings, scans_by_id, finding_ids)
 
     rows: list[FindingRead] = []
     for finding in findings:
         scan = scans_by_id.get(finding.scan_id)
         if scan is None:
             continue
-        row = serialize_finding(db, finding, scan, tags=sorted(tag_labels[("target", scan.target_id)] | tag_labels[("scan", scan.id)]))
+        row = serialize_finding(
+            db,
+            finding,
+            scan,
+            tags=sorted(tag_labels[("target", scan.target_id)] | tag_labels[("scan", scan.id)]),
+            occurrence=occurrence_lookup.get(finding.id),
+        )
         if lifecycle_status is not None and row.lifecycle_status != lifecycle_status:
             continue
         if suppressed is not None and row.suppressed is not suppressed:
@@ -411,8 +420,15 @@ def query_findings(
     return rows
 
 
-def serialize_finding(db: Session, finding: Finding, scan: Scan, tags: list[str] | None = None) -> FindingRead:
-    occurrence = occurrence_state_for_read(db, finding, scan)
+def serialize_finding(
+    db: Session,
+    finding: Finding,
+    scan: Scan,
+    tags: list[str] | None = None,
+    occurrence: FindingOccurrenceState | None = None,
+) -> FindingRead:
+    if occurrence is None:
+        occurrence = occurrence_state_for_read(db, finding, scan)
     labels = tags
     if labels is None:
         labels = sorted(
@@ -522,3 +538,77 @@ def latest_risk_scores_by_scan(db: Session, workspace_id: str, scan_ids: set[str
         if score.scan_id is not None and score.scan_id not in scores:
             scores[score.scan_id] = score.score
     return scores
+
+
+def occurrence_display_lookup(
+    db: Session,
+    workspace_id: str,
+    findings: list[Finding],
+    scans_by_id: dict[str, Scan],
+    finding_ids: set[str],
+) -> dict[str, FindingOccurrenceState]:
+    if not finding_ids:
+        return {}
+    persisted = {
+        occurrence.finding_id: occurrence
+        for occurrence in db.scalars(
+            select(FindingOccurrenceState).where(
+                FindingOccurrenceState.workspace_id == workspace_id,
+                FindingOccurrenceState.finding_id.in_(finding_ids),
+            )
+        ).all()
+    }
+    suppression_ids = {item.suppression_rule_id for item in persisted.values() if item.suppression_rule_id is not None}
+    suppression_rules = {
+        rule.id: rule
+        for rule in db.scalars(select(SuppressionRule).where(SuppressionRule.id.in_(suppression_ids))).all()
+    } if suppression_ids else {}
+    state_keys = {
+        (workspace_id, scans_by_id[finding.scan_id].target_id, finding.dedupe_key)
+        for finding in findings
+        if finding.scan_id in scans_by_id
+    }
+    states = {
+        (state.workspace_id, state.target_id, state.dedupe_key): state
+        for state in db.scalars(
+            select(FindingState).where(
+                FindingState.workspace_id == workspace_id,
+                FindingState.target_id.in_({key[1] for key in state_keys}),
+                FindingState.dedupe_key.in_({key[2] for key in state_keys}),
+            )
+        ).all()
+    } if state_keys else {}
+
+    display: dict[str, FindingOccurrenceState] = {}
+    for finding in findings:
+        scan = scans_by_id.get(finding.scan_id)
+        if scan is None:
+            continue
+        occurrence = persisted.get(finding.id)
+        state = states.get((workspace_id, scan.target_id, finding.dedupe_key))
+        if occurrence is None:
+            if state is None:
+                continue
+            display[finding.id] = FindingOccurrenceState(
+                id="",
+                workspace_id=workspace_id,
+                finding_id=finding.id,
+                lifecycle_status=state.lifecycle_status,
+                suppressed=False,
+                suppression_rule_id=None,
+            )
+            continue
+        if occurrence.suppressed and occurrence.suppression_rule_id is not None:
+            rule = suppression_rules.get(occurrence.suppression_rule_id)
+            if rule is not None and not suppression_rule_is_active(rule):
+                display[finding.id] = FindingOccurrenceState(
+                    id=occurrence.id,
+                    workspace_id=occurrence.workspace_id,
+                    finding_id=occurrence.finding_id,
+                    lifecycle_status=state.lifecycle_status if state is not None else "open",
+                    suppressed=False,
+                    suppression_rule_id=None,
+                )
+                continue
+        display[finding.id] = occurrence
+    return display

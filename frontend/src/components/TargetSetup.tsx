@@ -648,7 +648,7 @@ export function TargetSetup() {
   }
 
   async function assignTag() {
-    const resourceId = tagResourceType === "scan" ? selectedScanId : selectedTargetId;
+    const resourceId = tagResourceType === "scan" ? selectedFinding?.scan_id : selectedFinding?.target_id;
     if (!tagFilter || !resourceId) {
       return;
     }

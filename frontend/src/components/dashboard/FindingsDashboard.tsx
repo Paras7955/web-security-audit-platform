@@ -222,7 +222,7 @@ export function FindingsDashboard({
             <option value="target">target</option>
             <option value="scan">scan</option>
           </select>
-          <button type="button" onClick={onAssignTag} disabled={!tagFilter}>
+          <button type="button" onClick={onAssignTag} disabled={!tagFilter || !selectedFinding}>
             Assign Tag
           </button>
         </div>

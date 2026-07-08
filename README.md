@@ -333,6 +333,24 @@ Implemented Phase 15 capabilities:
 
 Risk scoring uses normalized/redacted persisted finding fields only. AI may explain deterministic score inputs in a later phase, but AI must not compute risk scores.
 
+## Phase 16 Status
+
+Phase 16 adds finding lifecycle management, suppression rules, tags, and expanded finding filters while preserving immutable normalized scan history.
+
+Implemented Phase 16 capabilities:
+
+- Persists workspace-owned lifecycle state keyed by target plus finding `dedupe_key`.
+- Tracks occurrence-level lifecycle and suppression state for each persisted finding occurrence.
+- Supports lifecycle statuses: Open, Confirmed, In Progress, Resolved, Suppressed, and False Positive.
+- Adds suppression rules with creator, reason, timestamp, optional expiration, and normalized match fields.
+- Applies suppression only after normalized findings are persisted; scanners continue detecting and storing matching findings.
+- Re-evaluates suppression expiration when findings are read so expired suppressions stop applying without rewriting scanner evidence.
+- Adds workspace-owned tags and tag assignments for targets, scans, and reports.
+- Adds finding filters for current scan or workspace scope, target, scan profile, date, tags, lifecycle, suppression, risk score, severity, confidence, scanner, OWASP, and CWE.
+- Adds dense finding-management UI controls for lifecycle updates, suppression, tag creation/assignment, and expanded filters.
+
+Finding management state uses normalized persisted finding fields only. It must not use raw scanner output, raw artifacts, auth profile secrets, or unredacted evidence.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.

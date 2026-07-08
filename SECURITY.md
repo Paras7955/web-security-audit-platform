@@ -62,6 +62,16 @@ Do not use this platform for:
 - Stable comparison identity must come from normalized target plus finding `dedupe_key`, not raw scanner output.
 - AI providers may explain deterministic score inputs in later phases, but must not compute risk scores.
 
+## Finding Management
+
+- Finding lifecycle state must be workspace-owned and keyed by normalized target plus finding `dedupe_key`.
+- Lifecycle and suppression state must not rewrite immutable scan finding occurrences or scanner evidence.
+- Suppression rules must use normalized persisted finding fields only, never raw scanner output or raw artifacts.
+- Suppression must not prevent scanners from detecting or storing future matching findings.
+- Suppression expiration must be reflected when findings are read.
+- Tags and tag assignments must be scoped to the authenticated workspace.
+- Finding filters and direct finding lookups must enforce authenticated workspace scope.
+
 ## AI Provider Safety
 
 - Use `AI_PROVIDER=template` by default for local deterministic explanations.
