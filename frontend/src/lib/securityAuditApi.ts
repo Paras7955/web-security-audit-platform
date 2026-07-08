@@ -39,6 +39,8 @@ export type Scan = {
   progress_percent: number;
   started_at: string | null;
   completed_at: string | null;
+  cancellation_requested_at: string | null;
+  cancellation_requested_by_user_id: string | null;
   error_code: string | null;
   error_detail: string | null;
   created_at: string;
@@ -115,6 +117,20 @@ export type AiExplanation = {
   cache_hit: boolean;
   groups: AiExplanationGroup[];
   explanations: FindingExplanation[];
+};
+
+export type HealthComponent = {
+  status: string;
+  detail: string | null;
+};
+
+export type PlatformHealth = {
+  status: string;
+  database: HealthComponent;
+  worker: HealthComponent;
+  queue_depth: number;
+  zap: HealthComponent;
+  artifact_root: HealthComponent;
 };
 
 export type RiskScore = {

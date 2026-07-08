@@ -233,8 +233,9 @@ export function ScanHistory({
   );
 }
 
-export function ScanProgress({ scan }: { scan: Scan }) {
+export function ScanProgress({ scan, isCancelling, onCancel }: { scan: Scan; isCancelling: boolean; onCancel: () => void }) {
   const displayedProgress = useSmoothedProgress(scan);
+  const canCancel = !terminalStatuses.has(scan.status) && !scan.cancellation_requested_at;
 
   return (
     <div className="scanPanel">
@@ -244,6 +245,11 @@ export function ScanProgress({ scan }: { scan: Scan }) {
           <small>{scan.id}</small>
         </div>
         <span className={`statusPill status-${scan.status}`}>{scan.status}</span>
+      </div>
+      <div className="scanActions">
+        <button type="button" className="secondaryButton" onClick={onCancel} disabled={!canCancel || isCancelling}>
+          {scan.cancellation_requested_at ? "Cancellation Requested" : "Cancel Scan"}
+        </button>
       </div>
       <div className="progressTrack" aria-label="Scan progress">
         <span style={{ width: `${displayedProgress}%` }} />
@@ -271,6 +277,7 @@ export function ScanProgress({ scan }: { scan: Scan }) {
         </div>
       </dl>
       <p>{scan.status_message}</p>
+      {scan.cancellation_requested_at ? <p className="formMessage">Cancellation requested. Worker will stop at a safe checkpoint.</p> : null}
       {scan.error_detail ? <p className="errorText">{scan.error_detail}</p> : null}
     </div>
   );
