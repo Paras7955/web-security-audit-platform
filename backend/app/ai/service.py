@@ -1,14 +1,20 @@
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from typing import Protocol
 from urllib.parse import urlsplit, urlunsplit
+from uuid import uuid4
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.contracts import ScanStatus, scan_profile_for_values
-from app.models import Finding, Scan
+from app.models import AiExplanationCache, AiRequestLog, Finding, FindingOccurrenceState, FindingState, ReportArtifact, Scan, SuppressionRule
+from app.risk import SCORING_MODEL_VERSION, calculate_scan_risk_score
 
 
 SEVERITY_PRIORITY = {
@@ -32,6 +38,10 @@ ELIGIBLE_SCAN_STATUSES = {
 
 
 class AiExplanationError(ValueError):
+    pass
+
+
+class AiRateLimitExceeded(AiExplanationError):
     pass
 
 
@@ -98,6 +108,11 @@ class AiExplanationResult:
     fallback_used: bool
     provider_error: str | None
     summary: str
+    executive_summary: str
+    risk_score_explanation: str
+    scoring_model_version: str
+    input_fingerprint: str | None
+    cache_hit: bool
     groups: tuple[ExplanationGroup, ...]
     explanations: tuple[FindingExplanation, ...]
 
@@ -121,6 +136,11 @@ class TemplateAiProvider:
             fallback_used=False,
             provider_error=None,
             summary=build_summary(findings),
+            executive_summary="",
+            risk_score_explanation="",
+            scoring_model_version=SCORING_MODEL_VERSION,
+            input_fingerprint=None,
+            cache_hit=False,
             groups=groups,
             explanations=explanations,
         )
@@ -195,9 +215,15 @@ def generate_ai_explanations(
     *,
     scan_id: str,
     workspace_id: str | None = None,
+    user_id: str | None = None,
+    action: str = "interactive_ai_explanations",
     provider_name: str,
     openai_api_key: str | None,
     openai_model: str | None,
+    cache_enabled: bool | None = None,
+    cache_context_version: str | None = None,
+    rate_limit_window_seconds: int | None = None,
+    rate_limit_max_requests: int | None = None,
 ) -> AiExplanationResult:
     scan = db.get(Scan, scan_id)
     if scan is None:
@@ -210,22 +236,117 @@ def generate_ai_explanations(
     if scan.status not in ELIGIBLE_SCAN_STATUSES:
         raise AiExplanationError("AI explanations can only be generated for completed scans.")
 
-    safe_findings = load_safe_findings(db, scan_id=scan_id, workspace_id=scan.workspace_id)
     template_provider = TemplateAiProvider()
     provider = build_provider(provider_name=provider_name, openai_api_key=openai_api_key, openai_model=openai_model)
+    normalized_action = normalize_action(action)
+    model_label = openai_model or ""
+    config_hash = ai_config_hash(provider_name=provider.provider_name, model=model_label)
+    raw_findings = load_findings(db, scan_id=scan_id, workspace_id=scan.workspace_id)
+    safe_findings = tuple(safe_finding_input(finding) for finding in raw_findings)
+    fingerprint = build_ai_input_fingerprint(
+        db,
+        scan=scan,
+        findings=raw_findings,
+        safe_findings=safe_findings,
+        cache_context_version=cache_context_version,
+    )
+    use_cache = settings.ai_cache_enabled if cache_enabled is None else cache_enabled
+    if use_cache:
+        cached = load_cached_explanation(
+            db,
+            scan=scan,
+            action=normalized_action,
+            provider=provider.provider_name,
+            model=model_label,
+            config_hash=config_hash,
+            input_fingerprint=fingerprint,
+        )
+        if cached is not None:
+            log_ai_request(
+                db,
+                workspace_id=scan.workspace_id,
+                user_id=user_id,
+                action=normalized_action,
+                provider=provider.provider_name,
+                model=model_label,
+                config_hash=config_hash,
+                input_fingerprint=fingerprint,
+                cache_hit=True,
+                allowed=True,
+            )
+            return replace_result_metadata(result_from_cache(cached.payload), input_fingerprint=fingerprint, cache_hit=True)
+
+    max_requests = settings.ai_rate_limit_max_requests if rate_limit_max_requests is None else rate_limit_max_requests
+    window_seconds = settings.ai_rate_limit_window_seconds if rate_limit_window_seconds is None else rate_limit_window_seconds
+    if is_rate_limited(
+        db,
+        workspace_id=scan.workspace_id,
+        user_id=user_id,
+        action=normalized_action,
+        provider=provider.provider_name,
+        model=model_label,
+        config_hash=config_hash,
+        window_seconds=window_seconds,
+        max_requests=max_requests,
+    ):
+        log_ai_request(
+            db,
+            workspace_id=scan.workspace_id,
+            user_id=user_id,
+            action=normalized_action,
+            provider=provider.provider_name,
+            model=model_label,
+            config_hash=config_hash,
+            input_fingerprint=fingerprint,
+            cache_hit=False,
+            allowed=False,
+        )
+        raise AiRateLimitExceeded("AI rate limit exceeded for this workspace and action.")
+
     try:
-        return provider.explain(scan_id=scan_id, findings=safe_findings)
+        result = provider.explain(scan_id=scan_id, findings=safe_findings)
     except Exception as exc:
         fallback = template_provider.explain(scan_id=scan_id, findings=safe_findings)
-        return AiExplanationResult(
+        result = AiExplanationResult(
             scan_id=fallback.scan_id,
             provider=fallback.provider,
             fallback_used=provider.provider_name != template_provider.provider_name,
             provider_error=str(exc),
             summary=fallback.summary,
+            executive_summary=fallback.executive_summary,
+            risk_score_explanation=fallback.risk_score_explanation,
+            scoring_model_version=fallback.scoring_model_version,
+            input_fingerprint=fallback.input_fingerprint,
+            cache_hit=fallback.cache_hit,
             groups=fallback.groups,
             explanations=fallback.explanations,
         )
+    result = enrich_result(result, scan=scan, findings=raw_findings, input_fingerprint=fingerprint, cache_hit=False)
+    if use_cache:
+        store_cached_explanation(
+            db,
+            scan=scan,
+            user_id=user_id,
+            action=normalized_action,
+            provider=provider.provider_name,
+            model=model_label,
+            config_hash=config_hash,
+            input_fingerprint=fingerprint,
+            result=result,
+        )
+    log_ai_request(
+        db,
+        workspace_id=scan.workspace_id,
+        user_id=user_id,
+        action=normalized_action,
+        provider=provider.provider_name,
+        model=model_label,
+        config_hash=config_hash,
+        input_fingerprint=fingerprint,
+        cache_hit=False,
+        allowed=True,
+    )
+    return result
 
 
 def build_provider(*, provider_name: str, openai_api_key: str | None, openai_model: str | None) -> AiProvider:
@@ -238,12 +359,16 @@ def build_provider(*, provider_name: str, openai_api_key: str | None, openai_mod
 
 
 def load_safe_findings(db: Session, *, scan_id: str, workspace_id: str) -> tuple[SafeFindingInput, ...]:
+    return tuple(safe_finding_input(finding) for finding in load_findings(db, scan_id=scan_id, workspace_id=workspace_id))
+
+
+def load_findings(db: Session, *, scan_id: str, workspace_id: str) -> list[Finding]:
     findings = db.scalars(
         select(Finding)
         .where(Finding.scan_id == scan_id, Finding.workspace_id == workspace_id)
         .order_by(Finding.created_at.asc())
     ).all()
-    return tuple(safe_finding_input(finding) for finding in findings)
+    return list(findings)
 
 
 def safe_finding_input(finding: Finding) -> SafeFindingInput:
@@ -378,9 +503,392 @@ def parse_openai_response(
         fallback_used=False,
         provider_error=None,
         summary=str(summary) if summary else build_summary(findings),
+        executive_summary="",
+        risk_score_explanation="",
+        scoring_model_version=SCORING_MODEL_VERSION,
+        input_fingerprint=None,
+        cache_hit=False,
         groups=build_groups(findings),
         explanations=tuple(sorted(explanations, key=lambda explanation: explanation.priority, reverse=True)),
     )
+
+
+def enrich_result(
+    result: AiExplanationResult,
+    *,
+    scan: Scan,
+    findings: list[Finding],
+    input_fingerprint: str,
+    cache_hit: bool,
+) -> AiExplanationResult:
+    calculated = calculate_scan_risk_score(scan, findings)
+    return AiExplanationResult(
+        scan_id=result.scan_id,
+        provider=result.provider,
+        fallback_used=result.fallback_used,
+        provider_error=result.provider_error,
+        summary=result.summary,
+        executive_summary=build_executive_summary(findings, calculated.score, calculated.label),
+        risk_score_explanation=build_risk_score_explanation(calculated.input_summary, calculated.score, calculated.label),
+        scoring_model_version=calculated.scoring_model_version,
+        input_fingerprint=input_fingerprint,
+        cache_hit=cache_hit,
+        groups=result.groups,
+        explanations=result.explanations,
+    )
+
+
+def replace_result_metadata(result: AiExplanationResult, *, input_fingerprint: str, cache_hit: bool) -> AiExplanationResult:
+    return AiExplanationResult(
+        scan_id=result.scan_id,
+        provider=result.provider,
+        fallback_used=result.fallback_used,
+        provider_error=result.provider_error,
+        summary=result.summary,
+        executive_summary=result.executive_summary,
+        risk_score_explanation=result.risk_score_explanation,
+        scoring_model_version=result.scoring_model_version,
+        input_fingerprint=input_fingerprint,
+        cache_hit=cache_hit,
+        groups=result.groups,
+        explanations=result.explanations,
+    )
+
+
+def build_executive_summary(findings: list[Finding], score: int, label: str) -> str:
+    if not findings:
+        return f"Risk is {score}/100 ({label}) with no normalized findings recorded for this scan."
+    critical_high = sum(1 for finding in findings if finding.severity in {"critical", "high"})
+    return f"Risk is {score}/100 ({label}) across {len(findings)} normalized finding(s), including {critical_high} critical/high item(s)."
+
+
+def build_risk_score_explanation(input_summary: dict[str, object], score: int, label: str) -> str:
+    severity_counts = input_summary.get("severity_counts")
+    if not isinstance(severity_counts, dict):
+        return f"The deterministic {SCORING_MODEL_VERSION} model produced {score}/100 ({label}) from normalized finding inputs."
+    critical = int(severity_counts.get("critical", 0) or 0)
+    high = int(severity_counts.get("high", 0) or 0)
+    medium = int(severity_counts.get("medium", 0) or 0)
+    return (
+        f"The deterministic {SCORING_MODEL_VERSION} model produced {score}/100 ({label}) "
+        f"from severity and confidence weights: {critical} critical, {high} high, and {medium} medium finding(s)."
+    )
+
+
+def build_ai_input_fingerprint(
+    db: Session,
+    *,
+    scan: Scan,
+    findings: list[Finding],
+    safe_findings: tuple[SafeFindingInput, ...],
+    cache_context_version: str | None,
+) -> str:
+    finding_ids = [finding.id for finding in findings]
+    states = load_state_inputs(db, scan=scan, findings=findings, finding_ids=finding_ids)
+    report_artifacts = db.scalars(
+        select(ReportArtifact)
+        .where(ReportArtifact.workspace_id == scan.workspace_id, ReportArtifact.scan_id == scan.id)
+        .order_by(ReportArtifact.report_type.asc(), ReportArtifact.created_at.asc())
+    ).all()
+    risk = calculate_scan_risk_score(scan, findings)
+    payload = {
+        "version": "ai-input-v1",
+        "scan": {
+            "id": scan.id,
+            "target_id": scan.target_id,
+            "mode": scan.mode,
+            "scan_profile_id": scan.scan_profile_id,
+            "status": scan.status,
+            "completed_at": iso_or_none(scan.completed_at),
+        },
+        "findings": [finding.to_provider_dict() for finding in safe_findings],
+        "management_state": states,
+        "risk": {
+            "scoring_model_version": risk.scoring_model_version,
+            "score": risk.score,
+            "label": risk.label,
+            "input_summary": risk.input_summary,
+        },
+        "reports": [
+            {
+                "id": artifact.id,
+                "report_type": artifact.report_type,
+                "path": artifact.path,
+                "created_at": iso_or_none(artifact.created_at),
+            }
+            for artifact in report_artifacts
+        ],
+        "cache_context_version": cache_context_version,
+    }
+    return stable_hash(payload)
+
+
+def load_state_inputs(db: Session, *, scan: Scan, findings: list[Finding], finding_ids: list[str]) -> dict[str, object]:
+    dedupe_keys = sorted({finding.dedupe_key for finding in findings if finding.dedupe_key})
+    finding_states = db.scalars(
+        select(FindingState)
+        .where(
+            FindingState.workspace_id == scan.workspace_id,
+            FindingState.target_id == scan.target_id,
+            FindingState.dedupe_key.in_(dedupe_keys),
+        )
+        .order_by(FindingState.dedupe_key.asc())
+    ).all() if dedupe_keys else []
+    occurrence_states = db.scalars(
+        select(FindingOccurrenceState)
+        .where(FindingOccurrenceState.workspace_id == scan.workspace_id, FindingOccurrenceState.finding_id.in_(finding_ids))
+        .order_by(FindingOccurrenceState.finding_id.asc())
+    ).all() if finding_ids else []
+    suppression_rules = db.scalars(
+        select(SuppressionRule)
+        .where(SuppressionRule.workspace_id == scan.workspace_id, SuppressionRule.target_id == scan.target_id)
+        .order_by(SuppressionRule.created_at.asc(), SuppressionRule.id.asc())
+    ).all()
+    now = datetime.now(UTC)
+    return {
+        "finding_states": [
+            {
+                "dedupe_key": state.dedupe_key,
+                "lifecycle_status": state.lifecycle_status,
+                "updated_at": iso_or_none(state.updated_at),
+            }
+            for state in finding_states
+        ],
+        "occurrence_states": [
+            {
+                "finding_id": state.finding_id,
+                "lifecycle_status": state.lifecycle_status,
+                "suppressed": state.suppressed,
+                "suppression_rule_id": state.suppression_rule_id,
+                "updated_at": iso_or_none(state.updated_at),
+            }
+            for state in occurrence_states
+        ],
+        "suppression_rules": [
+            {
+                "id": rule.id,
+                "dedupe_key": rule.dedupe_key,
+                "severity": rule.severity,
+                "source_tool": rule.source_tool,
+                "expires_at": iso_or_none(rule.expires_at),
+                "expired": is_expired(rule.expires_at, now),
+                "created_at": iso_or_none(rule.created_at),
+            }
+            for rule in suppression_rules
+        ],
+    }
+
+
+def load_cached_explanation(
+    db: Session,
+    *,
+    scan: Scan,
+    action: str,
+    provider: str,
+    model: str,
+    config_hash: str,
+    input_fingerprint: str,
+) -> AiExplanationCache | None:
+    return db.scalar(
+        select(AiExplanationCache).where(
+            AiExplanationCache.workspace_id == scan.workspace_id,
+            AiExplanationCache.scan_id == scan.id,
+            AiExplanationCache.action == action,
+            AiExplanationCache.provider == provider,
+            AiExplanationCache.model == model,
+            AiExplanationCache.config_hash == config_hash,
+            AiExplanationCache.input_fingerprint == input_fingerprint,
+        )
+    )
+
+
+def store_cached_explanation(
+    db: Session,
+    *,
+    scan: Scan,
+    user_id: str | None,
+    action: str,
+    provider: str,
+    model: str,
+    config_hash: str,
+    input_fingerprint: str,
+    result: AiExplanationResult,
+) -> None:
+    cache = AiExplanationCache(
+        id=str(uuid4()),
+        workspace_id=scan.workspace_id,
+        scan_id=scan.id,
+        action=action,
+        provider=provider,
+        model=model,
+        config_hash=config_hash,
+        input_fingerprint=input_fingerprint,
+        payload=result_to_payload(result),
+        created_by_user_id=user_id,
+    )
+    db.add(cache)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+
+
+def is_rate_limited(
+    db: Session,
+    *,
+    workspace_id: str,
+    user_id: str | None,
+    action: str,
+    provider: str,
+    model: str,
+    config_hash: str,
+    window_seconds: int,
+    max_requests: int,
+) -> bool:
+    if max_requests <= 0:
+        return True
+    if window_seconds <= 0:
+        return False
+    cutoff = datetime.now(UTC) - timedelta(seconds=window_seconds)
+    query = select(AiRequestLog).where(
+        AiRequestLog.workspace_id == workspace_id,
+        AiRequestLog.action == action,
+        AiRequestLog.provider == provider,
+        AiRequestLog.model == model,
+        AiRequestLog.config_hash == config_hash,
+        AiRequestLog.cache_hit.is_(False),
+        AiRequestLog.allowed.is_(True),
+        AiRequestLog.created_at >= cutoff,
+    )
+    if user_id is not None:
+        query = query.where(AiRequestLog.user_id == user_id)
+    return len(db.scalars(query).all()) >= max_requests
+
+
+def log_ai_request(
+    db: Session,
+    *,
+    workspace_id: str,
+    user_id: str | None,
+    action: str,
+    provider: str,
+    model: str,
+    config_hash: str,
+    input_fingerprint: str | None,
+    cache_hit: bool,
+    allowed: bool,
+) -> None:
+    db.add(
+        AiRequestLog(
+            id=str(uuid4()),
+            workspace_id=workspace_id,
+            user_id=user_id,
+            action=action,
+            provider=provider,
+            model=model,
+            config_hash=config_hash,
+            input_fingerprint=input_fingerprint,
+            cache_hit=cache_hit,
+            allowed=allowed,
+        )
+    )
+    db.commit()
+
+
+def result_to_payload(result: AiExplanationResult) -> dict[str, object]:
+    return {
+        "scan_id": result.scan_id,
+        "provider": result.provider,
+        "fallback_used": result.fallback_used,
+        "provider_error": result.provider_error,
+        "summary": result.summary,
+        "executive_summary": result.executive_summary,
+        "risk_score_explanation": result.risk_score_explanation,
+        "scoring_model_version": result.scoring_model_version,
+        "input_fingerprint": result.input_fingerprint,
+        "cache_hit": result.cache_hit,
+        "groups": [
+            {"label": group.label, "count": group.count, "finding_ids": list(group.finding_ids)}
+            for group in result.groups
+        ],
+        "explanations": [
+            {
+                "finding_id": explanation.finding_id,
+                "priority": explanation.priority,
+                "summary": explanation.summary,
+                "why_it_matters": explanation.why_it_matters,
+                "recommended_action": explanation.recommended_action,
+                "owasp_mapping": explanation.owasp_mapping,
+                "limitations": explanation.limitations,
+            }
+            for explanation in result.explanations
+        ],
+    }
+
+
+def result_from_cache(payload: dict[str, object]) -> AiExplanationResult:
+    return AiExplanationResult(
+        scan_id=str(payload["scan_id"]),
+        provider=str(payload["provider"]),
+        fallback_used=bool(payload["fallback_used"]),
+        provider_error=payload.get("provider_error") if isinstance(payload.get("provider_error"), str) else None,
+        summary=str(payload["summary"]),
+        executive_summary=str(payload.get("executive_summary") or ""),
+        risk_score_explanation=str(payload.get("risk_score_explanation") or ""),
+        scoring_model_version=str(payload.get("scoring_model_version") or SCORING_MODEL_VERSION),
+        input_fingerprint=payload.get("input_fingerprint") if isinstance(payload.get("input_fingerprint"), str) else None,
+        cache_hit=bool(payload.get("cache_hit")),
+        groups=tuple(
+            ExplanationGroup(
+                label=str(group.get("label")),
+                count=int(group.get("count") or 0),
+                finding_ids=tuple(str(finding_id) for finding_id in group.get("finding_ids", [])),
+            )
+            for group in payload.get("groups", [])
+            if isinstance(group, dict)
+        ),
+        explanations=tuple(
+            FindingExplanation(
+                finding_id=str(explanation.get("finding_id")),
+                priority=int(explanation.get("priority") or 0),
+                summary=str(explanation.get("summary") or ""),
+                why_it_matters=str(explanation.get("why_it_matters") or ""),
+                recommended_action=str(explanation.get("recommended_action") or ""),
+                owasp_mapping=str(explanation.get("owasp_mapping") or ""),
+                limitations=str(explanation.get("limitations") or ""),
+            )
+            for explanation in payload.get("explanations", [])
+            if isinstance(explanation, dict)
+        ),
+    )
+
+
+def ai_config_hash(*, provider_name: str, model: str) -> str:
+    return stable_hash({"provider": provider_name, "model": model})
+
+
+def normalize_action(value: str) -> str:
+    return value.strip().lower().replace(" ", "_")[:80] or "interactive_ai_explanations"
+
+
+def stable_hash(value: object) -> str:
+    return sha256(json.dumps(value, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def iso_or_none(value: object | None) -> str | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def is_expired(value: object | None, now: datetime) -> bool:
+    if not isinstance(value, datetime):
+        return False
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value <= now
 
 
 def extract_response_text(body: dict[str, object]) -> str:

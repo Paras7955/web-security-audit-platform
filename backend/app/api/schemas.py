@@ -146,6 +146,11 @@ class AiExplanationRead(BaseModel):
     fallback_used: bool
     provider_error: str | None
     summary: str
+    executive_summary: str
+    risk_score_explanation: str
+    scoring_model_version: str
+    input_fingerprint: str | None
+    cache_hit: bool
     groups: list[AiExplanationGroupRead]
     explanations: list[FindingExplanationRead]
 

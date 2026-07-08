@@ -26,6 +26,8 @@ def check_database_ready() -> bool:
             "tag_assignments",
             "evidence_artifacts",
             "report_artifacts",
+            "ai_request_logs",
+            "ai_explanation_cache",
         }
         existing_tables = set(inspect(connection).get_table_names())
         missing_tables = required_tables - existing_tables

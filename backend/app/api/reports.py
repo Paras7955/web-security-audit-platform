@@ -30,6 +30,7 @@ def generate_reports(
             db,
             scan_id=scan_id,
             workspace_id=principal.workspace_id,
+            user_id=principal.user_id,
             artifact_root=settings.artifact_root,
             ai_provider=settings.ai_provider,
             openai_api_key=settings.openai_api_key,

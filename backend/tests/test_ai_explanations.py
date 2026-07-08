@@ -1,14 +1,15 @@
 import unittest
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
-from app.ai.service import AiExplanationResult, TemplateAiProvider, generate_ai_explanations
+from app.ai.service import AiExplanationResult, AiRateLimitExceeded, TemplateAiProvider, generate_ai_explanations
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import EvidenceArtifact, Finding, Scan, Target
+from app.models import AiExplanationCache, AiRequestLog, EvidenceArtifact, Finding, FindingState, Scan, SuppressionRule, Target
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
@@ -80,6 +81,10 @@ class AiExplanationTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         with SessionLocal() as db:
+            db.execute(delete(AiRequestLog).where(AiRequestLog.workspace_id == DEV_WORKSPACE_ID))
+            db.execute(delete(AiExplanationCache).where(AiExplanationCache.workspace_id == DEV_WORKSPACE_ID))
+            db.execute(delete(FindingState).where(FindingState.target_id == self.target_id))
+            db.execute(delete(SuppressionRule).where(SuppressionRule.target_id == self.target_id))
             db.execute(delete(Finding).where(Finding.scan_id == self.scan_id))
             db.execute(delete(EvidenceArtifact).where(EvidenceArtifact.scan_id == self.scan_id))
             db.execute(delete(Scan).where(Scan.id == self.scan_id))
@@ -94,6 +99,7 @@ class AiExplanationTests(unittest.TestCase):
                 provider_name="template",
                 openai_api_key=None,
                 openai_model=None,
+                cache_enabled=False,
             )
             second = generate_ai_explanations(
                 db,
@@ -101,6 +107,7 @@ class AiExplanationTests(unittest.TestCase):
                 provider_name="template",
                 openai_api_key=None,
                 openai_model=None,
+                cache_enabled=False,
             )
 
         self.assertEqual(first, second)
@@ -117,6 +124,155 @@ class AiExplanationTests(unittest.TestCase):
         self.assertEqual(body["provider"], "template")
         self.assertEqual(body["scan_id"], self.scan_id)
         self.assertEqual(body["explanations"][0]["finding_id"], self.finding_id)
+        self.assertFalse(body["cache_hit"])
+        self.assertEqual(body["scoring_model_version"], "risk-v1")
+        self.assertIn("Risk is", body["executive_summary"])
+
+    def test_ai_api_reuses_cached_explanation_and_logs_requests(self) -> None:
+        first = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        second = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertFalse(first.json()["cache_hit"])
+        self.assertTrue(second.json()["cache_hit"])
+        self.assertEqual(first.json()["input_fingerprint"], second.json()["input_fingerprint"])
+        with SessionLocal() as db:
+            cache_rows = db.query(AiExplanationCache).filter(AiExplanationCache.scan_id == self.scan_id).all()
+            logs = (
+                db.query(AiRequestLog)
+                .filter(AiRequestLog.input_fingerprint == first.json()["input_fingerprint"])
+                .order_by(AiRequestLog.created_at.asc(), AiRequestLog.id.asc())
+                .all()
+            )
+        self.assertEqual(len(cache_rows), 1)
+        self.assertEqual(len(logs), 2)
+        self.assertEqual([log.cache_hit for log in logs], [False, True])
+
+    def test_lifecycle_change_invalidates_cached_explanation(self) -> None:
+        with SessionLocal() as db:
+            first = generate_ai_explanations(
+                db,
+                scan_id=self.scan_id,
+                workspace_id=DEV_WORKSPACE_ID,
+                user_id=DEV_USER_ID,
+                provider_name="template",
+                openai_api_key=None,
+                openai_model=None,
+            )
+            db.add(
+                FindingState(
+                    id=str(uuid4()),
+                    workspace_id=DEV_WORKSPACE_ID,
+                    target_id=self.target_id,
+                    dedupe_key="custom-passive|http://juice-shop:3000/|missing content security policy|cwe-693",
+                    lifecycle_status="accepted_risk",
+                    updated_by_user_id=DEV_USER_ID,
+                )
+            )
+            db.commit()
+            second = generate_ai_explanations(
+                db,
+                scan_id=self.scan_id,
+                workspace_id=DEV_WORKSPACE_ID,
+                user_id=DEV_USER_ID,
+                provider_name="template",
+                openai_api_key=None,
+                openai_model=None,
+            )
+
+        self.assertNotEqual(first.input_fingerprint, second.input_fingerprint)
+        self.assertFalse(second.cache_hit)
+
+    def test_suppression_expiration_invalidates_cached_explanation(self) -> None:
+        with SessionLocal() as db:
+            db.add(
+                SuppressionRule(
+                    id=str(uuid4()),
+                    workspace_id=DEV_WORKSPACE_ID,
+                    target_id=self.target_id,
+                    dedupe_key="custom-passive|http://juice-shop:3000/|missing content security policy|cwe-693",
+                    reason="Temporary demo suppression.",
+                    created_by_user_id=DEV_USER_ID,
+                    expires_at=datetime.now(UTC) + timedelta(days=1),
+                )
+            )
+            db.commit()
+            first = generate_ai_explanations(
+                db,
+                scan_id=self.scan_id,
+                workspace_id=DEV_WORKSPACE_ID,
+                user_id=DEV_USER_ID,
+                provider_name="template",
+                openai_api_key=None,
+                openai_model=None,
+            )
+            rule = db.query(SuppressionRule).filter(SuppressionRule.target_id == self.target_id).one()
+            rule.expires_at = datetime.now(UTC) - timedelta(days=1)
+            db.add(rule)
+            db.commit()
+            second = generate_ai_explanations(
+                db,
+                scan_id=self.scan_id,
+                workspace_id=DEV_WORKSPACE_ID,
+                user_id=DEV_USER_ID,
+                provider_name="template",
+                openai_api_key=None,
+                openai_model=None,
+            )
+
+        self.assertNotEqual(first.input_fingerprint, second.input_fingerprint)
+
+    def test_rate_limit_blocks_uncached_generation(self) -> None:
+        with SessionLocal() as db:
+            generate_ai_explanations(
+                db,
+                scan_id=self.scan_id,
+                workspace_id=DEV_WORKSPACE_ID,
+                user_id=DEV_USER_ID,
+                provider_name="template",
+                openai_api_key=None,
+                openai_model=None,
+                cache_enabled=False,
+                rate_limit_max_requests=1,
+                rate_limit_window_seconds=3600,
+            )
+            with self.assertRaises(AiRateLimitExceeded):
+                generate_ai_explanations(
+                    db,
+                    scan_id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    user_id=DEV_USER_ID,
+                    provider_name="template",
+                    openai_api_key=None,
+                    openai_model=None,
+                    cache_enabled=False,
+                    rate_limit_max_requests=1,
+                    rate_limit_window_seconds=3600,
+                )
+
+        with SessionLocal() as db:
+            blocked_log = db.query(AiRequestLog).filter(AiRequestLog.allowed.is_(False)).one()
+        self.assertFalse(blocked_log.cache_hit)
+
+    def test_ai_api_returns_429_when_rate_limited(self) -> None:
+        with patch("app.ai.service.settings.ai_rate_limit_max_requests", 0):
+            response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("rate limit", response.json()["detail"].lower())
+
+    def test_cache_payload_contains_only_safe_result_data(self) -> None:
+        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        self.assertEqual(response.status_code, 200)
+
+        with SessionLocal() as db:
+            cache = db.query(AiExplanationCache).filter(AiExplanationCache.scan_id == self.scan_id).one()
+
+        payload_text = str(cache.payload)
+        self.assertNotIn("raw-artifact-id", payload_text)
+        self.assertNotIn("raw_artifact_ref", payload_text)
+        self.assertNotIn("bearer raw-secret", payload_text)
 
     def test_missing_scan_returns_404(self) -> None:
         response = self.client.get(f"/scans/{uuid4()}/ai-explanations", headers=DEV_AUTH_HEADERS)

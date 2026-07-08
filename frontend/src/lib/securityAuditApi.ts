@@ -108,6 +108,11 @@ export type AiExplanation = {
   fallback_used: boolean;
   provider_error: string | null;
   summary: string;
+  executive_summary: string;
+  risk_score_explanation: string;
+  scoring_model_version: string;
+  input_fingerprint: string | null;
+  cache_hit: boolean;
   groups: AiExplanationGroup[];
   explanations: FindingExplanation[];
 };
