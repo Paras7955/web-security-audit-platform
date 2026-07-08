@@ -99,9 +99,12 @@ def cancel_scan(
     if scan.status in terminal_statuses:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Terminal scans cannot be cancelled.")
 
+    if scan.cancellation_requested_at is not None:
+        return scan
+
     previous_status = scan.status
     now = datetime.now(UTC)
-    scan.cancellation_requested_at = scan.cancellation_requested_at or now
+    scan.cancellation_requested_at = now
     scan.cancellation_requested_by_user_id = principal.user_id
     if scan.status == ScanStatus.QUEUED.value:
         scan.status = ScanStatus.CANCELLED.value

@@ -15,6 +15,7 @@ from app.ops.heartbeat import record_worker_heartbeat
 from app.ops.rate_limits import lock_rate_limit_scope
 from app.scans.lifecycle import check_scan_cancelled
 from app.security.auth import AuthenticatedPrincipal
+from app.security.auth import ensure_user_workspace_identity
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
@@ -122,6 +123,39 @@ class PlatformOpsTests(unittest.TestCase):
                 check_scan_cancelled(db, scan)
             db.refresh(scan)
             self.assertEqual(scan.status, "cancelled")
+
+    def test_cancel_running_scan_is_idempotent_after_request(self) -> None:
+        first_user_id = "first-cancel-user"
+        requested_at = datetime.now(UTC)
+        with SessionLocal() as db:
+            ensure_user_workspace_identity(
+                db,
+                user_id=first_user_id,
+                workspace_id=DEV_WORKSPACE_ID,
+                provider="dev",
+                provider_subject=first_user_id,
+                display_name="First Cancel User",
+                workspace_name="Dev Workspace",
+            )
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            scan.status = ScanStatus.RUNNING.value
+            scan.progress_percent = 40
+            scan.cancellation_requested_at = requested_at
+            scan.cancellation_requested_by_user_id = first_user_id
+            db.add(scan)
+            db.commit()
+
+        response = self.client.post(f"/scans/{self.scan_id}/cancel", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "running")
+        with SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            self.assertEqual(scan.cancellation_requested_by_user_id, first_user_id)
+            audit_count = db.query(AuditLog).filter(AuditLog.event_type == "scan.cancel_requested", AuditLog.resource_id == self.scan_id).count()
+        self.assertEqual(audit_count, 0)
 
     def test_audit_logs_are_workspace_scoped(self) -> None:
         self.client.post(f"/scans/{self.scan_id}/cancel", headers=DEV_AUTH_HEADERS)
