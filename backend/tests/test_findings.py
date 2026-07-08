@@ -11,7 +11,7 @@ from app.db.session import SessionLocal
 from app.findings.redaction import EVIDENCE_SNIPPET_CAP, prepare_evidence_snippet, redact_text
 from app.findings.schemas import EvidenceArtifactInput, NormalizedFindingInput
 from app.findings.service import FindingPersistenceError, build_dedupe_key, persist_normalized_findings
-from app.models import EvidenceArtifact, Finding, Scan, Target
+from app.models import EvidenceArtifact, Finding, FindingOccurrenceState, FindingState, Scan, Target
 from tests.fixtures.normalized_findings import GITLEAKS_FIXTURE, ZAP_FIXTURE
 
 
@@ -44,6 +44,10 @@ class FindingsTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         with SessionLocal() as db:
+            finding_ids = [row[0] for row in db.query(Finding.id).filter(Finding.scan_id == self.scan_id).all()]
+            if finding_ids:
+                db.execute(delete(FindingOccurrenceState).where(FindingOccurrenceState.finding_id.in_(finding_ids)))
+            db.execute(delete(FindingState).where(FindingState.target_id == self.target_id))
             db.execute(delete(Finding).where(Finding.scan_id == self.scan_id))
             db.execute(delete(EvidenceArtifact).where(EvidenceArtifact.scan_id == self.scan_id))
             db.execute(delete(Scan).where(Scan.id == self.scan_id))
@@ -144,6 +148,12 @@ class FindingsTests(unittest.TestCase):
             self.assertLessEqual(len((persisted[0].evidence or "").encode("utf-8")), EVIDENCE_SNIPPET_CAP)
             self.assertNotIn("super-secret-key", persisted[1].evidence or "")
             self.assertEqual(persisted[1].scanner_rule_id, "generic-api-key")
+
+            with SessionLocal() as db:
+                occurrence_count = db.query(FindingOccurrenceState).filter(FindingOccurrenceState.finding_id.in_([item.id for item in persisted])).count()
+                state_count = db.query(FindingState).filter(FindingState.target_id == self.target_id).count()
+                self.assertEqual(occurrence_count, 2)
+                self.assertEqual(state_count, 2)
 
     def test_artifact_path_must_stay_within_artifact_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:

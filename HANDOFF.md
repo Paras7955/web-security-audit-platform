@@ -14,17 +14,17 @@ For a new implementation session taking over from this point:
 - Read this `HANDOFF.md` next for the current architecture, phase history, verification state, known risks, and next planned phase.
 - Skim `README.md` and `SECURITY.md` before making changes, especially the auth, workspace, scan safety, repo-scan, AI, and auth-profile sections.
 - Confirm the active branch and clean worktree with `git status --short --branch`.
-- Current expected branch is `main`. Phase 15 has been merged.
-- Do not begin Phase 16 until the user explicitly approves starting it from clean `main`.
+- Current expected branch is `main`. Phase 16 is complete.
+- Do not begin Phase 17 until the user explicitly approves starting it from clean `main`.
 - If Docker Compose commands are needed, ensure a local `.env` or shell environment provides a real generated Fernet `AUTH_PROFILE_SECRET_KEY`. The placeholder in `.env.example` is intentionally unusable.
-- If starting Phase 16 after approval, verify the base branch is clean and includes the Phase 15 merge, then create/switch to `phase-16-finding-management`.
+- If starting Phase 17 after approval, verify the base branch is clean, then create/switch to `phase-17-ai-rate-limits`.
 
 ## Current Branch And Phase
 
 - Current branch: `main`
-- Current phase: Phase 15, Dashboards And Risk, complete and merged
+- Current phase: Phase 16, Finding Management, complete
 - Base branch at phase start: `main`
-- Phase gate: Phase 16 is next, but do not start it until the user explicitly approves beginning Phase 16 from clean `main`.
+- Phase gate: Phase 17 is next, but do not start it until the user explicitly approves beginning Phase 17 from clean `main`.
 
 ## Mission And Safety Model
 
@@ -91,6 +91,8 @@ Reports and AI eligibility are determined by scan profile metadata. In the curre
 
 Risk scoring is deterministic and versioned. Phase 15 uses `risk-v1`, persists generated scan scores in `risk_scores`, and displays scores as `0-100` plus Low/Moderate/High/Critical labels. Scores use normalized/redacted persisted finding fields only. AI may later explain score inputs, but must never compute risk scores.
 
+Finding management is workspace-scoped and layered on top of immutable normalized findings. Phase 16 persists lifecycle state by target plus `dedupe_key`, stores occurrence-level lifecycle/suppression state for each finding, and supports suppression rules and tags using normalized persisted fields only. Suppression does not stop scanners from detecting or storing matching findings, and expired suppressions stop applying when findings are read.
+
 `AUTH_PROFILE_SECRET_KEY` is required for backend and worker startup/readiness. It must be a valid Fernet key. Production-like environments must not use the local development example key. Docker Compose now expects this value from the caller environment or a local `.env`; `.env.example` intentionally contains a non-usable placeholder.
 
 Local setup note:
@@ -116,6 +118,7 @@ Local setup note:
 - Phase 13: code-defined scan profiles, `scan_profile_id` persistence, compatibility mode input, profile-driven eligibility, and frontend profile selection. Merged to `main`.
 - Phase 14: workspace-owned bearer/custom-header auth profiles, encrypted secret storage, target attachment, passive scan header injection, and frontend auth-profile controls.
 - Phase 15: deterministic versioned risk scoring, workspace/target dashboard APIs, same-target scan comparison, and dense operational dashboard UI.
+- Phase 16: finding lifecycle management, suppression rules with expiration, tags, expanded finding filters, and dense management UI.
 
 ## Phase 11 Design
 
@@ -605,6 +608,92 @@ Residual risk:
 - Frontend dashboard behavior remains covered by production build rather than dedicated UI interaction tests.
 - Frontend profile metadata is still mirrored in TypeScript while backend reads `shared/contracts.json`; this drift risk remains from Phase 13.
 
+## Phase 16 Implementation State
+
+Implemented:
+
+- Alembic revision `0006_finding_management` creates `finding_states`, `finding_occurrence_states`, `suppression_rules`, `tags`, and `tag_assignments`.
+- Finding lifecycle state is workspace-owned and keyed by `(workspace_id, target_id, dedupe_key)`.
+- Finding occurrence state is persisted at normalized finding write time, not lazily during GET requests.
+- Lifecycle statuses are `open`, `confirmed`, `in_progress`, `resolved`, `suppressed`, and `false_positive`.
+- Suppression rules store creator, reason, created timestamp, optional expiration, target, optional dedupe key, optional severity, and optional source tool.
+- Suppression matching uses normalized persisted fields and never raw scanner output.
+- Suppression applies only after findings are normalized and persisted; scanner detection and finding storage continue normally.
+- Suppression expiration is reflected when findings are read.
+- Workspace-owned tags can be created and assigned to target, scan, and report resources.
+- Finding APIs support current-scan and workspace finding queries with filters for target, scan profile, date, tag, lifecycle, suppression, risk score range, severity, confidence, scanner, OWASP, and CWE.
+- The frontend findings dashboard exposes dense management controls for lifecycle, suppression, tag creation/assignment, current-scan vs workspace scope, target/profile filtering, and advanced normalized finding filters.
+- The primary findings table preserves occurrence rows instead of collapsing by `dedupe_key`.
+
+Phase 16 commits:
+
+- `24aed83 feat: add finding management APIs`
+- `811e029 feat: add finding management UI`
+- `3444004 fix: address finding management review issues`
+- `a92aae2 fix: complete finding filter and suppression review fixes`
+
+Verification:
+
+- `python3 -m py_compile backend/app/api/findings.py backend/app/finding_management.py backend/tests/test_finding_management.py`
+  - Result: passed.
+- `docker compose build backend frontend`
+  - Result: passed.
+- `docker compose run --rm backend python -m unittest tests.test_findings tests.test_finding_management tests.test_findings_api`
+  - Result: 19 tests OK.
+- `docker compose run --rm frontend npm run build`
+  - Result: passed.
+- Clean temporary database full backend suite:
+  - `docker compose run --rm -e DATABASE_URL=postgresql+psycopg://security_audit:security_audit@postgres:5432/phase16_final_0708 backend python -m unittest discover -s tests`
+  - Result: 192 tests OK.
+
+Review decision:
+- Finding: Frontend initially omitted most intended Phase 16 filters and tag-management flow.
+- Decision: Accepted.
+- Rationale: Phase 16 should expose the management/filter capabilities in the shipped dashboard, not only backend APIs.
+- Follow-up: Added expanded filter controls, current-scan/workspace scope, target/profile filters, and tag create/assign UI.
+
+Review decision:
+- Finding: Occurrence state was initially created lazily during read paths.
+- Decision: Accepted.
+- Rationale: GET requests should not create management state, and occurrence state must exist when normalized findings are persisted.
+- Follow-up: Moved occurrence-state initialization into normalized finding persistence and removed read-side commits.
+
+Review decision:
+- Finding: Lazy state creation was race-prone.
+- Decision: Accepted.
+- Rationale: Moving state creation to the normalized persistence transaction removes the primary concurrent-read insertion path.
+- Follow-up: Added persistence-time occurrence-state coverage.
+
+Review decision:
+- Finding: Suppression reads omitted `created_by_user_id`, and suppression match fields were insufficiently normalized/validated.
+- Decision: Accepted.
+- Rationale: Suppression rules require creator metadata and normalized match behavior.
+- Follow-up: Added creator to API responses and validation/normalization for severity and source tool match fields.
+
+Review decision:
+- Finding: Frontend collapsed occurrence rows by `dedupe_key`.
+- Decision: Accepted.
+- Rationale: Phase 16 separates immutable occurrences from shared lifecycle state, so the primary table must preserve occurrence visibility.
+- Follow-up: Removed dedupe collapsing from the main findings table.
+
+Review decision:
+- Finding: Applied suppressions did not stop applying after expiration.
+- Decision: Accepted.
+- Rationale: Expiration is time-based and should be reflected without requiring another mutation.
+- Follow-up: Re-evaluated suppression expiration during read serialization and added regression coverage.
+
+Review decision:
+- Finding: Finding query serialization had a high N+1 query shape.
+- Decision: Accepted.
+- Rationale: The primary findings table should not issue repeated scan/tag/risk lookups for every row.
+- Follow-up: Preloaded scan records, tag labels, tag-filter resources, and latest risk scores by scan.
+
+Residual risk:
+
+- Frontend behavior is verified by production build, not end-to-end browser interaction tests.
+- Phase 16 records management state but does not yet add audit-log entries; audit logging is planned for Phase 18.
+- Phase 17 must treat lifecycle, suppression, tag, and risk-score changes as AI cache invalidation inputs.
+
 ## Current API Surface
 
 Protected by bearer auth:
@@ -622,7 +711,15 @@ Protected by bearer auth:
 - `GET /scans`
 - `GET /scans/{scan_id}`
 - `GET /scans/{scan_id}/findings`
+- `GET /findings`
 - `GET /findings/{finding_id}`
+- `PATCH /findings/{finding_id}/lifecycle`
+- `POST /suppressions`
+- `GET /suppressions`
+- `POST /tags`
+- `GET /tags`
+- `POST /tags/assignments`
+- `GET /tags/assignments`
 - `POST /scans/{scan_id}/reports`
 - `GET /scans/{scan_id}/reports`
 - `GET /reports/{report_id}`
@@ -660,16 +757,7 @@ Phase 15, `phase-15-dashboards-risk`:
 
 Phase 16, `phase-16-finding-management`:
 
-- Next planned phase after explicit user approval.
-- Add workspace-owned finding triage state keyed by target plus dedupe key, separate from immutable scan finding occurrences.
-- Add lifecycle statuses: `open`, `confirmed`, `in_progress`, `resolved`, `suppressed`, and `false_positive`.
-- Add suppression rules with required reason, user, timestamp, optional expiration, and match fields based on normalized target/finding identity.
-- Suppression must apply only after scanner output is normalized; scanners continue detecting normally, and raw scanner output must never be used as suppression input.
-- Persist occurrence-level suppression state/rule reference so reports, dashboards, and later AI invalidation can explain why a finding is hidden or reduced.
-- Add workspace-owned tags and tag assignments for targets, scans, and reports.
-- Expand scan/finding filters for target, profile, date, tags, status, risk score, severity, confidence, scanner, OWASP, CWE, lifecycle, and suppression state.
-- Preserve immutable occurrence history; lifecycle and suppression corrections should create/update management state, not rewrite scanner evidence.
-- Test suppression does not prevent detection, expired suppressions, lifecycle transitions, tag ownership, cross-workspace denial, and representative filter combinations.
+- Complete.
 
 Phase 17, `phase-17-ai-rate-limits`:
 

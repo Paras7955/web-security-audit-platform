@@ -10,7 +10,7 @@ from app.auth_profiles import AuthProfileError, encrypt_secret
 from app.core.contracts import Confidence, ScanStatus, ScanStep, Severity
 from app.db.session import SessionLocal
 from app.findings.schemas import NormalizedFindingInput
-from app.models import LEGACY_USER_ID, LEGACY_WORKSPACE_ID, AuthProfile, Finding, Scan, Target, Workspace
+from app.models import LEGACY_USER_ID, LEGACY_WORKSPACE_ID, AuthProfile, Finding, FindingOccurrenceState, FindingState, Scan, Target, Workspace
 from app.repo_scanner.stubs import RepoScanResult
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
 from app.scans.lifecycle import claim_next_queued_scan, run_internal_lifecycle_job, run_passive_scan_job, run_repo_scan_job
@@ -51,6 +51,10 @@ class ScanWorkerTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         with SessionLocal() as db:
+            finding_ids = [row[0] for row in db.query(Finding.id).filter(Finding.scan_id == self.scan_id).all()]
+            if finding_ids:
+                db.execute(delete(FindingOccurrenceState).where(FindingOccurrenceState.finding_id.in_(finding_ids)))
+            db.execute(delete(FindingState).where(FindingState.target_id == self.target_id))
             db.execute(delete(Finding).where(Finding.scan_id == self.scan_id))
             db.execute(delete(Scan).where(Scan.id == self.scan_id))
             db.execute(delete(Target).where(Target.id == self.target_id))

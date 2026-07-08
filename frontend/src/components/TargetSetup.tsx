@@ -26,6 +26,7 @@ import {
   ReportArtifact,
   ScanComparison,
   Scan,
+  Tag,
   Target,
   TargetDashboard,
   ValidationResult,
@@ -53,6 +54,7 @@ export function TargetSetup() {
   const [selectedScanId, setSelectedScanId] = useState("");
   const [scanHistory, setScanHistory] = useState<Scan[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
   const [reports, setReports] = useState<ReportArtifact[]>([]);
   const [aiExplanation, setAiExplanation] = useState<AiExplanation | null>(null);
   const [dashboardOverview, setDashboardOverview] = useState<DashboardOverview | null>(null);
@@ -62,6 +64,23 @@ export function TargetSetup() {
   const [comparisonScanId, setComparisonScanId] = useState("");
   const [selectedFindingId, setSelectedFindingId] = useState("");
   const [severityFilter, setSeverityFilter] = useState("all");
+  const [lifecycleFilter, setLifecycleFilter] = useState("all");
+  const [suppressionFilter, setSuppressionFilter] = useState("all");
+  const [confidenceFilter, setConfidenceFilter] = useState("all");
+  const [scannerFilter, setScannerFilter] = useState("");
+  const [owaspFilter, setOwaspFilter] = useState("");
+  const [cweFilter, setCweFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
+  const [dateAfterFilter, setDateAfterFilter] = useState("");
+  const [dateBeforeFilter, setDateBeforeFilter] = useState("");
+  const [riskMinFilter, setRiskMinFilter] = useState("");
+  const [riskMaxFilter, setRiskMaxFilter] = useState("");
+  const [findingScope, setFindingScope] = useState("scan");
+  const [targetFilter, setTargetFilter] = useState("");
+  const [profileFilter, setProfileFilter] = useState("");
+  const [tagLabel, setTagLabel] = useState("");
+  const [tagResourceType, setTagResourceType] = useState("target");
+  const [suppressionReason, setSuppressionReason] = useState("");
   const [message, setMessage] = useState("Enter an allowlisted local/demo target.");
   const [authProfileMessage, setAuthProfileMessage] = useState("Create an optional target-app auth profile for passive scans.");
   const [reportMessage, setReportMessage] = useState("Reports are available after a passive, Active Demo, or Repo scan completes.");
@@ -72,7 +91,6 @@ export function TargetSetup() {
   const [isGeneratingReports, setIsGeneratingReports] = useState(false);
   const selectedScanIdRef = useRef("");
   const selectedTargetIdRef = useRef("");
-  const severityFilterRef = useRef("all");
 
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
   const selectedScan = scanHistory.find((scan) => scan.id === selectedScanId) ?? null;
@@ -87,13 +105,11 @@ export function TargetSetup() {
       (!selectedProfile.requires_active_demo_acknowledgement || activeDemoAcknowledged) &&
       (!selectedProfile.requires_ajax_short_acknowledgement || ajaxShortAcknowledged)
   );
-  const displayFindings = useMemo(() => uniqueFindings(findings), [findings]);
+  const displayFindings = findings;
   const displayAiExplanation = useMemo(() => uniqueAiExplanation(aiExplanation, findings), [aiExplanation, findings]);
   const filteredFindings = useMemo(() => {
-    return displayFindings
-      .filter((finding) => severityFilter === "all" || finding.severity === severityFilter)
-      .sort((left, right) => (severityRank[right.severity] ?? 0) - (severityRank[left.severity] ?? 0));
-  }, [displayFindings, severityFilter]);
+    return [...displayFindings].sort((left, right) => (severityRank[right.severity] ?? 0) - (severityRank[left.severity] ?? 0));
+  }, [displayFindings]);
   const selectedFinding = filteredFindings.find((finding) => finding.id === selectedFindingId) ?? filteredFindings[0] ?? null;
 
   useEffect(() => {
@@ -109,8 +125,8 @@ export function TargetSetup() {
   }, [selectedTargetId]);
 
   useEffect(() => {
-    severityFilterRef.current = severityFilter;
-  }, [severityFilter]);
+    setSuppressionReason("");
+  }, [selectedFindingId]);
 
   useEffect(() => {
     if (!selectedScan || terminalStatuses.has(selectedScan.status)) {
@@ -144,7 +160,26 @@ export function TargetSetup() {
     }
     setAiExplanation(null);
     setAiMessage("AI explanations remain available for passive and Active Demo scans.");
-  }, [selectedScanId, selectedScan?.mode]);
+  }, [
+    selectedScanId,
+    selectedScan?.mode,
+    severityFilter,
+    lifecycleFilter,
+    suppressionFilter,
+    confidenceFilter,
+    scannerFilter,
+    owaspFilter,
+    cweFilter,
+    tagFilter,
+    dateAfterFilter,
+    dateBeforeFilter,
+    riskMinFilter,
+    riskMaxFilter,
+    findingScope,
+    targetFilter,
+    profileFilter,
+    selectedTargetId
+  ]);
 
   useEffect(() => {
     if (!selectedTargetId) {
@@ -160,7 +195,7 @@ export function TargetSetup() {
 
   async function loadInitialData() {
     setBootstrapError("");
-    const results = await Promise.allSettled([loadTargets(), loadAuthProfiles(), loadScanHistory(), loadDashboardOverview()]);
+    const results = await Promise.allSettled([loadTargets(), loadAuthProfiles(), loadScanHistory(), loadDashboardOverview(), loadTags()]);
     const failed = results.find((result) => result.status === "rejected");
     if (failed?.status === "rejected") {
       const error = failed.reason;
@@ -461,9 +496,20 @@ export function TargetSetup() {
     setBootstrapError("");
   }
 
+  async function loadTags(preferredTagId?: string) {
+    const response = await apiFetch(`${apiBaseUrl}/tags`);
+    const body = await readJson<Tag[]>(response, "Tag list load failed.");
+    setTags(body);
+    setTagFilter(preferredTagId ?? tagFilter);
+    setBootstrapError("");
+  }
+
   async function loadFindings(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
     try {
-      const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}/findings`);
+      const params = findingFilterParams();
+      const query = params.toString();
+      const endpoint = findingScope === "workspace" ? `${apiBaseUrl}/findings` : `${apiBaseUrl}/scans/${scanId}/findings`;
+      const response = await apiFetch(`${endpoint}${query ? `?${query}` : ""}`);
       if (!response.ok) {
         if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
           return;
@@ -477,15 +523,152 @@ export function TargetSetup() {
       }
       setFindings(body);
       setSelectedFindingId((current) => {
-        const currentSeverityFilter = severityFilterRef.current;
-        const nextFindings = body.filter((finding) => currentSeverityFilter === "all" || finding.severity === currentSeverityFilter);
-        return nextFindings.some((finding) => finding.id === current) ? current : nextFindings[0]?.id ?? "";
+        return body.some((finding) => finding.id === current) ? current : body[0]?.id ?? "";
       });
     } catch {
       if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
         return;
       }
       setFindings([]);
+    }
+  }
+
+  function findingFilterParams() {
+    const params = new URLSearchParams();
+    if (findingScope === "workspace") {
+      if (targetFilter) {
+        params.set("target_id", targetFilter);
+      }
+      if (profileFilter) {
+        params.set("scan_profile_id", profileFilter);
+      }
+    }
+    if (severityFilter !== "all") {
+      params.set("severity", severityFilter);
+    }
+    if (lifecycleFilter !== "all") {
+      params.set("lifecycle_status", lifecycleFilter);
+    }
+    if (suppressionFilter === "active") {
+      params.set("suppressed", "true");
+    } else if (suppressionFilter === "not_suppressed") {
+      params.set("suppressed", "false");
+    }
+    if (confidenceFilter !== "all") {
+      params.set("confidence", confidenceFilter);
+    }
+    if (scannerFilter.trim()) {
+      params.set("scanner", scannerFilter.trim());
+    }
+    if (owaspFilter.trim()) {
+      params.set("owasp", owaspFilter.trim());
+    }
+    if (cweFilter.trim()) {
+      params.set("cwe", cweFilter.trim());
+    }
+    if (tagFilter) {
+      params.set("tag_id", tagFilter);
+    }
+    if (dateAfterFilter) {
+      params.set("created_after", dateTimeLocalToIso(dateAfterFilter));
+    }
+    if (dateBeforeFilter) {
+      params.set("created_before", dateTimeLocalToIso(dateBeforeFilter));
+    }
+    if (riskMinFilter.trim()) {
+      params.set("risk_min", riskMinFilter.trim());
+    }
+    if (riskMaxFilter.trim()) {
+      params.set("risk_max", riskMaxFilter.trim());
+    }
+    return params;
+  }
+
+  async function updateFindingLifecycle(findingId: string, lifecycleStatus: string) {
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/findings/${findingId}/lifecycle`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lifecycle_status: lifecycleStatus })
+      });
+      await readJson<Finding>(response, "Finding lifecycle update failed.");
+      if (selectedScanIdRef.current) {
+        await loadFindings(selectedScanIdRef.current, { onlyIfSelected: true });
+      }
+      setMessage("Finding lifecycle updated.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Finding lifecycle update failed.");
+    }
+  }
+
+  async function suppressFinding(finding: Finding) {
+    if (!finding.target_id || !suppressionReason.trim()) {
+      return;
+    }
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/suppressions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_id: finding.target_id,
+          dedupe_key: finding.dedupe_key,
+          severity: finding.severity,
+          source_tool: finding.source_tool,
+          reason: suppressionReason.trim()
+        })
+      });
+      await readJson<unknown>(response, "Suppression rule creation failed.");
+      setSuppressionReason("");
+      if (selectedScanIdRef.current) {
+        await loadFindings(selectedScanIdRef.current, { onlyIfSelected: true });
+      }
+      setMessage("Finding suppression saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Suppression rule creation failed.");
+    }
+  }
+
+  async function createTag() {
+    if (!tagLabel.trim()) {
+      return;
+    }
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/tags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: tagLabel.trim() })
+      });
+      const tag = await readJson<Tag>(response, "Tag creation failed.");
+      setTagLabel("");
+      await loadTags(tag.id);
+      setMessage("Tag created.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Tag creation failed.");
+    }
+  }
+
+  async function assignTag() {
+    const resourceId = tagResourceType === "scan" ? selectedFinding?.scan_id : selectedFinding?.target_id;
+    if (!tagFilter || !resourceId) {
+      return;
+    }
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/tags/assignments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tag_id: tagFilter,
+          resource_type: tagResourceType,
+          resource_id: resourceId
+        })
+      });
+      await readJson<unknown>(response, "Tag assignment failed.");
+      if (selectedScanIdRef.current) {
+        await loadFindings(selectedScanIdRef.current, { onlyIfSelected: true });
+      }
+      setMessage("Tag assigned.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Tag assignment failed.");
     }
   }
 
@@ -700,26 +883,53 @@ export function TargetSetup() {
           findings={filteredFindings}
           selectedFinding={selectedFinding}
           severityFilter={severityFilter}
+          lifecycleFilter={lifecycleFilter}
+          suppressionFilter={suppressionFilter}
+          confidenceFilter={confidenceFilter}
+          scannerFilter={scannerFilter}
+          owaspFilter={owaspFilter}
+          cweFilter={cweFilter}
+          tagFilter={tagFilter}
+          dateAfterFilter={dateAfterFilter}
+          dateBeforeFilter={dateBeforeFilter}
+          riskMinFilter={riskMinFilter}
+          riskMaxFilter={riskMaxFilter}
+          findingScope={findingScope}
+          targetFilter={targetFilter}
+          profileFilter={profileFilter}
+          targets={targets}
+          scanProfiles={SCAN_PROFILES}
+          tags={tags}
+          tagLabel={tagLabel}
+          tagResourceType={tagResourceType}
+          suppressionReason={suppressionReason}
           onSeverityFilter={setSeverityFilter}
+          onLifecycleFilter={setLifecycleFilter}
+          onSuppressionFilter={setSuppressionFilter}
+          onConfidenceFilter={setConfidenceFilter}
+          onScannerFilter={setScannerFilter}
+          onOwaspFilter={setOwaspFilter}
+          onCweFilter={setCweFilter}
+          onTagFilter={setTagFilter}
+          onDateAfterFilter={setDateAfterFilter}
+          onDateBeforeFilter={setDateBeforeFilter}
+          onRiskMinFilter={setRiskMinFilter}
+          onRiskMaxFilter={setRiskMaxFilter}
+          onFindingScope={setFindingScope}
+          onTargetFilter={setTargetFilter}
+          onProfileFilter={setProfileFilter}
+          onTagLabelChange={setTagLabel}
+          onTagResourceTypeChange={setTagResourceType}
+          onCreateTag={createTag}
+          onAssignTag={assignTag}
           onSelectFinding={setSelectedFindingId}
+          onUpdateLifecycle={updateFindingLifecycle}
+          onSuppressionReasonChange={setSuppressionReason}
+          onSuppressFinding={suppressFinding}
         />
       </div>
     </section>
   );
-}
-
-function uniqueFindings(items: Finding[]): Finding[] {
-  const seen = new Set<string>();
-  const unique: Finding[] = [];
-  for (const finding of items) {
-    const key = finding.dedupe_key || finding.id;
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    unique.push(finding);
-  }
-  return unique;
 }
 
 function uniqueAiExplanation(explanation: AiExplanation | null, findings: Finding[]): AiExplanation | null {
@@ -767,6 +977,10 @@ function uniqueAiExplanation(explanation: AiExplanation | null, findings: Findin
   }).filter((group) => group.count > 0);
 
   return { ...explanation, groups, explanations };
+}
+
+function dateTimeLocalToIso(value: string) {
+  return new Date(value).toISOString();
 }
 
 function explanationSignature(item: AiExplanation["explanations"][number]): string {

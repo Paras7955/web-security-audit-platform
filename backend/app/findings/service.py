@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from app.finding_management import initialize_finding_management_state
 from app.findings.redaction import prepare_evidence_snippet, redact_text
 from app.findings.schemas import EvidenceArtifactInput, NormalizedFindingInput
 from app.models import EvidenceArtifact, Finding, Scan
@@ -71,6 +72,8 @@ def persist_normalized_findings(
                 raw_artifact_ref=raw_artifact.id if raw_artifact else None,
             )
             db.add(finding)
+            db.flush()
+            initialize_finding_management_state(db, finding, scan)
             persisted.append(finding)
 
         db.commit()
