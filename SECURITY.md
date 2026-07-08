@@ -78,9 +78,13 @@ Do not use this platform for:
 - Optional OpenAI explanations must receive only normalized finding fields and redacted evidence snippets.
 - Omit finding text fields from AI provider payloads when redaction has not been confirmed.
 - Strip query strings and fragments from URLs before including locations in AI provider payloads.
+- Cache AI explanations only from normalized/redacted inputs and safe generated output; never cache raw artifacts, raw scanner output, secrets, credentials, cookies, or unredacted evidence.
+- Treat lifecycle state, suppression state and expiration, report context, provider/model/config, and deterministic risk-score model inputs as cache invalidation inputs.
+- Rate-limit uncached interactive and report-triggered AI generation by workspace/user/action/provider/model/config window.
 - Do not send raw artifacts, raw HTTP bodies, raw ZAP output, secret scanner output, authorization material, cookies, or unredacted evidence to any AI provider.
 - Do not send repo-scan findings to AI providers in Phase 10.
 - AI explanations must describe only existing findings and must not invent vulnerabilities, affected assets, evidence, or scan coverage.
+- AI may explain deterministic risk score inputs, but must not compute or override risk scores.
 - If an optional provider fails or is misconfigured, fall back to template explanations and disclose the fallback.
 
 ## Vulnerability Reporting For This Project
