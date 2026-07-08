@@ -1,8 +1,9 @@
 from datetime import UTC, datetime, timedelta
+from hashlib import blake2b
 from uuid import uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.models import ApiRateLimitLog
@@ -17,6 +18,7 @@ def enforce_api_rate_limit(
     max_requests: int,
     window_seconds: int,
 ) -> None:
+    lock_rate_limit_scope(db, principal, action)
     allowed = not is_limited(
         db,
         principal,
@@ -37,6 +39,18 @@ def enforce_api_rate_limit(
         db.commit()
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Rate limit exceeded for this action.")
     db.flush()
+
+
+def lock_rate_limit_scope(db: Session, principal: AuthenticatedPrincipal, action: str) -> None:
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+    digest = blake2b(
+        f"{principal.workspace_id}:{principal.user_id}:{action}".encode("utf-8"),
+        digest_size=8,
+    ).digest()
+    lock_key = int.from_bytes(digest, byteorder="big", signed=True)
+    db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
 
 
 def is_limited(

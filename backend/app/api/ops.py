@@ -96,6 +96,6 @@ def artifact_root_status() -> HealthComponentRead:
         marker = path / ".healthcheck"
         marker.write_text("ok", encoding="utf-8")
         marker.unlink(missing_ok=True)
-        return HealthComponentRead(status="ok", detail=str(path))
-    except Exception as exc:
-        return HealthComponentRead(status="degraded", detail=str(exc))
+        return HealthComponentRead(status="ok", detail="artifact root writable")
+    except Exception:
+        return HealthComponentRead(status="degraded", detail="artifact root unavailable")

@@ -12,7 +12,9 @@ from app.db.session import SessionLocal
 from app.main import app
 from app.models import ApiRateLimitLog, AuditLog, Scan, Target, WorkerHeartbeat
 from app.ops.heartbeat import record_worker_heartbeat
+from app.ops.rate_limits import lock_rate_limit_scope
 from app.scans.lifecycle import check_scan_cancelled
+from app.security.auth import AuthenticatedPrincipal
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
@@ -144,7 +146,41 @@ class PlatformOpsTests(unittest.TestCase):
         self.assertEqual(body["worker"]["status"], "ok")
         self.assertEqual(body["zap"]["status"], "ok")
         self.assertEqual(body["artifact_root"]["status"], "ok")
+        self.assertEqual(body["artifact_root"]["detail"], "artifact root writable")
+        self.assertNotIn(temp_dir, body["artifact_root"]["detail"])
         self.assertGreaterEqual(body["queue_depth"], 0)
+
+    def test_rate_limit_scope_uses_transaction_advisory_lock_on_postgres(self) -> None:
+        class FakeDialect:
+            name = "postgresql"
+
+        class FakeBind:
+            dialect = FakeDialect()
+
+        class FakeSession:
+            def __init__(self) -> None:
+                self.statements: list[str] = []
+                self.params: list[dict[str, int]] = []
+
+            def get_bind(self) -> FakeBind:
+                return FakeBind()
+
+            def execute(self, statement, params):  # type: ignore[no-untyped-def]
+                self.statements.append(str(statement))
+                self.params.append(params)
+
+        fake_session = FakeSession()
+        principal = AuthenticatedPrincipal(
+            user_id=DEV_USER_ID,
+            workspace_id=DEV_WORKSPACE_ID,
+            provider="dev",
+            provider_subject="dev-user",
+        )
+
+        lock_rate_limit_scope(fake_session, principal, "scan_create")  # type: ignore[arg-type]
+
+        self.assertEqual(fake_session.statements, ["SELECT pg_advisory_xact_lock(:lock_key)"])
+        self.assertIsInstance(fake_session.params[0]["lock_key"], int)
 
 
 if __name__ == "__main__":

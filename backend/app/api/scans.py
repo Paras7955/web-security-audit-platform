@@ -82,7 +82,11 @@ def cancel_scan(
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> ScanRead:
-    scan = db.scalar(select(Scan).where(Scan.id == scan_id, Scan.workspace_id == principal.workspace_id))
+    scan = db.scalar(
+        select(Scan)
+        .where(Scan.id == scan_id, Scan.workspace_id == principal.workspace_id)
+        .with_for_update()
+    )
     if scan is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
 

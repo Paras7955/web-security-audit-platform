@@ -832,7 +832,7 @@ Phase 17, `phase-17-ai-rate-limits`:
 Phase 18, `phase-18-platform-ops`:
 
 - Add general DB-backed rate limits for scan creation and selected expensive endpoints.
-- Add append-only audit log records for login/session events, target changes, scan creation/cancellation, report generation, AI requests, finding lifecycle changes, suppression, and auth profile changes.
+- Add append-only audit log records for authenticated API actions that change durable platform state: target changes, scan creation/cancellation, report generation, AI requests, finding lifecycle changes, suppression, tags, and auth profile changes.
 - Audit records are immutable; corrections must create new audit events rather than modifying old records.
 - Add scan cancellation endpoint `POST /scans/{scan_id}/cancel`.
 - Queued scans should become `cancelled`; running scans should record a cancellation request and workers should stop at safe checkpoints.
