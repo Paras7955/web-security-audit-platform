@@ -8,6 +8,7 @@ from app.api.deps import get_current_principal, get_db
 from app.api.schemas import AuthProfileCreate, AuthProfileRead
 from app.auth_profiles import AuthProfileError, encrypt_secret, secret_hint, validate_profile_input
 from app.models import AuthProfile
+from app.ops.audit import record_audit_event
 from app.security.auth import AuthenticatedPrincipal
 
 
@@ -44,6 +45,14 @@ def create_auth_profile(
         secret_hint=secret_hint(secret),
     )
     db.add(profile)
+    record_audit_event(
+        db,
+        principal,
+        event_type="auth_profile.created",
+        resource_type="auth_profile",
+        resource_id=profile.id,
+        metadata={"profile_type": profile_type, "header_name": header_name},
+    )
     db.commit()
     db.refresh(profile)
     return profile

@@ -5,6 +5,7 @@ from app.api.ai import router as ai_router
 from app.api.auth_profiles import router as auth_profiles_router
 from app.api.dashboard import router as dashboard_router
 from app.api.findings import router as findings_router
+from app.api.ops import router as ops_router
 from app.api.reports import router as reports_router
 from app.api.scans import router as scans_router
 from app.api.targets import router as targets_router
@@ -35,6 +36,7 @@ app.include_router(dashboard_router)
 app.include_router(findings_router)
 app.include_router(reports_router)
 app.include_router(ai_router)
+app.include_router(ops_router)
 
 
 @app.on_event("startup")

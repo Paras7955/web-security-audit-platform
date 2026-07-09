@@ -72,6 +72,15 @@ Do not use this platform for:
 - Tags and tag assignments must be scoped to the authenticated workspace.
 - Finding filters and direct finding lookups must enforce authenticated workspace scope.
 
+## Platform Operations Safety
+
+- API rate limits must be enforced server-side and scoped by authenticated workspace/user/action.
+- Audit records are append-only operational records; corrections must create new events rather than rewriting old ones.
+- Audit metadata must not include secrets, auth profile material, raw artifacts, raw HTTP bodies, cookies, credentials, or unredacted evidence.
+- Scan cancellation is cooperative. Queued scans may become `cancelled` immediately; running scans must stop only at safe worker checkpoints.
+- Cancellation must not broaden scanner scope, skip SSRF checks, or leave ZAP contexts outside the existing target scope.
+- Health endpoints may report operational status but must not expose secrets or sensitive local filesystem contents.
+
 ## AI Provider Safety
 
 - Use `AI_PROVIDER=template` by default for local deterministic explanations.

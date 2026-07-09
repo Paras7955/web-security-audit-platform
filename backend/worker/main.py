@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.db.session import engine
 from app.db.session import SessionLocal
 from app.core.contracts import ScanMode
+from app.ops.heartbeat import record_worker_heartbeat
 from app.scans.lifecycle import claim_next_queued_scan, run_passive_scan_job, run_repo_scan_job
 from app.security.allowlist import load_allowlist
 
@@ -29,14 +30,17 @@ def main() -> None:
     print("Worker ready. Polling database-backed scan jobs.", flush=True)
     while True:
         with SessionLocal() as db:
+            record_worker_heartbeat(db, worker_id=settings.worker_id, status="polling")
             scan = claim_next_queued_scan(db)
             if scan is not None:
                 print(f"Processing scan {scan.id}", flush=True)
+                record_worker_heartbeat(db, worker_id=settings.worker_id, status="processing", current_scan_id=scan.id)
                 allowlist = load_allowlist(settings.allowlist_path)
                 if scan.mode == ScanMode.REPO.value:
                     run_repo_scan_job(db, scan, settings.artifact_root, settings.repo_scan_root, allowlist)
                 else:
                     run_passive_scan_job(db, scan, settings.artifact_root, allowlist, zap_base_url=settings.zap_base_url)
+                record_worker_heartbeat(db, worker_id=settings.worker_id, status="polling")
                 continue
         time.sleep(5)
 

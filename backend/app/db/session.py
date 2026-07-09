@@ -28,6 +28,9 @@ def check_database_ready() -> bool:
             "report_artifacts",
             "ai_request_logs",
             "ai_explanation_cache",
+            "api_rate_limit_logs",
+            "audit_logs",
+            "worker_heartbeats",
         }
         existing_tables = set(inspect(connection).get_table_names())
         missing_tables = required_tables - existing_tables

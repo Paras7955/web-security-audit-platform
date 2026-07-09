@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AiExplanationsPanel } from "@/components/dashboard/AiExplanationsPanel";
 import { AuthProfilesPanel } from "@/components/dashboard/AuthProfilesPanel";
 import { FindingsDashboard, severityRank } from "@/components/dashboard/FindingsDashboard";
+import { OpsHealthPanel } from "@/components/dashboard/OpsHealthPanel";
 import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
 import { RiskDashboardPanel } from "@/components/dashboard/RiskDashboardPanel";
 import {
@@ -23,6 +24,7 @@ import {
   AuthProfile,
   DashboardOverview,
   Finding,
+  PlatformHealth,
   ReportArtifact,
   ScanComparison,
   Scan,
@@ -60,6 +62,7 @@ export function TargetSetup() {
   const [dashboardOverview, setDashboardOverview] = useState<DashboardOverview | null>(null);
   const [targetDashboard, setTargetDashboard] = useState<TargetDashboard | null>(null);
   const [scanComparison, setScanComparison] = useState<ScanComparison | null>(null);
+  const [platformHealth, setPlatformHealth] = useState<PlatformHealth | null>(null);
   const [baselineScanId, setBaselineScanId] = useState("");
   const [comparisonScanId, setComparisonScanId] = useState("");
   const [selectedFindingId, setSelectedFindingId] = useState("");
@@ -86,9 +89,11 @@ export function TargetSetup() {
   const [reportMessage, setReportMessage] = useState("Reports are available after a passive, Active Demo, or Repo scan completes.");
   const [aiMessage, setAiMessage] = useState("AI explanations are available after a passive or Active Demo scan completes.");
   const [riskMessage, setRiskMessage] = useState("Risk scores are generated for completed scans using risk-v1.");
+  const [opsMessage, setOpsMessage] = useState("Platform health has not been loaded.");
   const [bootstrapError, setBootstrapError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [isGeneratingReports, setIsGeneratingReports] = useState(false);
+  const [isCancellingScan, setIsCancellingScan] = useState(false);
   const selectedScanIdRef = useRef("");
   const selectedTargetIdRef = useRef("");
 
@@ -195,7 +200,7 @@ export function TargetSetup() {
 
   async function loadInitialData() {
     setBootstrapError("");
-    const results = await Promise.allSettled([loadTargets(), loadAuthProfiles(), loadScanHistory(), loadDashboardOverview(), loadTags()]);
+    const results = await Promise.allSettled([loadTargets(), loadAuthProfiles(), loadScanHistory(), loadDashboardOverview(), loadTags(), loadPlatformHealth()]);
     const failed = results.find((result) => result.status === "rejected");
     if (failed?.status === "rejected") {
       const error = failed.reason;
@@ -396,6 +401,26 @@ export function TargetSetup() {
     }
   }
 
+  async function cancelSelectedScan() {
+    if (!selectedScan) {
+      return;
+    }
+    setIsCancellingScan(true);
+    setMessage("Requesting scan cancellation...");
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/scans/${selectedScan.id}/cancel`, { method: "POST" });
+      const scan = await readJson<Scan>(response, "Scan cancellation failed.");
+      setScanHistory((current) => mergeScan(current, scan));
+      setMessage(scan.status === "cancelled" ? "Scan cancelled." : "Cancellation requested. Worker will stop at a safe checkpoint.");
+      await loadDashboardOverview();
+      await loadPlatformHealth();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Scan cancellation failed.");
+    } finally {
+      setIsCancellingScan(false);
+    }
+  }
+
   async function loadTargets(preferredTargetId?: string) {
     const response = await apiFetch(`${apiBaseUrl}/targets`);
     const body = await readJson<Target[]>(response, "Target list load failed.");
@@ -409,6 +434,19 @@ export function TargetSetup() {
     const body = await readJson<DashboardOverview>(response, "Dashboard overview load failed.");
     setDashboardOverview(body);
     setBootstrapError("");
+  }
+
+  async function loadPlatformHealth() {
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/ops/health`);
+      const body = await readJson<PlatformHealth>(response, "Platform health load failed.");
+      setPlatformHealth(body);
+      setOpsMessage(body.status === "ok" ? "Platform components are healthy." : "One or more platform components are degraded.");
+      setBootstrapError("");
+    } catch (error) {
+      setPlatformHealth(null);
+      setOpsMessage(error instanceof Error ? error.message : "Platform health load failed.");
+    }
   }
 
   async function loadTargetDashboard(targetId: string) {
@@ -847,7 +885,9 @@ export function TargetSetup() {
         </div>
       </div>
 
-      {selectedScan ? <ScanProgress scan={selectedScan} /> : null}
+      <OpsHealthPanel health={platformHealth} message={opsMessage} onRefresh={loadPlatformHealth} />
+
+      {selectedScan ? <ScanProgress scan={selectedScan} isCancelling={isCancellingScan} onCancel={cancelSelectedScan} /> : null}
 
       <RiskDashboardPanel
         overview={dashboardOverview}

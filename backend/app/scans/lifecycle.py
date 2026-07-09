@@ -22,6 +22,10 @@ class ScanLifecycleError(ValueError):
     pass
 
 
+class ScanCancelledError(ScanLifecycleError):
+    pass
+
+
 ZAP_DAEMON_LOCK_KEY = 9001
 
 
@@ -35,6 +39,9 @@ def claim_next_queued_scan(db: Session) -> Scan | None:
     )
     scan = db.scalars(statement).first()
     if scan is None:
+        return None
+    if scan.status == ScanStatus.QUEUED.value and scan.cancellation_requested_at is not None:
+        mark_scan_cancelled(db, scan, "Queued scan was cancelled before worker start.")
         return None
 
     update_scan_progress(
@@ -113,6 +120,7 @@ def run_passive_scan_job(
 ) -> None:
     try:
         validate_scan_job(scan)
+        check_scan_cancelled(db, scan)
         if scan.target is None:
             raise ScanLifecycleError("Scan target no longer exists.")
         allowlist_target = allowlist.get_target(scan.target.allowlist_id)
@@ -142,6 +150,7 @@ def run_passive_scan_job(
             status_message=f"Validated target and allowlist entry for {format_scan_mode(scan.mode)} scan.",
             progress_percent=10,
         )
+        check_scan_cancelled(db, scan)
         update_scan_progress(
             db,
             scan,
@@ -158,6 +167,7 @@ def run_passive_scan_job(
             artifact_root=artifact_root,
             auth_headers=auth_headers,
         )
+        check_scan_cancelled(db, scan)
 
         update_scan_progress(
             db,
@@ -184,6 +194,7 @@ def run_passive_scan_job(
                 progress_percent=76,
             )
             with zap_daemon_lock(db):
+                check_scan_cancelled(db, scan)
                 zap_result = run_zap_passive_scan(
                     scan_id=scan.id,
                     target_url=scan.target.base_url,
@@ -195,6 +206,7 @@ def run_passive_scan_job(
             zap_errors = zap_result.errors
 
             if active_demo:
+                check_scan_cancelled(db, scan)
                 update_scan_progress(
                     db,
                     scan,
@@ -204,6 +216,7 @@ def run_passive_scan_job(
                     progress_percent=82,
                 )
                 with zap_daemon_lock(db):
+                    check_scan_cancelled(db, scan)
                     active_result = run_zap_active_demo_scan(
                         scan_id=scan.id,
                         target_url=scan.target.base_url,
@@ -214,6 +227,7 @@ def run_passive_scan_job(
                 active_errors = active_result.errors
 
             if ajax_short:
+                check_scan_cancelled(db, scan)
                 update_scan_progress(
                     db,
                     scan,
@@ -223,6 +237,7 @@ def run_passive_scan_job(
                     progress_percent=82,
                 )
                 with zap_daemon_lock(db):
+                    check_scan_cancelled(db, scan)
                     ajax_result = run_zap_ajax_short_scan(
                         scan_id=scan.id,
                         target_url=scan.target.base_url,
@@ -234,6 +249,7 @@ def run_passive_scan_job(
 
         all_findings = tuple(result.findings) + tuple(zap_findings) + tuple(active_findings) + tuple(ajax_findings)
         all_errors = tuple(result.errors) + tuple(zap_errors) + tuple(active_errors) + tuple(ajax_errors)
+        check_scan_cancelled(db, scan)
         update_scan_progress(
             db,
             scan,
@@ -249,6 +265,7 @@ def run_passive_scan_job(
             findings=list(all_findings),
             artifact_root=artifact_root,
         )
+        check_scan_cancelled(db, scan)
 
         terminal_status = ScanStatus.COMPLETED_WITH_WARNINGS if all_errors else ScanStatus.COMPLETED
         status_message = (
@@ -265,6 +282,8 @@ def run_passive_scan_job(
             progress_percent=100,
             completed_at=datetime.now(UTC),
         )
+    except ScanCancelledError:
+        return
     except Exception as exc:
         mark_scan_failed(db, scan, exc)
 
@@ -278,6 +297,7 @@ def run_repo_scan_job(
 ) -> None:
     try:
         validate_scan_job(scan)
+        check_scan_cancelled(db, scan)
         if scan.mode != ScanMode.REPO.value:
             raise ScanLifecycleError("Repo scan worker only supports repo scan jobs.")
         if scan.target is None:
@@ -296,6 +316,7 @@ def run_repo_scan_job(
             status_message="Validating configured local repo path for repo scan.",
             progress_percent=10,
         )
+        check_scan_cancelled(db, scan)
         repo_path = validate_repo_path(scan.target.repo_path, repo_scan_root=repo_scan_root)
         ensure_scan_artifact_dir(artifact_root, scan.id)
 
@@ -308,6 +329,7 @@ def run_repo_scan_job(
             progress_percent=35,
         )
         result = run_repo_stub_scan(repo_path=repo_path)
+        check_scan_cancelled(db, scan)
 
         update_scan_progress(
             db,
@@ -331,6 +353,7 @@ def run_repo_scan_job(
             findings=list(result.findings),
             artifact_root=artifact_root,
         )
+        check_scan_cancelled(db, scan)
 
         terminal_status = ScanStatus.COMPLETED_WITH_WARNINGS if result.errors else ScanStatus.COMPLETED
         status_message = (
@@ -347,6 +370,8 @@ def run_repo_scan_job(
             progress_percent=100,
             completed_at=datetime.now(UTC),
         )
+    except ScanCancelledError:
+        return
     except Exception as exc:
         mark_scan_failed(db, scan, exc)
 
@@ -425,6 +450,26 @@ def update_scan_progress(
         scan.started_at = started_at
     if completed_at is not None:
         scan.completed_at = completed_at
+    db.add(scan)
+    db.commit()
+    db.refresh(scan)
+
+
+def check_scan_cancelled(db: Session, scan: Scan) -> None:
+    db.refresh(scan)
+    if scan.cancellation_requested_at is None:
+        return
+    mark_scan_cancelled(db, scan, "Scan cancellation request was honored at a worker checkpoint.")
+    raise ScanCancelledError("Scan cancellation request was honored.")
+
+
+def mark_scan_cancelled(db: Session, scan: Scan, message: str) -> None:
+    scan.status = ScanStatus.CANCELLED.value
+    scan.status_message = message
+    scan.progress_percent = min(scan.progress_percent or 0, 99)
+    scan.completed_at = datetime.now(UTC)
+    scan.error_code = None
+    scan.error_detail = None
     db.add(scan)
     db.commit()
     db.refresh(scan)

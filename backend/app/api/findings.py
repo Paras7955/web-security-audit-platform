@@ -28,6 +28,7 @@ from app.finding_management import (
     tags_for_resource,
 )
 from app.models import Finding, FindingOccurrenceState, FindingState, ReportArtifact, RiskScore, Scan, SuppressionRule, Tag, TagAssignment, Target
+from app.ops.audit import record_audit_event
 from app.security.auth import AuthenticatedPrincipal
 
 router = APIRouter(tags=["findings"])
@@ -188,6 +189,14 @@ def update_finding_lifecycle(
         if matching_scan is not None:
             sync_occurrence_state(db, matching, matching_scan, principal.user_id)
 
+    record_audit_event(
+        db,
+        principal,
+        event_type="finding.lifecycle_updated",
+        resource_type="finding",
+        resource_id=finding.id,
+        metadata={"target_id": scan.target_id, "dedupe_key": finding.dedupe_key, "lifecycle_status": lifecycle_status},
+    )
     db.commit()
     db.refresh(finding)
     return serialize_finding(db, finding, scan)
@@ -232,6 +241,14 @@ def create_suppression_rule(
         if scan is not None:
             sync_occurrence_state(db, finding, scan, principal.user_id)
 
+    record_audit_event(
+        db,
+        principal,
+        event_type="suppression.created",
+        resource_type="suppression",
+        resource_id=rule.id,
+        metadata={"target_id": payload.target_id, "dedupe_key": rule.dedupe_key, "severity": severity, "source_tool": source_tool},
+    )
     db.commit()
     db.refresh(rule)
     return rule
@@ -261,6 +278,14 @@ def create_tag(
         return existing
     tag = Tag(id=str(uuid4()), workspace_id=principal.workspace_id, label=label, created_by_user_id=principal.user_id)
     db.add(tag)
+    record_audit_event(
+        db,
+        principal,
+        event_type="tag.created",
+        resource_type="tag",
+        resource_id=tag.id,
+        metadata={"label": label},
+    )
     db.commit()
     db.refresh(tag)
     return tag
@@ -308,6 +333,14 @@ def create_tag_assignment(
         created_by_user_id=principal.user_id,
     )
     db.add(assignment)
+    record_audit_event(
+        db,
+        principal,
+        event_type="tag.assigned",
+        resource_type=resource_type,
+        resource_id=payload.resource_id,
+        metadata={"tag_id": tag.id},
+    )
     db.commit()
     db.refresh(assignment)
     return assignment

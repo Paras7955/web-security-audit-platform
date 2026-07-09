@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,6 +10,8 @@ from app.api.schemas import ScanCreate, ScanRead
 from app.core.contracts import ScanMode, ScanProfile, ScanStatus, ScanStep, default_scan_profile_for_mode, scan_profile_for_id
 from app.core.config import settings
 from app.models import Scan, Target
+from app.ops.audit import record_audit_event
+from app.ops.rate_limits import enforce_api_rate_limit
 from app.repo_scanner.paths import RepoPathError, validate_repo_path
 from app.security.allowlist import ScanAllowlist
 from app.security.auth import AuthenticatedPrincipal
@@ -25,6 +28,13 @@ def create_scan(
     db: Session = Depends(get_db),
     allowlist: ScanAllowlist = Depends(get_scan_allowlist),
 ) -> ScanRead:
+    enforce_api_rate_limit(
+        db,
+        principal,
+        action="scan_create",
+        max_requests=settings.scan_create_rate_limit_max_requests,
+        window_seconds=settings.api_rate_limit_window_seconds,
+    )
     target = db.scalar(select(Target).where(Target.id == payload.target_id, Target.workspace_id == principal.workspace_id))
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
@@ -53,6 +63,65 @@ def create_scan(
         progress_percent=0,
     )
     db.add(scan)
+    record_audit_event(
+        db,
+        principal,
+        event_type="scan.created",
+        resource_type="scan",
+        resource_id=scan.id,
+        metadata={"target_id": target.id, "scan_profile_id": profile.id, "mode": mode.value},
+    )
+    db.commit()
+    db.refresh(scan)
+    return scan
+
+
+@router.post("/{scan_id}/cancel", response_model=ScanRead)
+def cancel_scan(
+    scan_id: str,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> ScanRead:
+    scan = db.scalar(
+        select(Scan)
+        .where(Scan.id == scan_id, Scan.workspace_id == principal.workspace_id)
+        .with_for_update()
+    )
+    if scan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
+
+    terminal_statuses = {
+        ScanStatus.COMPLETED.value,
+        ScanStatus.COMPLETED_WITH_WARNINGS.value,
+        ScanStatus.FAILED.value,
+        ScanStatus.CANCELLED.value,
+    }
+    if scan.status in terminal_statuses:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Terminal scans cannot be cancelled.")
+
+    if scan.cancellation_requested_at is not None:
+        return scan
+
+    previous_status = scan.status
+    now = datetime.now(UTC)
+    scan.cancellation_requested_at = now
+    scan.cancellation_requested_by_user_id = principal.user_id
+    if scan.status == ScanStatus.QUEUED.value:
+        scan.status = ScanStatus.CANCELLED.value
+        scan.status_message = "Queued scan cancelled before worker start."
+        scan.progress_percent = min(scan.progress_percent or 0, 99)
+        scan.completed_at = now
+    else:
+        scan.status_message = "Cancellation requested. Worker will stop at the next safe checkpoint."
+    db.add(scan)
+    record_audit_event(
+        db,
+        principal,
+        event_type="scan.cancel_requested",
+        resource_type="scan",
+        resource_id=scan.id,
+        metadata={"previous_status": previous_status, "target_id": scan.target_id},
+    )
     db.commit()
     db.refresh(scan)
     return scan
