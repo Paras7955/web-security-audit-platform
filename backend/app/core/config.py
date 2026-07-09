@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     health_zap_timeout_seconds: float = 1.5
     worker_id: str = "default-worker"
     worker_stale_after_seconds: int = 30
+    demo_seed_enabled: bool = False
     openai_model: str | None = None
     openai_api_key: str | None = None
     zap_base_url: str = "http://zap:8080"
