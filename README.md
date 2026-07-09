@@ -418,7 +418,7 @@ Run the seed after migrations with an explicit environment gate:
 docker compose run --rm -e DEMO_SEED_ENABLED=true backend python -m app.demo_seed
 ```
 
-The command also requires the normal local Docker settings, including a generated `AUTH_PROFILE_SECRET_KEY` in `.env` or the shell environment.
+The command requires the normal local Docker settings, including `AUTH_MODE=dev`, `AUTH_PROVIDER=dev`, and a generated `AUTH_PROFILE_SECRET_KEY` in `.env` or the shell environment.
 
 ## Responsible Use
 

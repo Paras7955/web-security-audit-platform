@@ -27,6 +27,7 @@ from app.models import (
     Target,
     Workspace,
 )
+from app.reports.service import safe_report_dir
 from app.risk import SCORING_MODEL_VERSION, calculate_scan_risk_score
 
 
@@ -569,8 +570,7 @@ def upsert_reports(db: Session, *, artifact_root: Path, workspace_id: str, user_
         scan = db.get(Scan, scan_id)
         if scan is None:
             continue
-        report_dir = artifact_root / scan_id / "reports"
-        report_dir.mkdir(parents=True, exist_ok=True)
+        report_dir = safe_report_dir(artifact_root, scan_id)
         report_path = report_dir / filename
         report_path.write_text(render_seed_report(db, scan, report_type), encoding="utf-8")
         artifact = ReportArtifact(
@@ -641,6 +641,8 @@ def count_seeded(db: Session, model, ids: tuple[str, ...]) -> int:
 def main() -> None:
     if not settings.demo_seed_enabled:
         raise SystemExit("DEMO_SEED_ENABLED=true is required to run the demo seed command.")
+    if settings.auth_mode.strip().lower() != "dev" or settings.auth_provider.strip().lower() != "dev":
+        raise SystemExit("Demo seed is only available with AUTH_MODE=dev and AUTH_PROVIDER=dev.")
     with SessionLocal() as db:
         result = seed_demo_data(
             db,

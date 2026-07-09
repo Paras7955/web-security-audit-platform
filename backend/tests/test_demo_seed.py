@@ -29,6 +29,7 @@ from app.models import (
     Target,
     Workspace,
 )
+from app.reports.service import read_report_artifact_file
 from app.risk import SCORING_MODEL_VERSION
 from tests.helpers import DEV_USER_ID, DEV_WORKSPACE_ID
 
@@ -62,6 +63,17 @@ class DemoSeedTests(unittest.TestCase):
             demo_seed.main()
 
         self.assertIn("DEMO_SEED_ENABLED=true", str(exc.exception))
+
+    def test_demo_seed_command_requires_dev_auth_mode(self) -> None:
+        with (
+            patch("app.demo_seed.settings.demo_seed_enabled", True),
+            patch("app.demo_seed.settings.auth_mode", "required"),
+            patch("app.demo_seed.settings.auth_provider", "auth0"),
+            self.assertRaises(SystemExit) as exc,
+        ):
+            demo_seed.main()
+
+        self.assertIn("AUTH_MODE=dev", str(exc.exception))
 
     def test_seed_demo_data_stays_workspace_scoped_and_safe(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -123,7 +135,8 @@ class DemoSeedTests(unittest.TestCase):
                     report_path = Path(report.path)
                     self.assertTrue(report_path.exists())
                     self.assertTrue(report_path.resolve().is_relative_to(artifact_root.resolve()))
-                    self.assertNotIn("super-secret", report_path.read_text(encoding="utf-8"))
+                    content = read_report_artifact_file(report, artifact_root=artifact_root)
+                    self.assertNotIn("super-secret", content)
 
 
 def run_seed(artifact_root: Path, repo_root: Path):
