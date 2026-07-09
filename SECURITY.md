@@ -81,6 +81,15 @@ Do not use this platform for:
 - Cancellation must not broaden scanner scope, skip SSRF checks, or leave ZAP contexts outside the existing target scope.
 - Health endpoints may report operational status but must not expose secrets or sensitive local filesystem contents.
 
+## Demo Seed Safety
+
+- Demo seed behavior must be an explicit command gated by `DEMO_SEED_ENABLED=true`; it must not run automatically at startup and must not be exposed as a public API endpoint.
+- Seeded targets must use existing allowlist entries and must not allow arbitrary public URLs.
+- Seeded repo paths must stay under `REPO_SCAN_ROOT`.
+- Seeded findings, reports, lifecycle state, suppression rules, tags, and risk scores must remain workspace-scoped sample data.
+- Seeded data must not include real credentials, auth profile secrets, raw HTTP bodies, raw scanner artifacts, cookies, or unredacted evidence.
+- The seed command must not clone repositories, fetch remote code, install dependencies, run package scripts, build, or execute repository code.
+
 ## AI Provider Safety
 
 - Use `AI_PROVIDER=template` by default for local deterministic explanations.
