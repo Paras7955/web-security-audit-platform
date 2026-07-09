@@ -14,15 +14,15 @@ For a new implementation session taking over from this point:
 - Read this `HANDOFF.md` next for the current architecture, phase history, verification state, known risks, and next planned phase.
 - Skim `README.md` and `SECURITY.md` before making changes, especially the auth, workspace, scan safety, repo-scan, AI, and auth-profile sections.
 - Confirm the active branch and clean worktree with `git status --short --branch`.
-- Current expected branch is `main`. Phase 18 is complete.
+- Current expected branch is `main`. Phase 19 is complete.
 - If Docker Compose commands are needed, ensure a local `.env` or shell environment provides a real generated Fernet `AUTH_PROFILE_SECRET_KEY`. The placeholder in `.env.example` is intentionally unusable.
 
 ## Current Branch And Phase
 
 - Current branch: `main`
-- Current phase: Phase 18, Platform Ops, complete
+- Current phase: Phase 19, Demo Seed Docs, complete
 - Base branch at phase start: `main`
-- Phase gate: Phase 19 is next, but do not start it until the user explicitly approves beginning Phase 19 from clean `main`.
+- Phase gate: V1 roadmap phases through Phase 19 are complete.
 
 ## Mission And Safety Model
 
@@ -93,6 +93,8 @@ Finding management is workspace-scoped and layered on top of immutable normalize
 
 AI explanation generation is workspace-scoped, rate-limited, and cached. Phase 17 records AI request accounting by workspace, user, action, provider/model/config hash, input fingerprint, cache hit, allowed/denied outcome, and timestamp. Cache fingerprints use normalized/redacted finding projections plus lifecycle, suppression, deterministic risk-score, provider/model/config, and report context inputs. AI may explain deterministic risk-score inputs but must not compute scores. Fallback results from transient external-provider failures are not cached under the failed provider config.
 
+Demo seed behavior is an explicit local command, not a startup behavior or public API endpoint. It requires `DEMO_SEED_ENABLED=true`, `AUTH_MODE=dev`, and `AUTH_PROVIDER=dev`. It seeds fixed-ID, idempotent sample data into the configured local dev-auth workspace, writes reports under the normal artifact path layout, and keeps repo seed paths under `REPO_SCAN_ROOT`.
+
 `AUTH_PROFILE_SECRET_KEY` is required for backend and worker startup/readiness. It must be a valid Fernet key. Production-like environments must not use the local development example key. Docker Compose now expects this value from the caller environment or a local `.env`; `.env.example` intentionally contains a non-usable placeholder.
 
 Local setup note:
@@ -101,6 +103,7 @@ Local setup note:
 - Generate a deployment-specific Fernet key using a Python environment with `cryptography` available, or another trusted Fernet-key generator.
 - Do not commit local `.env` values or real auth-profile keys.
 - Most backend/worker test and build commands now need to be prefixed with `AUTH_PROFILE_SECRET_KEY=<generated-fernet-key>` unless the value is already present in the environment.
+- The demo seed command is: `docker compose run --rm -e DEMO_SEED_ENABLED=true backend python -m app.demo_seed`.
 
 ## Phase History
 
@@ -121,6 +124,7 @@ Local setup note:
 - Phase 16: finding lifecycle management, suppression rules with expiration, tags, expanded finding filters, and dense management UI.
 - Phase 17: AI request accounting, rate limits, safe explanation cache, executive/risk explanation metadata, and cache invalidation inputs.
 - Phase 18: platform ops controls, API rate limits, audit logs, cooperative scan cancellation, worker heartbeat, and health dashboard.
+- Phase 19: explicit deterministic demo seed command, sample workspace data, seeded reports/risk scores/lifecycle examples, and final V1 documentation.
 
 ## Phase 11 Design
 
@@ -838,6 +842,74 @@ Residual risk:
 - True concurrent Postgres contention for cancel-vs-worker-claim and simultaneous rate-limited requests is covered by locking design and focused unit/API tests, but not by a two-live-session integration test.
 - Frontend behavior is verified by production build, not end-to-end browser interaction tests.
 
+## Phase 19 Implementation State
+
+Implemented:
+
+- `backend/app/demo_seed.py` adds an explicit deterministic seed command runnable as `python -m app.demo_seed`.
+- `DEMO_SEED_ENABLED=false` is the default. The command exits unless `DEMO_SEED_ENABLED=true`, `AUTH_MODE=dev`, and `AUTH_PROVIDER=dev`.
+- Seeded records use fixed IDs and upsert behavior so repeated runs are idempotent.
+- The command seeds the configured local dev-auth user/workspace, two allowlisted demo targets, three completed scans, seven normalized/redacted findings, finding lifecycle states, a suppression rule, tags, tag assignments, three stored `risk-v1` scores, and four report artifacts.
+- Seeded targets use the existing `juice-shop` allowlist entry. The repo demo target stores a repo path under `REPO_SCAN_ROOT`.
+- Seeded report artifacts are written under the same `ARTIFACT_ROOT/scans/{scan_id}/reports` layout used by the normal report service and can be read by the normal report artifact reader.
+- Seeded HTML report fields are escaped. Seeded findings and reports contain sample/redacted evidence only.
+- The command does not create auth profiles, store target-app credentials, send AI provider requests, clone repositories, fetch remote code, install dependencies, run package scripts, build, execute repository code, or weaken scan allowlist checks.
+- `.env.example`, `README.md`, `SECURITY.md`, and `AGENTS.md` document the demo seed workflow and safety boundaries.
+
+Phase 19 commits:
+
+- `01fa8e5 feat: add deterministic demo seed command`
+- `7c7b729 docs: document demo seed workflow`
+- `5dac1e6 fix: escape seeded HTML report fields`
+- `62bf9a8 fix: align demo seed with report and auth safety`
+
+Verification:
+
+- `python3 -m py_compile backend/app/demo_seed.py backend/tests/test_demo_seed.py backend/app/core/config.py`
+  - Result: passed.
+- `git diff --check`
+  - Result: passed.
+- `docker compose build backend`
+  - Result: passed.
+- `docker compose run --rm backend python -m unittest tests.test_demo_seed`
+  - Result: 5 tests OK after accepted review fixes.
+- Documented seed command:
+  - `docker compose run --rm -e DEMO_SEED_ENABLED=true backend python -m app.demo_seed`
+  - Result: passed; output reported `workspace=dev-workspace targets=2 scans=3 findings=7 reports=4 risk_scores=3`.
+- Clean temporary database migrations from zero through head:
+  - `docker compose run --rm -e DATABASE_URL=postgresql+psycopg://security_audit:security_audit@postgres:5432/phase19_final migrate`
+  - Result: passed.
+- Clean temporary database seed-adjacent suite:
+  - `docker compose run --rm -e DATABASE_URL=postgresql+psycopg://security_audit:security_audit@postgres:5432/phase19_review backend python -m unittest tests.test_demo_seed tests.test_risk_dashboard tests.test_finding_management tests.test_reports tests.test_ai_explanations tests.test_auth_workspaces`
+  - Result: 73 tests OK after accepted review fixes.
+- Clean temporary database full backend suite:
+  - `docker compose run --rm -e DATABASE_URL=postgresql+psycopg://security_audit:security_audit@postgres:5432/phase19_final backend python -m unittest discover tests`
+  - Result: 214 tests OK after accepted review fixes.
+- `docker compose run --rm frontend npm run build`
+  - Result: passed.
+
+Review decision:
+- Finding: Seeded report artifacts were written under `ARTIFACT_ROOT/{scan_id}/reports`, which the normal report reader rejects because expected report paths are under `ARTIFACT_ROOT/scans/{scan_id}/reports`.
+- Decision: Accepted.
+- Rationale: Seeded reports must work through the same view/download path as generated reports.
+- Follow-up: Reused `safe_report_dir` for seeded report paths and added regression coverage through `read_report_artifact_file`.
+
+Review decision:
+- Finding: The seed command was gated by `DEMO_SEED_ENABLED` but did not fail closed for non-dev auth modes/providers.
+- Decision: Accepted.
+- Rationale: The seed command is intended for local dev-auth demo data and should not mutate OIDC or production-like identity configuration.
+- Follow-up: Added `AUTH_MODE=dev` and `AUTH_PROVIDER=dev` checks, regression coverage, and README clarification.
+
+Review decision:
+- Finding: Local self-review found seeded HTML reports rendered controlled seed text without escaping.
+- Decision: Accepted from local self-review.
+- Rationale: Even controlled demo output should match the project report safety posture.
+- Follow-up: Escaped seeded HTML report fields and reran focused tests.
+
+Residual risk:
+
+- Seeded data is covered through backend command/tests and report-reader compatibility, but not by an end-to-end browser smoke test that loads the seeded dashboard in the UI.
+
 ## Current API Surface
 
 Protected by bearer auth:
@@ -911,17 +983,11 @@ Phase 17, `phase-17-ai-rate-limits`:
 
 Phase 18, `phase-18-platform-ops`:
 
-- Complete.
+- Complete and merged.
 
 Phase 19, `phase-19-demo-seed-docs`:
 
-- Add deterministic demo seed command, not an always-on public endpoint.
-- Seed a demo user/workspace, demo targets, completed scans, normalized findings, reports, lifecycle/suppression/tag examples, and versioned risk scores.
-- Gate seed behavior behind an explicit command/env setting and make it idempotent.
-- Seeded demo data must never bypass workspace isolation, scan safety, redaction, auth-profile secrecy, report safety, or AI payload safety.
-- Update README, SECURITY, AGENTS, and this handoff with the final post-v1 state and any changed public rules.
-- Document local provider-agnostic auth, Auth0 configuration, dev auth, generated `AUTH_PROFILE_SECRET_KEY`, seeded demo workflow, and full Docker verification.
-- Test seed idempotency, workspace isolation, demo data invariants, and that seeded data does not weaken safety/redaction behavior.
+- Complete.
 
 ## Workflow Rules
 
