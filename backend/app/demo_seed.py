@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from html import escape
 from pathlib import Path
 
 from sqlalchemy import select
@@ -606,12 +607,17 @@ def render_seed_report(db: Session, scan: Scan, report_type: str) -> str:
     if report_type == "markdown":
         return markdown
 
-    items = "\n".join(f"<li>{finding.severity.upper()}: {finding.title} ({finding.dedupe_key})</li>" for finding in findings)
-    risk_text = f"{risk.score} {risk.label}" if risk is not None else "n/a"
+    items = "\n".join(
+        f"<li>{escape(finding.severity.upper())}: {escape(finding.title)} ({escape(finding.dedupe_key)})</li>"
+        for finding in findings
+    )
+    risk_text = escape(f"{risk.score} {risk.label}" if risk is not None else "n/a")
+    escaped_title = escape(title)
+    escaped_scan_id = escape(scan.id)
     return (
         "<!doctype html>\n"
         "<html><head><meta charset=\"utf-8\"><title>Seeded Demo Report</title></head>"
-        f"<body><h1>{title}</h1><p>Scan ID: {scan.id}</p><p>Risk: {risk_text}</p><h2>Findings</h2><ul>{items}</ul></body></html>\n"
+        f"<body><h1>{escaped_title}</h1><p>Scan ID: {escaped_scan_id}</p><p>Risk: {risk_text}</p><h2>Findings</h2><ul>{items}</ul></body></html>\n"
     )
 
 
