@@ -100,6 +100,17 @@ Phase 14 target-application auth profiles:
 - Active Demo, AJAX Short, browser/ZAP authenticated workflows, repo scans, login automation, password-form workflows, and business-logic auth testing remain out of scope.
 - Auth profile secrets must not appear in findings, reports, AI payloads, artifacts, logs, status messages, or audit events.
 
+Phase 19 demo seed and final docs:
+
+- Demo seed behavior must be an explicit command, not an always-on startup behavior or public API endpoint.
+- Gate demo seed behavior with `DEMO_SEED_ENABLED=true`.
+- Seeded demo data must use fixed IDs and be idempotent.
+- Seeded demo targets must use existing allowlist entries and must not permit arbitrary public URLs.
+- Seeded repo paths must stay under `REPO_SCAN_ROOT`.
+- Seeded findings, reports, lifecycle state, suppression rules, tags, and risk scores must remain workspace-scoped sample data.
+- Seeded data must never include real credentials, auth profile secrets, raw HTTP bodies, raw scanner artifacts, cookies, or unredacted evidence.
+- The seed command must not clone repositories, fetch remote code, install dependencies, run package scripts, build, or execute repository code.
+
 Post-v1 unless explicitly approved:
 
 - Playwright login/session workflows.

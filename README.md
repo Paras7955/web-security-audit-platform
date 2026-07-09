@@ -398,6 +398,28 @@ WORKER_STALE_AFTER_SECONDS=30
 
 Phase 18 cancellation is cooperative. Long-running scanner adapters stop at explicit worker checkpoints and must not broaden scan scope while cancelling.
 
+## Phase 19 Status
+
+Phase 19 adds an explicit deterministic demo seed workflow for local portfolio/demo use. It is a one-off command, not a public API endpoint or always-on startup behavior.
+
+Implemented Phase 19 capabilities:
+
+- Seeds the configured local dev-auth user/workspace so the default UI token can see the demo data.
+- Seeds OWASP Juice Shop and local repository demo targets using the existing `juice-shop` allowlist entry.
+- Seeds completed passive-web and repository scans with normalized/redacted findings.
+- Seeds finding lifecycle examples, a suppression rule, tags, tag assignments, versioned `risk-v1` scores, and Markdown/HTML report artifacts.
+- Uses fixed seed IDs and upserts records so the command is idempotent.
+- Keeps repo seed paths under `REPO_SCAN_ROOT` and writes report files only under `ARTIFACT_ROOT`.
+- Does not create auth profiles, store target-app credentials, send AI provider requests, clone repositories, run package scripts, execute repository code, or weaken scan allowlist checks.
+
+Run the seed after migrations with an explicit environment gate:
+
+```bash
+docker compose run --rm -e DEMO_SEED_ENABLED=true backend python -m app.demo_seed
+```
+
+The command requires the normal local Docker settings, including `AUTH_MODE=dev`, `AUTH_PROVIDER=dev`, and a generated `AUTH_PROFILE_SECRET_KEY` in `.env` or the shell environment.
+
 ## Responsible Use
 
 Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.
