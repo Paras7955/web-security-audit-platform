@@ -4,14 +4,14 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-from sqlalchemy import delete
-
 from app.api.deps import get_scan_allowlist
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import AuthProfile, Scan, Target
 from app.security.allowlist import ScanAllowlist
+from fastapi.testclient import TestClient
+from sqlalchemy import delete
+
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 

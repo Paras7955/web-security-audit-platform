@@ -14,7 +14,6 @@ from app.ops.audit import record_audit_event
 from app.security.auth import AuthenticatedPrincipal
 from app.security.sanitization import sanitize_text
 
-
 router = APIRouter(prefix="/auth-profiles", tags=["auth-profiles"])
 
 NONTERMINAL_SCAN_STATUSES = {"queued", "validating", "running", "normalizing"}
@@ -145,7 +144,7 @@ def revoke_auth_profile(
     _reject_in_use(db, profile)
     now = datetime.now(UTC)
     profile.encrypted_secret = None
-    profile.secret_hint = "revoked"
+    profile.secret_hint = "revoked"  # noqa: S105 - metadata tombstone, never a credential
     profile.revoked_at = now
     profile.revoked_by_user_id = principal.user_id
     db.execute(

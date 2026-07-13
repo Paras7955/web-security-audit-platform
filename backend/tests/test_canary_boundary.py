@@ -5,9 +5,6 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-from sqlalchemy import delete
-
 from app.ai.service import generate_ai_explanations
 from app.db.session import SessionLocal
 from app.findings.schemas import NormalizedFindingInput
@@ -27,6 +24,9 @@ from app.models import (
 from app.ops.audit import record_audit_event
 from app.reports.service import generate_report_artifacts, read_report_artifact_file
 from app.security.auth import AuthenticatedPrincipal
+from fastapi.testclient import TestClient
+from sqlalchemy import delete
+
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 

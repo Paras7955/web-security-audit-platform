@@ -7,7 +7,6 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-
 SKIPPED_DIRECTORIES = {
     ".git",
     ".hg",

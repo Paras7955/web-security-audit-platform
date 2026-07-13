@@ -669,7 +669,7 @@ def render_html_ai_explanations(explanations: AiExplanationResult) -> str:
 """
 
 
-def render_html_finding(index: int, finding: Finding) -> str:
+def render_html_finding(index: int, finding: ReportFinding) -> str:
     return f"""<section class="finding">
   <h3>{index}. {escape(finding.title)}</h3>
   <table>

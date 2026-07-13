@@ -1,10 +1,9 @@
 import unittest
 
-from pydantic import ValidationError
 from app.security.allowlist import AllowlistTarget
 from app.zap.client_spider import ZapClientSpiderCancelled, run_zap_client_spider_scan
 from app.zap.passive import ZapAlertPage
-
+from pydantic import ValidationError
 
 ALLOWLIST_TARGET = AllowlistTarget.model_validate(
     {

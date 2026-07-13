@@ -16,7 +16,6 @@ from app.models import AiExplanationCache, AiRequestLog, Finding, FindingOccurre
 from app.risk import SCORING_MODEL_VERSION, calculate_scan_risk_score
 from app.security.sanitization import sanitize_relative_path, sanitize_text, sanitize_url
 
-
 SEVERITY_PRIORITY = {
     "critical": 5,
     "high": 4,
@@ -825,16 +824,22 @@ def result_to_payload(result: AiExplanationResult) -> dict[str, object]:
 
 
 def result_from_cache(payload: dict[str, object]) -> AiExplanationResult:
+    provider_error_value = payload.get("provider_error")
+    input_fingerprint_value = payload.get("input_fingerprint")
+    groups_value = payload.get("groups")
+    explanations_value = payload.get("explanations")
+    groups = groups_value if isinstance(groups_value, list) else []
+    explanations = explanations_value if isinstance(explanations_value, list) else []
     return AiExplanationResult(
         scan_id=str(payload["scan_id"]),
         provider=str(payload["provider"]),
         fallback_used=bool(payload["fallback_used"]),
-        provider_error=payload.get("provider_error") if isinstance(payload.get("provider_error"), str) else None,
+        provider_error=provider_error_value if isinstance(provider_error_value, str) else None,
         summary=str(payload["summary"]),
         executive_summary=str(payload.get("executive_summary") or ""),
         risk_score_explanation=str(payload.get("risk_score_explanation") or ""),
         scoring_model_version=str(payload.get("scoring_model_version") or SCORING_MODEL_VERSION),
-        input_fingerprint=payload.get("input_fingerprint") if isinstance(payload.get("input_fingerprint"), str) else None,
+        input_fingerprint=input_fingerprint_value if isinstance(input_fingerprint_value, str) else None,
         cache_hit=bool(payload.get("cache_hit")),
         groups=tuple(
             ExplanationGroup(
@@ -842,7 +847,7 @@ def result_from_cache(payload: dict[str, object]) -> AiExplanationResult:
                 count=int(group.get("count") or 0),
                 finding_ids=tuple(str(finding_id) for finding_id in group.get("finding_ids", [])),
             )
-            for group in payload.get("groups", [])
+            for group in groups
             if isinstance(group, dict)
         ),
         explanations=tuple(
@@ -855,7 +860,7 @@ def result_from_cache(payload: dict[str, object]) -> AiExplanationResult:
                 owasp_mapping=str(explanation.get("owasp_mapping") or ""),
                 limitations=str(explanation.get("limitations") or ""),
             )
-            for explanation in payload.get("explanations", [])
+            for explanation in explanations
             if isinstance(explanation, dict)
         ),
     )

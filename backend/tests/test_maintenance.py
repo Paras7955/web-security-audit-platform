@@ -5,9 +5,6 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
-from cryptography.fernet import Fernet
-from sqlalchemy import delete
-
 from app.db.session import SessionLocal
 from app.maintenance import (
     backfill_legacy_risk_scores,
@@ -16,6 +13,9 @@ from app.maintenance import (
     reencrypt_auth_profiles,
 )
 from app.models import ApiRateLimitLog, AuditLog, AuthProfile, RiskScore, Scan, Target
+from cryptography.fernet import Fernet
+from sqlalchemy import delete
+
 from tests.helpers import DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 

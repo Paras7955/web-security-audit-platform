@@ -3,8 +3,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from sqlalchemy import delete, select
-
 from app import demo_seed
 from app.demo_seed import (
     BASELINE_SCAN_ID,
@@ -31,6 +29,8 @@ from app.models import (
 )
 from app.reports.service import read_report_artifact_file
 from app.risk import SCORING_MODEL_VERSION
+from sqlalchemy import delete, select
+
 from tests.helpers import DEV_USER_ID, DEV_WORKSPACE_ID
 
 

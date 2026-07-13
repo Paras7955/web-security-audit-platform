@@ -4,18 +4,17 @@ from datetime import UTC, datetime
 from unittest.mock import patch
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-from sqlalchemy import delete
-
 from app.core.contracts import ScanStatus, ScanStep
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import ApiRateLimitLog, AuditLog, Scan, Target, WorkerHeartbeat
 from app.ops.heartbeat import record_worker_heartbeat
 from app.ops.rate_limits import lock_rate_limit_scope
-from app.scans.lifecycle import check_scan_cancelled
-from app.security.auth import AuthenticatedPrincipal
-from app.security.auth import ensure_user_workspace_identity
+from app.scans.lifecycle import ScanCancelledError, check_scan_cancelled
+from app.security.auth import AuthenticatedPrincipal, ensure_user_workspace_identity
+from fastapi.testclient import TestClient
+from sqlalchemy import delete
+
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
@@ -122,7 +121,7 @@ class PlatformOpsTests(unittest.TestCase):
         with SessionLocal() as db:
             scan = db.get(Scan, self.scan_id)
             self.assertIsNotNone(scan)
-            with self.assertRaises(Exception):
+            with self.assertRaises(ScanCancelledError):
                 check_scan_cancelled(db, scan)
             db.refresh(scan)
             self.assertEqual(scan.status, "cancelled")

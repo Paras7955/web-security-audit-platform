@@ -1,8 +1,9 @@
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, func
+from datetime import datetime
+
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-
 
 LEGACY_USER_ID = "legacy-dev-user"
 LEGACY_WORKSPACE_ID = "legacy-dev-workspace"
@@ -13,7 +14,7 @@ class PlatformUser(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class AuthIdentity(Base):
@@ -24,7 +25,7 @@ class AuthIdentity(Base):
     user_id: Mapped[str] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=False)
     provider: Mapped[str] = mapped_column(String(80), nullable=False)
     provider_subject: Mapped[str] = mapped_column(String(300), nullable=False)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class Workspace(Base):
@@ -39,7 +40,7 @@ class Workspace(Base):
         server_default=LEGACY_USER_ID,
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class AuthProfile(Base):
@@ -69,9 +70,9 @@ class AuthProfile(Base):
         default=LEGACY_USER_ID,
         server_default=LEGACY_USER_ID,
     )
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    rotated_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    revoked_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_by_user_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=True)
     rotation_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
@@ -101,9 +102,9 @@ class Target(Base):
         default=LEGACY_USER_ID,
         server_default=LEGACY_USER_ID,
     )
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    authorization_confirmed_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    auth_profile_attached_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    authorization_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    auth_profile_attached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     scans: Mapped[list["Scan"]] = relationship(back_populates="target")
 
@@ -140,17 +141,17 @@ class Scan(Base):
     current_step: Mapped[str | None] = mapped_column(String(80), nullable=True)
     status_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
     progress_percent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    started_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    completed_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    cancellation_requested_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancellation_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancellation_requested_by_user_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     lease_owner: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    lease_expires_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    lease_heartbeat_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     target: Mapped[Target] = relationship(back_populates="scans")
 
@@ -172,9 +173,9 @@ class ScannerToolRun(Base):
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     warning_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     finding_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    started_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    completed_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class EvidenceArtifact(Base):
@@ -199,7 +200,7 @@ class EvidenceArtifact(Base):
     artifact_type: Mapped[str] = mapped_column(String(80), nullable=False)
     path: Mapped[str] = mapped_column(String(2048), nullable=False)
     redaction_applied: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class Finding(Base):
@@ -231,7 +232,7 @@ class Finding(Base):
     false_positive_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     redaction_applied: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     raw_artifact_ref: Mapped[str | None] = mapped_column(String(64), ForeignKey("evidence_artifacts.id"), nullable=True)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class FindingState(Base):
@@ -244,8 +245,8 @@ class FindingState(Base):
     dedupe_key: Mapped[str] = mapped_column(String(500), nullable=False)
     lifecycle_status: Mapped[str] = mapped_column(String(40), nullable=False, default="open", server_default="open")
     updated_by_user_id: Mapped[str] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=False)
-    updated_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class SuppressionRule(Base):
@@ -260,8 +261,8 @@ class SuppressionRule(Base):
     source_tool: Mapped[str | None] = mapped_column(String(100), nullable=True)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     created_by_user_id: Mapped[str] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=False)
-    expires_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class FindingOccurrenceState(Base):
@@ -274,8 +275,8 @@ class FindingOccurrenceState(Base):
     lifecycle_status: Mapped[str] = mapped_column(String(40), nullable=False, default="open", server_default="open")
     suppressed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     suppression_rule_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("suppression_rules.id"), nullable=True)
-    updated_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class Tag(Base):
@@ -289,7 +290,7 @@ class Tag(Base):
     workspace_id: Mapped[str] = mapped_column(String(64), ForeignKey("workspaces.id"), nullable=False)
     label: Mapped[str] = mapped_column(String(80), nullable=False)
     created_by_user_id: Mapped[str] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=False)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class TagAssignment(Base):
@@ -305,7 +306,7 @@ class TagAssignment(Base):
     resource_type: Mapped[str] = mapped_column(String(40), nullable=False)
     resource_id: Mapped[str] = mapped_column(String(64), nullable=False)
     created_by_user_id: Mapped[str] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=False)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class ReportArtifact(Base):
@@ -333,7 +334,7 @@ class ReportArtifact(Base):
     scan_id: Mapped[str] = mapped_column(String(64), ForeignKey("scans.id", ondelete="CASCADE"), nullable=False)
     report_type: Mapped[str] = mapped_column(String(40), nullable=False)
     path: Mapped[str] = mapped_column(String(2048), nullable=False)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class AiRequestLog(Base):
@@ -349,7 +350,7 @@ class AiRequestLog(Base):
     input_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     cache_hit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class AiExplanationCache(Base):
@@ -377,7 +378,7 @@ class AiExplanationCache(Base):
     input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     created_by_user_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=True)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class ApiRateLimitLog(Base):
@@ -388,7 +389,7 @@ class ApiRateLimitLog(Base):
     user_id: Mapped[str] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=False)
     action: Mapped[str] = mapped_column(String(80), nullable=False)
     allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class AuditLog(Base):
@@ -402,7 +403,7 @@ class AuditLog(Base):
     resource_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
     resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     metadata_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class WorkerHeartbeat(Base):
@@ -414,8 +415,8 @@ class WorkerHeartbeat(Base):
     status: Mapped[str] = mapped_column(String(80), nullable=False)
     current_scan_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("scans.id"), nullable=True)
     queue_depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    last_seen_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class RiskScore(Base):
@@ -430,4 +431,4 @@ class RiskScore(Base):
     score: Mapped[int] = mapped_column(Integer, nullable=False)
     label: Mapped[str] = mapped_column(String(40), nullable=False)
     input_summary: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

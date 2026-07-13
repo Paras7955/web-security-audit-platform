@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -307,10 +307,7 @@ class ScannerToolRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-PageItem = TypeVar("PageItem")
-
-
-class CursorPage(BaseModel, Generic[PageItem]):
+class CursorPage[PageItem](BaseModel):
     items: list[PageItem]
     next_cursor: str | None
 

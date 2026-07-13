@@ -27,5 +27,6 @@ def scan_artifact_dir(artifact_root: str | Path, scan_id: str) -> Path:
 
 def ensure_scan_artifact_dir(artifact_root: str | Path, scan_id: str) -> Path:
     path = scan_artifact_dir(artifact_root, scan_id)
-    path.mkdir(parents=True, exist_ok=True)
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.chmod(0o700)
     return path

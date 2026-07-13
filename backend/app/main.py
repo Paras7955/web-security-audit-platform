@@ -6,25 +6,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app import __version__
 from app.api.ai import router as ai_router
 from app.api.auth_profiles import router as auth_profiles_router
 from app.api.dashboard import router as dashboard_router
 from app.api.findings import router as findings_router
+from app.api.middleware import PublicSafetyMiddleware
 from app.api.ops import router as ops_router
+from app.api.problems import http_exception_handler, unhandled_exception_handler, validation_exception_handler
 from app.api.reports import router as reports_router
 from app.api.scans import router as scans_router
 from app.api.targets import router as targets_router
 from app.auth_profiles import validate_auth_profile_secret_settings
-from app.api.middleware import PublicSafetyMiddleware
-from app.api.problems import http_exception_handler, unhandled_exception_handler, validation_exception_handler
-from app import __version__
 from app.core.config import settings
 from app.core.contracts import CONTRACTS
 from app.core.logging import configure_logging
 from app.core.validation import validate_runtime_settings
 from app.db.session import check_database_ready
 from app.security.auth import validate_auth_settings
-
 
 configure_logging()
 
@@ -66,8 +65,8 @@ for router in (
 ):
     app.include_router(router, prefix="/api/v1")
 
-app.add_exception_handler(StarletteHTTPException, http_exception_handler)
-app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # pyright: ignore[reportArgumentType]
+app.add_exception_handler(RequestValidationError, validation_exception_handler)  # pyright: ignore[reportArgumentType]
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 

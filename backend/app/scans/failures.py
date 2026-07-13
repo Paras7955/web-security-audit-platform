@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from app.api.schemas import ScanFailureRead
 
-
 SAFE_FAILURE_MESSAGES: dict[str, str] = {
     "auth_profile_invalid": "The configured target authorization profile could not be used.",
     "cancelled": "The scan was cancelled.",

@@ -14,7 +14,6 @@ from app.models import AuditLog, WorkerHeartbeat
 from app.ops.heartbeat import queue_depth
 from app.security.auth import AuthenticatedPrincipal
 
-
 router = APIRouter(tags=["ops"])
 
 
@@ -55,7 +54,7 @@ def list_audit_logs(
         )
     rows = list(db.scalars(statement.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(page.limit + 1)).all())
     visible, next_cursor = page_items(rows, page.limit)
-    return CursorPage(items=visible, next_cursor=next_cursor)
+    return CursorPage(items=[AuditLogRead.model_validate(entry) for entry in visible], next_cursor=next_cursor)
 
 
 def database_status(db: Session) -> HealthComponentRead:

@@ -21,15 +21,26 @@ from app.api.schemas import (
 )
 from app.finding_management import (
     normalize_resource_type,
+    normalize_status,
     normalize_suppression_severity,
     normalize_suppression_source_tool,
-    normalize_status,
     occurrence_state_for_read,
     suppression_rule_is_active,
     sync_occurrence_state,
     tags_for_resource,
 )
-from app.models import Finding, FindingOccurrenceState, FindingState, ReportArtifact, RiskScore, Scan, SuppressionRule, Tag, TagAssignment, Target
+from app.models import (
+    Finding,
+    FindingOccurrenceState,
+    FindingState,
+    ReportArtifact,
+    RiskScore,
+    Scan,
+    SuppressionRule,
+    Tag,
+    TagAssignment,
+    Target,
+)
 from app.ops.audit import record_audit_event
 from app.security.auth import AuthenticatedPrincipal
 from app.security.sanitization import sanitize_text
@@ -151,7 +162,7 @@ def update_finding_lifecycle(
     try:
         lifecycle_status = normalize_status(payload.lifecycle_status)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 
     finding = db.scalar(select(Finding).where(Finding.id == finding_id, Finding.workspace_id == principal.workspace_id))
     if finding is None:
@@ -221,7 +232,7 @@ def create_suppression_rule(
         severity = normalize_suppression_severity(payload.severity)
         source_tool = normalize_suppression_source_tool(payload.source_tool)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 
     rule = SuppressionRule(
         id=str(uuid4()),
@@ -274,7 +285,7 @@ def list_suppression_rules(
     statement = apply_cursor(statement, SuppressionRule, page)
     rows = list(db.scalars(statement.order_by(SuppressionRule.created_at.desc(), SuppressionRule.id.desc()).limit(page.limit + 1)).all())
     visible, next_cursor = page_items(rows, page.limit)
-    return CursorPage(items=visible, next_cursor=next_cursor)
+    return CursorPage(items=[SuppressionRuleRead.model_validate(rule) for rule in visible], next_cursor=next_cursor)
 
 
 @router.post("/tags", response_model=TagRead, status_code=status.HTTP_201_CREATED)
@@ -311,7 +322,7 @@ def list_tags(
     statement = apply_cursor(select(Tag).where(Tag.workspace_id == principal.workspace_id), Tag, page)
     rows = list(db.scalars(statement.order_by(Tag.created_at.desc(), Tag.id.desc()).limit(page.limit + 1)).all())
     visible, next_cursor = page_items(rows, page.limit)
-    return CursorPage(items=visible, next_cursor=next_cursor)
+    return CursorPage(items=[TagRead.model_validate(tag) for tag in visible], next_cursor=next_cursor)
 
 
 @router.post("/tags/assignments", response_model=TagAssignmentRead, status_code=status.HTTP_201_CREATED)
@@ -326,7 +337,7 @@ def create_tag_assignment(
     try:
         resource_type = normalize_resource_type(payload.resource_type)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     ensure_resource_access(db, principal.workspace_id, resource_type, payload.resource_id)
 
     existing = db.scalar(
@@ -374,13 +385,13 @@ def list_tag_assignments(
         try:
             statement = statement.where(TagAssignment.resource_type == normalize_resource_type(resource_type))
         except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     if resource_id is not None:
         statement = statement.where(TagAssignment.resource_id == resource_id)
     statement = apply_cursor(statement, TagAssignment, page)
     rows = list(db.scalars(statement.order_by(TagAssignment.created_at.desc(), TagAssignment.id.desc()).limit(page.limit + 1)).all())
     visible, next_cursor = page_items(rows, page.limit)
-    return CursorPage(items=visible, next_cursor=next_cursor)
+    return CursorPage(items=[TagAssignmentRead.model_validate(assignment) for assignment in visible], next_cursor=next_cursor)
 
 
 def query_findings(

@@ -8,18 +8,17 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_principal, get_db, get_scan_allowlist
 from app.api.pagination import PageRequest, page_items, page_request
-from app.api.schemas import TargetAuthProfileUpdate, TargetCreate, TargetRead, TargetRepoPathUpdate, TargetValidationRead
-from app.api.schemas import CursorPage
+from app.api.schemas import CursorPage, TargetAuthProfileUpdate, TargetCreate, TargetRead, TargetRepoPathUpdate, TargetValidationRead
 from app.core.config import settings
 from app.core.contracts import SCAN_PROFILES, ScanMode
 from app.models import AuthProfile, Target
 from app.ops.audit import record_audit_event
-from app.security.auth import AuthenticatedPrincipal
 from app.repo_scanner.paths import RepoPathError, repo_path_for_storage
 from app.security.allowlist import ScanAllowlist
+from app.security.auth import AuthenticatedPrincipal
+from app.security.sanitization import sanitize_text
 from app.security.ssrf import SsrfGuardError, validate_destination
 from app.security.target_url import TargetUrlError, match_allowlisted_target
-from app.security.sanitization import sanitize_text
 
 router = APIRouter(prefix="/targets", tags=["targets"])
 

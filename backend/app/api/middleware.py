@@ -9,7 +9,6 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.logging import log_event
 
-
 logger = logging.getLogger("scopeharbor.http")
 
 

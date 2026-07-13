@@ -1,20 +1,17 @@
-from datetime import datetime, timedelta, timezone
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
-
-from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
 
 from app.db.session import SessionLocal
 from app.findings.schemas import NormalizedFindingInput
 from app.findings.service import persist_normalized_findings
 from app.main import app
 from app.models import (
+    AuthIdentity,
     Finding,
     FindingOccurrenceState,
     FindingState,
-    AuthIdentity,
     PlatformUser,
     RiskScore,
     Scan,
@@ -25,6 +22,9 @@ from app.models import (
     Workspace,
 )
 from app.security.auth import ensure_user_workspace_identity
+from fastapi.testclient import TestClient
+from sqlalchemy import delete
+
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
@@ -217,7 +217,7 @@ class FindingManagementTests(unittest.TestCase):
                 "target_id": self.target_id,
                 "dedupe_key": self.dedupe_key,
                 "reason": "Expired exception.",
-                "expires_at": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+                "expires_at": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
             },
         )
         self.assertEqual(response.status_code, 201)
@@ -236,7 +236,7 @@ class FindingManagementTests(unittest.TestCase):
                 "target_id": self.target_id,
                 "dedupe_key": self.dedupe_key,
                 "reason": "Temporary exception.",
-                "expires_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+                "expires_at": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
             },
         )
         self.assertEqual(response.status_code, 201)
@@ -248,7 +248,7 @@ class FindingManagementTests(unittest.TestCase):
         with SessionLocal() as db:
             rule = db.get(SuppressionRule, rule_id)
             self.assertIsNotNone(rule)
-            rule.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+            rule.expires_at = datetime.now(UTC) - timedelta(seconds=1)
             db.commit()
 
         unsuppressed = self.client.get(f"/api/v1/findings/{self.finding_id}", headers=DEV_AUTH_HEADERS)

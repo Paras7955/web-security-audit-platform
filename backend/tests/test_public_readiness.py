@@ -2,12 +2,11 @@ import json
 import logging
 import unittest
 
-from fastapi.testclient import TestClient
-
 from app.api.schemas import AuditLogRead
-from app.main import app
 from app.core.logging import SecretSafeJsonFormatter
+from app.main import app
 from app.security.sanitization import sanitize_metadata, sanitize_relative_path, sanitize_text, sanitize_url
+from fastapi.testclient import TestClient
 
 
 class PublicApiBoundaryTests(unittest.TestCase):

@@ -5,13 +5,13 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
-
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import AiRequestLog, Finding, ReportArtifact, Scan, ScannerToolRun, Target, Workspace
 from app.reports.service import ReportGenerationError, generate_report_artifacts, read_report_artifact_file
+from fastapi.testclient import TestClient
+from sqlalchemy import delete, select
+
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 

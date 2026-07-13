@@ -3,7 +3,6 @@ import unittest
 from app.security.allowlist import ScanAllowlist
 from app.security.target_url import TargetUrlError, match_allowlisted_target, normalize_target_url
 
-
 ALLOWLIST = ScanAllowlist.model_validate(
     {
         "targets": [

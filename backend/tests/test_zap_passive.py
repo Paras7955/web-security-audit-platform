@@ -3,14 +3,13 @@ import unittest
 from app.core.contracts import Confidence, Severity
 from app.security.allowlist import AllowlistTarget
 from app.zap.passive import (
-    ZapApiClient,
     ZapAlertPage,
+    ZapApiClient,
     context_regex,
     normalize_zap_alert,
     run_zap_passive_scan,
     scope_observed_urls,
 )
-
 
 ALLOWLIST_TARGET = AllowlistTarget.model_validate(
     {

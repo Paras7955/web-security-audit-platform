@@ -14,7 +14,7 @@ RUN groupadd --gid 10001 scopeharbor \
 WORKDIR /app
 
 COPY backend/requirements.txt ./requirements.txt
-RUN pip install --requirement requirements.txt
+RUN pip install --require-hashes --requirement requirements.txt
 
 COPY --chown=scopeharbor:scopeharbor backend/ ./
 COPY --chown=scopeharbor:scopeharbor shared/ ./shared/

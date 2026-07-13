@@ -1,5 +1,5 @@
-from datetime import UTC, datetime, timedelta
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -15,8 +15,8 @@ from app.repo_scanner.adapters import ToolReceipt, run_repository_scan
 from app.repo_scanner.paths import resolve_stored_repo_path
 from app.repo_scanner.staging import StagedRepository, StagingLimits
 from app.risk import persist_scan_risk_score
-from app.scans.artifacts import ensure_scan_artifact_dir
 from app.scanner.passive import run_passive_scan
+from app.scans.artifacts import ensure_scan_artifact_dir
 from app.security.allowlist import ScanAllowlist
 from app.zap.active import run_zap_active_demo_scan
 from app.zap.client_spider import ZapClientSpiderCancelled, run_zap_client_spider_scan

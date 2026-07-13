@@ -17,7 +17,6 @@ from app.zap.passive import (
     validate_zap_scope_url,
 )
 
-
 ZAP_ACTIVE_POLL_LIMIT = 180
 ZAP_ACTIVE_POLL_INTERVAL_SECONDS = 0.5
 

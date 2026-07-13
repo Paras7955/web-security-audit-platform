@@ -2,6 +2,7 @@ import json
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import cast
 
 
 def _load_contracts() -> dict[str, object]:
@@ -69,7 +70,7 @@ class Confidence(StrEnum):
     CONFIRMED = "confirmed"
 
 
-DEFAULT_LIMITS = CONTRACTS["default_limits"]
+DEFAULT_LIMITS = cast(dict[str, int], CONTRACTS["default_limits"])
 
 
 @dataclass(frozen=True)
@@ -86,14 +87,22 @@ class ScanProfile:
 
 
 def _load_scan_profiles() -> tuple[ScanProfile, ...]:
+    raw_profiles = CONTRACTS.get("scan_profiles")
+    if not isinstance(raw_profiles, list):
+        raise ValueError("shared/contracts.json scan_profiles must be an array")
     profiles: list[ScanProfile] = []
-    for raw_profile in CONTRACTS["scan_profiles"]:
+    for raw_profile in raw_profiles:
+        if not isinstance(raw_profile, dict):
+            raise ValueError("shared/contracts.json scan profiles must be objects")
+        acknowledgements = raw_profile.get("required_acknowledgements")
+        if not isinstance(acknowledgements, list):
+            raise ValueError("scan profile acknowledgements must be an array")
         profile = ScanProfile(
             id=str(raw_profile["id"]),
             label=str(raw_profile["label"]),
             mode=ScanMode(str(raw_profile["mode"])),
             description=str(raw_profile["description"]),
-            required_acknowledgements=frozenset(str(code) for code in raw_profile["required_acknowledgements"]),
+            required_acknowledgements=frozenset(str(code) for code in acknowledgements),
             requires_repo_path=bool(raw_profile["requires_repo_path"]),
             local_demo_only=bool(raw_profile["local_demo_only"]),
             reports_enabled=bool(raw_profile["reports_enabled"]),

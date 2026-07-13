@@ -5,8 +5,7 @@ from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-
-REDACTION_TOKEN = "[REDACTED]"
+REDACTION_TOKEN = "[REDACTED]"  # noqa: S105 - replacement marker, not a credential
 SECRET_KEY_PARTS = ("authorization", "cookie", "credential", "password", "secret", "token", "api_key", "apikey")
 SECRET_PATTERNS = (
     re.compile(r"(?i)(authorization\s*:\s*(?:bearer|basic)\s+)([^\s,;]+)"),

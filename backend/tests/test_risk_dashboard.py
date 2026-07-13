@@ -1,15 +1,15 @@
-from datetime import datetime, timedelta, timezone
 import unittest
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
-
-from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
 
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import AuthIdentity, Finding, PlatformUser, RiskScore, Scan, Target, Workspace
 from app.risk import SCORING_MODEL_VERSION, calculate_scan_risk_score, persist_scan_risk_score
 from app.security.auth import ensure_user_workspace_identity
+from fastapi.testclient import TestClient
+from sqlalchemy import delete, select
+
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
@@ -304,9 +304,9 @@ class RiskDashboardTests(unittest.TestCase):
         scan_id: str | None = None,
     ) -> str:
         scan_id = scan_id or str(uuid4())
-        created_at = datetime(2026, 7, 7, tzinfo=timezone.utc) + timedelta(minutes=created_offset)
+        created_at = datetime(2026, 7, 7, tzinfo=UTC) + timedelta(minutes=created_offset)
         is_completed = status in {"completed", "completed_with_warnings"}
-        completed_at = datetime(2026, 7, 7, tzinfo=timezone.utc) + timedelta(minutes=completed_offset if completed_offset is not None else created_offset + 1)
+        completed_at = datetime(2026, 7, 7, tzinfo=UTC) + timedelta(minutes=completed_offset if completed_offset is not None else created_offset + 1)
         with SessionLocal() as db:
             scan = Scan(
                 id=scan_id,

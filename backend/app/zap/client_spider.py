@@ -18,7 +18,6 @@ from app.zap.passive import (
     wait_for_passive_records,
 )
 
-
 CLIENT_SPIDER_TIMEOUT_SECONDS = 120
 CLIENT_SPIDER_POLL_INTERVAL_SECONDS = 0.5
 CLIENT_SPIDER_MAX_CRAWL_DEPTH = 2

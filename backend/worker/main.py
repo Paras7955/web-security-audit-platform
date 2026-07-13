@@ -1,22 +1,18 @@
 import logging
 import time
 
-from sqlalchemy import text
-
 from app.auth_profiles import validate_auth_profile_secret_settings
 from app.core.config import settings
-from app.core.validation import validate_runtime_settings
-from app.db.session import engine
-from app.db.session import SessionLocal
-from app.db.session import check_database_ready
 from app.core.contracts import ScanMode
 from app.core.logging import configure_logging, log_event
+from app.core.validation import validate_runtime_settings
+from app.db.session import SessionLocal, check_database_ready, engine
 from app.ops.heartbeat import record_worker_heartbeat
 from app.repo_scanner.adapters import verify_repo_tools
 from app.scans.lifecycle import claim_next_queued_scan, recover_stale_scan_leases, run_passive_scan_job, run_repo_scan_job
 from app.security.allowlist import load_allowlist
 from app.security.auth import validate_auth_settings
-
+from sqlalchemy import text
 
 logger = logging.getLogger("scopeharbor.worker")
 

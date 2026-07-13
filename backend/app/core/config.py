@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     auth_oidc_issuer: str | None = None
     auth_oidc_audience: str | None = None
     auth_oidc_jwks_url: str | None = None
-    dev_auth_token: str = "dev-token"
+    dev_auth_token: str = "dev-token"  # noqa: S105 - known sentinel rejected outside explicit local mode
     dev_auth_user_id: str = "dev-user"
     dev_auth_workspace_id: str = "dev-workspace"
     dev_auth_subject: str = "dev-user"
@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     repo_tool_timeout_seconds: int = 120
     repo_tool_output_bytes: int = 10 * 1024 * 1024
     repo_tool_max_findings: int = 1_000
-    repo_staging_root: str = "/tmp/scopeharbor-repo-staging"
+    repo_staging_root: str = "/tmp/scopeharbor-repo-staging"  # noqa: S108 - 0700 bounded tmpfs in the worker
     gitleaks_binary: str = "gitleaks"
     gitleaks_config_path: str = "/app/config/gitleaks.toml"
     osv_scanner_binary: str = "osv-scanner"

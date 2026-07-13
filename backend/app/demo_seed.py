@@ -15,7 +15,6 @@ from app.finding_management import sync_occurrence_state
 from app.models import (
     AuthIdentity,
     Finding,
-    FindingOccurrenceState,
     FindingState,
     PlatformUser,
     ReportArtifact,
@@ -29,7 +28,6 @@ from app.models import (
 )
 from app.reports.service import safe_report_dir, write_report_file
 from app.risk import SCORING_MODEL_VERSION, calculate_scan_risk_score
-
 
 DEMO_USER_ID = "dev-user"
 DEMO_WORKSPACE_ID = "dev-workspace"

@@ -1,12 +1,34 @@
 import json
 import os
+import subprocess
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.core.config import Settings
-from app.repo_scanner.adapters import RepoToolOutputError, _load_json, _osv_findings, run_gitleaks
+from app.findings.schemas import NormalizedFindingInput
+from app.repo_scanner.adapters import (
+    AdapterResult,
+    RepoToolError,
+    RepoToolOutputError,
+    RepoToolTimeoutError,
+    RepoToolUnavailableError,
+    ToolReceipt,
+    _load_json,
+    _osv_findings,
+    _relative_scanner_path,
+    _run_tool,
+    _safe_positive_int,
+    _validate_osv_database,
+    _verify_version,
+    run_gitleaks,
+    run_osv_scanner,
+    run_repository_scan,
+    verify_repo_tools,
+)
 from app.repo_scanner.paths import RepoPathError, repo_path_for_storage, resolve_stored_repo_path, validate_repo_path
 from app.repo_scanner.staging import RepositoryLimitError, StagedRepository, StagingLimits
 
@@ -137,6 +159,7 @@ class RepoScannerTests(unittest.TestCase):
 
         self.assertEqual(len(result.findings), 1)
         self.assertNotIn(canary, str(result.findings[0].model_dump()))
+        self.assertEqual(result.findings[0].affected_file, "src/settings.py")
         self.assertEqual(result.receipt.tool_version, "8.30.1")
 
     def test_osv_parser_keeps_only_safe_package_and_advisory_metadata(self) -> None:
@@ -172,6 +195,165 @@ class RepoScannerTests(unittest.TestCase):
             path.write_text("[]" * 100, encoding="utf-8")
             with self.assertRaises(RepoToolOutputError):
                 _load_json(path, 10)
+
+    def test_repository_scan_makes_osv_failure_an_explicit_warning(self) -> None:
+        now = datetime.now(UTC)
+        finding = NormalizedFindingInput(
+            title="Secret",
+            severity="high",
+            confidence="confirmed",
+            affected_file="app.py",
+            evidence="[REDACTED]",
+            source_tool="gitleaks",
+            scanner_rule_id="rule",
+        )
+        gitleaks = AdapterResult((finding,), ToolReceipt("gitleaks", "8.30.1", "completed", None, 1, now, now))
+        with patch("app.repo_scanner.adapters.run_gitleaks", return_value=gitleaks), patch(
+            "app.repo_scanner.adapters.run_osv_scanner", side_effect=RepoToolUnavailableError("missing")
+        ), patch("app.repo_scanner.adapters._optional_version", return_value=None):
+            result = run_repository_scan(Path("/staged"), Settings(_env_file=None))
+        self.assertEqual(result.findings, (finding,))
+        self.assertEqual(result.receipts[1].status, "skipped")
+        self.assertEqual(result.warning_codes, ("repo_tool_unavailable",))
+
+        osv = AdapterResult((), ToolReceipt("osv-scanner", "2.3.8", "completed", None, 0, now, now))
+        with patch("app.repo_scanner.adapters.run_gitleaks", return_value=gitleaks), patch(
+            "app.repo_scanner.adapters.run_osv_scanner", return_value=osv
+        ):
+            successful = run_repository_scan(Path("/staged"), Settings(_env_file=None))
+        self.assertEqual(successful.warning_codes, ())
+
+    def test_tool_version_verification_is_exact_and_safe(self) -> None:
+        with patch("app.repo_scanner.adapters.shutil.which", return_value=None):
+            with self.assertRaises(RepoToolUnavailableError):
+                _verify_version("gitleaks", "8.30.1")
+
+        completed = SimpleNamespace(returncode=0, stdout="gitleaks 8.30.1", stderr="")
+        with patch("app.repo_scanner.adapters.shutil.which", return_value="/trusted/gitleaks"), patch(
+            "app.repo_scanner.adapters.subprocess.run", return_value=completed
+        ):
+            self.assertEqual(_verify_version("gitleaks", "8.30.1"), "8.30.1")
+        with patch("app.repo_scanner.adapters._verify_version", side_effect=lambda _binary, expected: expected):
+            self.assertEqual(verify_repo_tools(Settings(_env_file=None)), {"gitleaks": "8.30.1", "osv-scanner": "2.3.8"})
+
+        for result in (
+            SimpleNamespace(returncode=1, stdout="8.30.1", stderr=""),
+            SimpleNamespace(returncode=0, stdout="8.30.10", stderr=""),
+        ):
+            with patch("app.repo_scanner.adapters.shutil.which", return_value="/trusted/tool"), patch(
+                "app.repo_scanner.adapters.subprocess.run", return_value=result
+            ), self.assertRaises(RepoToolUnavailableError):
+                _verify_version("tool", "8.30.1")
+        with patch("app.repo_scanner.adapters.shutil.which", return_value="/trusted/tool"), patch(
+            "app.repo_scanner.adapters.subprocess.run", side_effect=subprocess.TimeoutExpired("tool", 5)
+        ), self.assertRaises(RepoToolUnavailableError):
+            _verify_version("tool", "1.0")
+
+    def test_tool_runner_maps_failures_and_bounds_output(self) -> None:
+        config = Settings(_env_file=None, repo_tool_output_bytes=32, repo_tool_timeout_seconds=2)
+        with tempfile.TemporaryDirectory() as output_dir:
+            output = Path(output_dir)
+            with patch("app.repo_scanner.adapters.subprocess.run", return_value=SimpleNamespace(returncode=7)):
+                self.assertEqual(_run_tool(["trusted", "--fixed"], output_dir=output, config=config), 7)
+
+            for exception, error_type in (
+                (FileNotFoundError(), RepoToolUnavailableError),
+                (subprocess.TimeoutExpired("trusted", 2), RepoToolTimeoutError),
+                (OSError("private OS detail"), RepoToolError),
+            ):
+                with patch("app.repo_scanner.adapters.subprocess.run", side_effect=exception), self.assertRaises(error_type):
+                    _run_tool(["trusted"], output_dir=output, config=config)
+
+            def oversized_run(_command, **kwargs):
+                kwargs["stdout"].write(b"x" * 33)
+                kwargs["stdout"].flush()
+                return SimpleNamespace(returncode=0)
+
+            with patch("app.repo_scanner.adapters.subprocess.run", side_effect=oversized_run), self.assertRaises(RepoToolOutputError):
+                _run_tool(["trusted"], output_dir=output, config=config)
+
+    def test_osv_adapter_handles_bounded_exit_codes_and_output(self) -> None:
+        payload = {"results": []}
+
+        def fake_run(command, **_kwargs):
+            Path(command[command.index("--output-file") + 1]).write_text(json.dumps(payload), encoding="utf-8")
+            return 1
+
+        with tempfile.TemporaryDirectory() as staged_dir, patch(
+            "app.repo_scanner.adapters._verify_version", return_value="2.3.8"
+        ), patch("app.repo_scanner.adapters._validate_osv_database"), patch(
+            "app.repo_scanner.adapters._run_tool", side_effect=fake_run
+        ):
+            result = run_osv_scanner(Path(staged_dir), Settings(_env_file=None))
+        self.assertEqual(result.receipt.status, "completed")
+
+        with tempfile.TemporaryDirectory() as staged_dir, patch(
+            "app.repo_scanner.adapters._verify_version", return_value="2.3.8"
+        ), patch("app.repo_scanner.adapters._validate_osv_database"), patch(
+            "app.repo_scanner.adapters._run_tool", return_value=4
+        ), self.assertRaises(RepoToolError):
+            run_osv_scanner(Path(staged_dir), Settings(_env_file=None))
+
+    def test_osv_parser_rejects_shape_and_bounds_findings(self) -> None:
+        with self.assertRaises(RepoToolOutputError):
+            _osv_findings([], Path("/tmp/staged"), 10)
+        with self.assertRaises(RepoToolOutputError):
+            _osv_findings({"results": {}}, Path("/tmp/staged"), 10)
+
+        payload = {
+            "results": [
+                None,
+                {
+                    "source": "malformed",
+                    "packages": [
+                        None,
+                        {
+                            "package": None,
+                            "vulnerabilities": [
+                                None,
+                                {"id": "OSV-1", "summary": "First", "database_specific": {"severity": "critical"}},
+                                {"id": "OSV-1", "summary": "duplicate"},
+                                {"id": "OSV-2", "summary": "Second", "severity": [{"score": "CVSS:3.1/AV:N/C:H"}]},
+                            ],
+                        },
+                    ],
+                },
+            ]
+        }
+        findings = _osv_findings(payload, Path("/tmp/staged"), 2)
+        self.assertEqual([finding.scanner_rule_id for finding in findings], ["OSV-1", "OSV-2"])
+        self.assertEqual([finding.severity for finding in findings], ["critical", "high"])
+
+    def test_relative_paths_numbers_and_osv_database_are_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as staged_dir, tempfile.TemporaryDirectory() as outside_dir:
+            staged = Path(staged_dir)
+            inside = staged / "src" / "app.py"
+            inside.parent.mkdir()
+            inside.touch()
+            outside = Path(outside_dir) / "private.py"
+            outside.touch()
+            self.assertEqual(_relative_scanner_path(inside.as_posix(), staged), "src/app.py")
+            self.assertEqual(_relative_scanner_path(outside.as_posix(), staged), "private.py")
+            self.assertEqual(_relative_scanner_path(None, staged), "unknown")
+
+        for value, expected in (("12", 12), (0, None), (-1, None), (10_000_000, None), ({}, None)):
+            self.assertEqual(_safe_positive_int(value), expected)
+
+        with tempfile.TemporaryDirectory() as database_dir:
+            config = Settings(_env_file=None, osv_database_path=database_dir, osv_database_max_age_days=1)
+            with self.assertRaisesRegex(RepoToolUnavailableError, "unavailable") as missing:
+                _validate_osv_database(config)
+            self.assertEqual(missing.exception.code, "osv_database_missing")
+            archive = Path(database_dir) / "osv-scanner" / "npm" / "all.zip"
+            archive.parent.mkdir(parents=True)
+            archive.touch()
+            old = (datetime.now(UTC) - timedelta(days=2)).timestamp()
+            os.utime(archive, (old, old))
+            with self.assertRaisesRegex(RepoToolUnavailableError, "stale") as stale:
+                _validate_osv_database(config)
+            self.assertEqual(stale.exception.code, "osv_database_stale")
+            archive.touch()
+            _validate_osv_database(config)
 
     @unittest.skipUnless(os.environ.get("SCOPEHARBOR_REAL_SCANNER_TESTS") == "1", "real scanner binaries not requested")
     def test_real_gitleaks_binary_redacts_secret_and_never_executes_package_scripts(self) -> None:

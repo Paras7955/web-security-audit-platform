@@ -1,14 +1,45 @@
+name: scopeharbor
+
+x-container-hardening: &container-hardening
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  restart: "no"
+
+x-backend-runtime: &backend-runtime
+  env_file:
+    - .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://security_audit:${POSTGRES_PASSWORD:?Run python3 scripts/bootstrap_env.py}@postgres:5432/security_audit
+    ALLOWLIST_PATH: /app/config/scan-allowlist.yml
+    ARTIFACT_ROOT: /app/artifacts
+    REPO_SCAN_ROOT: /app/repositories
+    REPO_STAGING_ROOT: /tmp/scopeharbor-repo-staging
+    GITLEAKS_CONFIG_PATH: /app/config/gitleaks.toml
+    OSV_CONFIG_PATH: /app/config/osv-scanner.toml
+    OSV_DATABASE_PATH: /var/lib/osv-scanner
+    ZAP_BASE_URL: http://zap:8080
+  volumes:
+    - ./config:/app/config:ro
+    - ./:/app/repositories/security-project:ro
+    - app-artifacts:/app/artifacts
+    - osv-cache:/var/lib/osv-scanner:ro
+
 services:
   postgres:
-    image: postgres:16-alpine
+    <<: *container-hardening
+    image: postgres:16.14-alpine3.24@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     environment:
       POSTGRES_DB: security_audit
       POSTGRES_USER: security_audit
-      POSTGRES_PASSWORD: security_audit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run python3 scripts/bootstrap_env.py}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    networks:
+      - internal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U security_audit -d security_audit"]
       interval: 5s
@@ -16,7 +47,13 @@ services:
       retries: 12
 
   zap:
-    image: ghcr.io/zaproxy/zaproxy:2.16.1
+    <<: *container-hardening
+    image: zaproxy/zap-stable:2.17.0@sha256:8d387b1a63e3425beef4846e39719f5af2a787753af2d8b6558c6257d7a577a2
+    user: zap
+    read_only: true
+    shm_size: 256m
+    environment:
+      ZAP_API_KEY: ${ZAP_API_KEY:?Run python3 scripts/bootstrap_env.py}
     command:
       - zap.sh
       - -daemon
@@ -25,23 +62,35 @@ services:
       - -port
       - "8080"
       - -config
-      - api.disablekey=true
+      - api.key=${ZAP_API_KEY:?Run python3 scripts/bootstrap_env.py}
       - -config
       - api.addrs.addr.name=.*
       - -config
       - api.addrs.addr.regex=true
     expose:
       - "8080"
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+      - /home/zap/.ZAP:size=256m,mode=0700,uid=1000,gid=1000
+    networks:
+      - internal
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/JSON/core/view/version/ >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -q --header=\"X-ZAP-API-Key: $$ZAP_API_KEY\" -O - http://localhost:8080/JSON/core/view/version/ >/dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 18
+      retries: 24
 
   juice-shop:
-    image: bkimminich/juice-shop:v17.3.0
+    <<: *container-hardening
+    image: bkimminich/juice-shop:v20.1.1@sha256:cd58d79c5cb4d82f22fbaf616f9ff43bbd04ba630cd6b448a9ed99cf652fcebf
+    user: "65532:65532"
+    read_only: true
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${JUICE_SHOP_PORT:-3000}:3000"
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks:
+      - internal
     healthcheck:
       test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
@@ -49,80 +98,63 @@ services:
       retries: 18
 
   migrate:
+    <<: [*container-hardening, *backend-runtime]
     build:
       context: .
       dockerfile: backend/Dockerfile
+      target: api
+    user: "10001:10001"
+    read_only: true
     command: ["alembic", "upgrade", "head"]
-    env_file:
-      - .env.example
-    environment:
-      DATABASE_URL: postgresql+psycopg://security_audit:security_audit@postgres:5432/security_audit
+    networks:
+      - internal
     depends_on:
       postgres:
         condition: service_healthy
 
   backend:
+    <<: [*container-hardening, *backend-runtime]
     build:
       context: .
       dockerfile: backend/Dockerfile
-    env_file:
-      - .env.example
-    environment:
-      DATABASE_URL: postgresql+psycopg://security_audit:security_audit@postgres:5432/security_audit
-      ALLOWLIST_PATH: /app/config/scan-allowlist.yml
-      ARTIFACT_ROOT: /app/artifacts
-      REPO_SCAN_ROOT: /app/repositories
-      APP_ENV: local
-      AUTH_MODE: dev
-      AUTH_PROVIDER: dev
-      DEV_AUTH_TOKEN: dev-token
-      DEV_AUTH_USER_ID: dev-user
-      DEV_AUTH_WORKSPACE_ID: dev-workspace
-      DEV_AUTH_SUBJECT: dev-user
-      AUTH_PROFILE_SECRET_KEY: ${AUTH_PROFILE_SECRET_KEY:?Set AUTH_PROFILE_SECRET_KEY to a generated Fernet key}
-      ZAP_BASE_URL: http://zap:8080
+      target: api
+    user: "10001:10001"
+    read_only: true
     ports:
-      - "8000:8000"
-    volumes:
-      - ./config:/app/config:ro
-      - ./:/app/repositories/security-project:ro
-      - app-artifacts:/app/artifacts
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    networks:
+      - internal
+      - egress
     depends_on:
       postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)\""]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 10s
       timeout: 5s
       retries: 12
 
   worker:
+    <<: [*container-hardening, *backend-runtime]
     build:
       context: .
       dockerfile: backend/Dockerfile
-    command: ["python", "-m", "worker.main"]
-    env_file:
-      - .env.example
-    environment:
-      DATABASE_URL: postgresql+psycopg://security_audit:security_audit@postgres:5432/security_audit
-      ALLOWLIST_PATH: /app/config/scan-allowlist.yml
-      ARTIFACT_ROOT: /app/artifacts
-      REPO_SCAN_ROOT: /app/repositories
-      APP_ENV: local
-      AUTH_MODE: dev
-      AUTH_PROVIDER: dev
-      DEV_AUTH_TOKEN: dev-token
-      DEV_AUTH_USER_ID: dev-user
-      DEV_AUTH_WORKSPACE_ID: dev-workspace
-      DEV_AUTH_SUBJECT: dev-user
-      AUTH_PROFILE_SECRET_KEY: ${AUTH_PROFILE_SECRET_KEY:?Set AUTH_PROFILE_SECRET_KEY to a generated Fernet key}
-      ZAP_BASE_URL: http://zap:8080
+      target: worker
+    user: "10001:10001"
+    read_only: true
     volumes:
       - ./config:/app/config:ro
       - ./:/app/repositories/security-project:ro
       - app-artifacts:/app/artifacts
+      - osv-cache:/var/lib/osv-scanner:ro
+    tmpfs:
+      - /tmp:size=640m,mode=0700,uid=10001,gid=10001
+    networks:
+      - internal
     depends_on:
       postgres:
         condition: service_healthy
@@ -131,19 +163,59 @@ services:
       zap:
         condition: service_healthy
 
+  osv-db-update:
+    <<: *container-hardening
+    profiles: ["maintenance"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: worker
+    user: "10001:10001"
+    read_only: true
+    command:
+      - osv-scanner
+      - --offline-vulnerabilities
+      - --download-offline-databases
+      - /var/lib/osv-scanner
+    environment:
+      HOME: /tmp
+      OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY: /var/lib/osv-scanner
+    volumes:
+      - osv-cache:/var/lib/osv-scanner
+    tmpfs:
+      - /tmp:size=64m,mode=0700,uid=10001,gid=10001
+    networks:
+      - egress
+
   frontend:
+    <<: *container-hardening
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:${BACKEND_PORT:-8000}
+        NEXT_PUBLIC_DEV_AUTH_TOKEN: ${DEV_AUTH_TOKEN:?Run python3 scripts/bootstrap_env.py}
+    user: "10001:10001"
+    read_only: true
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
-      NEXT_PUBLIC_DEV_AUTH_TOKEN: dev-token
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
     ports:
-      - "3001:3000"
+      - "127.0.0.1:${FRONTEND_PORT:-3001}:3000"
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks:
+      - egress
     depends_on:
       backend:
         condition: service_healthy
 
+networks:
+  internal:
+    internal: true
+  egress: {}
+
 volumes:
   postgres-data:
   app-artifacts:
+  osv-cache:

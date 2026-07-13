@@ -17,7 +17,6 @@ from app.core.contracts import Confidence, Severity
 from app.findings.schemas import NormalizedFindingInput
 from app.security.sanitization import sanitize_relative_path, sanitize_text
 
-
 GITLEAKS_VERSION = "8.30.1"
 OSV_SCANNER_VERSION = "2.3.8"
 
@@ -122,7 +121,11 @@ def run_gitleaks(staged_root: Path, config: Settings = settings) -> AdapterResul
         payload = _load_json(report_path, config.repo_tool_output_bytes)
     if not isinstance(payload, list):
         raise RepoToolOutputError("Gitleaks output was not a JSON list.")
-    findings = tuple(_gitleaks_finding(item) for item in payload[: config.repo_tool_max_findings] if isinstance(item, dict))
+    findings = tuple(
+        _gitleaks_finding(item, staged_root)
+        for item in payload[: config.repo_tool_max_findings]
+        if isinstance(item, dict)
+    )
     return AdapterResult(
         findings=findings,
         receipt=ToolReceipt("gitleaks", version, "completed", None, len(findings), started, datetime.now(UTC)),
@@ -180,7 +183,7 @@ def _run_tool(
     stderr_path = output_dir / "stderr"
     try:
         with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
-            completed = subprocess.run(
+            completed = subprocess.run(  # noqa: S603 - argv-only invocation of startup-validated pinned binaries
                 command,
                 stdin=subprocess.DEVNULL,
                 stdout=stdout,
@@ -214,7 +217,7 @@ def _verify_version(binary: str, expected: str) -> str:
     if resolved is None:
         raise RepoToolUnavailableError("Required repository scanner is unavailable.")
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603 - resolved executable, no shell, fixed version argument
             [resolved, "--version"],
             stdin=subprocess.DEVNULL,
             capture_output=True,
@@ -248,7 +251,7 @@ def _load_json(path: Path, maximum: int) -> object:
         raise RepoToolOutputError("Repository scanner output is not valid bounded JSON.") from exc
 
 
-def _gitleaks_finding(item: dict[str, Any]) -> NormalizedFindingInput:
+def _gitleaks_finding(item: dict[str, Any], staged_root: Path) -> NormalizedFindingInput:
     rule_id = sanitize_text(item.get("RuleID"), maximum=200) or "unknown-secret-rule"
     title = sanitize_text(item.get("Description"), maximum=240) or "Potential hardcoded secret"
     line = _safe_positive_int(item.get("StartLine"))
@@ -256,7 +259,7 @@ def _gitleaks_finding(item: dict[str, Any]) -> NormalizedFindingInput:
         title=title,
         severity=Severity.HIGH,
         confidence=Confidence.CONFIRMED,
-        affected_file=sanitize_relative_path(str(item.get("File") or "unknown")),
+        affected_file=_relative_scanner_path(item.get("File"), staged_root),
         evidence=f"[REDACTED] secret matched rule {rule_id} at line {line or 'unknown'}.",
         source_tool="gitleaks",
         scanner_rule_id=rule_id,
@@ -274,17 +277,21 @@ def _osv_findings(payload: object, staged_root: Path, maximum: int) -> tuple[Nor
     for result in payload["results"]:
         if not isinstance(result, dict):
             continue
-        source = result.get("source") if isinstance(result.get("source"), dict) else {}
+        source_value = result.get("source")
+        source: dict[str, Any] = source_value if isinstance(source_value, dict) else {}
         source_path = _relative_scanner_path(source.get("path"), staged_root)
-        packages = result.get("packages") if isinstance(result.get("packages"), list) else []
+        packages_value = result.get("packages")
+        packages: list[object] = packages_value if isinstance(packages_value, list) else []
         for package_result in packages:
             if not isinstance(package_result, dict):
                 continue
-            package = package_result.get("package") if isinstance(package_result.get("package"), dict) else {}
+            package_value = package_result.get("package")
+            package: dict[str, Any] = package_value if isinstance(package_value, dict) else {}
             name = sanitize_text(package.get("name"), maximum=200) or "unknown-package"
             version = sanitize_text(package.get("version"), maximum=100) or "unknown"
             ecosystem = sanitize_text(package.get("ecosystem"), maximum=100) or "unknown"
-            vulnerabilities = package_result.get("vulnerabilities") if isinstance(package_result.get("vulnerabilities"), list) else []
+            vulnerabilities_value = package_result.get("vulnerabilities")
+            vulnerabilities: list[object] = vulnerabilities_value if isinstance(vulnerabilities_value, list) else []
             seen: set[str] = set()
             for vulnerability in vulnerabilities:
                 if not isinstance(vulnerability, dict):
@@ -319,6 +326,8 @@ def _relative_scanner_path(value: object, staged_root: Path) -> str:
     if not isinstance(value, str):
         return "unknown"
     path = Path(value)
+    if not path.is_absolute():
+        return sanitize_relative_path(str(path)) or "unknown"
     try:
         return sanitize_relative_path(str(path.resolve().relative_to(staged_root.resolve()))) or "unknown"
     except (OSError, ValueError):
@@ -344,6 +353,8 @@ def _osv_severity(vulnerability: dict[str, Any]) -> Severity:
 
 
 def _safe_positive_int(value: object) -> int | None:
+    if not isinstance(value, str | bytes | int | float):
+        return None
     try:
         number = int(value)
     except (TypeError, ValueError):

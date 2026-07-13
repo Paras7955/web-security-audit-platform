@@ -1,11 +1,9 @@
 import unittest
 
 import httpx
-from pydantic import ValidationError
-
 from app.scanner.http_client import GuardedHttpClient, ScannerHttpError, decode_limited_body
 from app.security.allowlist import AllowlistTarget
-
+from pydantic import ValidationError
 
 ALLOWLIST_TARGET = AllowlistTarget.model_validate(
     {
@@ -49,7 +47,8 @@ class ScannerHttpTests(unittest.TestCase):
         class MockClient(httpx.Client):
             def __init__(self, *args, **kwargs):
                 captured_kwargs.update(kwargs)
-                super().__init__(transport=httpx.MockTransport(handler), *args, **kwargs)
+                kwargs["transport"] = httpx.MockTransport(handler)
+                super().__init__(*args, **kwargs)
 
         try:
             httpx.Client = MockClient
@@ -71,7 +70,8 @@ class ScannerHttpTests(unittest.TestCase):
 
         class MockClient(httpx.Client):
             def __init__(self, *args, **kwargs):
-                super().__init__(transport=httpx.MockTransport(handler), *args, **kwargs)
+                kwargs["transport"] = httpx.MockTransport(handler)
+                super().__init__(*args, **kwargs)
 
         try:
             httpx.Client = MockClient
@@ -100,7 +100,8 @@ class ScannerHttpTests(unittest.TestCase):
 
         class MockClient(httpx.Client):
             def __init__(self, *args, **kwargs):
-                super().__init__(transport=httpx.MockTransport(handler), *args, **kwargs)
+                kwargs["transport"] = httpx.MockTransport(handler)
+                super().__init__(*args, **kwargs)
 
         try:
             httpx.Client = MockClient
@@ -143,7 +144,8 @@ class ScannerHttpTests(unittest.TestCase):
 
         class MockClient(httpx.Client):
             def __init__(self, *args, **kwargs):
-                super().__init__(transport=httpx.MockTransport(handler), *args, **kwargs)
+                kwargs["transport"] = httpx.MockTransport(handler)
+                super().__init__(*args, **kwargs)
 
         try:
             httpx.Client = MockClient
@@ -170,7 +172,8 @@ class ScannerHttpTests(unittest.TestCase):
 
         class MockClient(httpx.Client):
             def __init__(self, *args, **kwargs):
-                super().__init__(transport=httpx.MockTransport(handler), *args, **kwargs)
+                kwargs["transport"] = httpx.MockTransport(handler)
+                super().__init__(*args, **kwargs)
 
         try:
             httpx.Client = MockClient
@@ -195,7 +198,8 @@ class ScannerHttpTests(unittest.TestCase):
 
         class MockClient(httpx.Client):
             def __init__(self, *args, **kwargs):
-                super().__init__(transport=httpx.MockTransport(handler), *args, **kwargs)
+                kwargs["transport"] = httpx.MockTransport(handler)
+                super().__init__(*args, **kwargs)
 
         try:
             httpx.Client = MockClient
@@ -217,7 +221,8 @@ class ScannerHttpTests(unittest.TestCase):
 
         class MockClient(httpx.Client):
             def __init__(self, *args, **kwargs):
-                super().__init__(transport=httpx.MockTransport(handler), *args, **kwargs)
+                kwargs["transport"] = httpx.MockTransport(handler)
+                super().__init__(*args, **kwargs)
 
         try:
             httpx.Client = MockClient

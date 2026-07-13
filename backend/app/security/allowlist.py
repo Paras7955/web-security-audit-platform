@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
-from typing import Iterable
+from collections.abc import Iterable
+from pathlib import Path
 from urllib.parse import urlparse
 
 import yaml
@@ -66,7 +66,7 @@ class AllowlistTarget(BaseModel):
         return ports
 
     @model_validator(mode="after")
-    def validate_base_url(self) -> "AllowlistTarget":
+    def validate_base_url(self) -> AllowlistTarget:
         parsed = urlparse(self.base_url)
         if parsed.scheme not in self.schemes:
             raise ValueError("base_url scheme must be listed in schemes")
@@ -90,7 +90,7 @@ class ScanAllowlist(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     @model_validator(mode="after")
-    def validate_unique_entries(self) -> "ScanAllowlist":
+    def validate_unique_entries(self) -> ScanAllowlist:
         ids = [target.id for target in self.targets]
         duplicates = sorted({target_id for target_id in ids if ids.count(target_id) > 1})
         if duplicates:

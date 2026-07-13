@@ -2,14 +2,14 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
-
 from app.auth_profiles import decrypt_secret
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import AuthProfile, Scan, Target, Workspace
-from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
+from fastapi.testclient import TestClient
+from sqlalchemy import delete
+
+from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, ensure_dev_principal
 
 
 class AuthProfileApiTests(unittest.TestCase):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -43,9 +44,13 @@ def encode_cursor(created_at: datetime, item_id: str) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
-def page_items(items: list[object], limit: int) -> tuple[list[object], str | None]:
+def page_items[CursorItemT](items: Sequence[CursorItemT], limit: int) -> tuple[list[CursorItemT], str | None]:
     if len(items) <= limit:
-        return items, None
-    visible = items[:limit]
+        return list(items), None
+    visible = list(items[:limit])
     last = visible[-1]
-    return visible, encode_cursor(last.created_at, last.id)
+    created_at = getattr(last, "created_at", None)
+    item_id = getattr(last, "id", None)
+    if not isinstance(created_at, datetime) or not isinstance(item_id, str):
+        raise TypeError("Paginated items must expose datetime created_at and string id values.")
+    return visible, encode_cursor(created_at, item_id)

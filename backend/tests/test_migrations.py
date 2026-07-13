@@ -7,10 +7,9 @@ from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect, text
-
 from app.core.config import settings
 from app.db.session import engine
+from sqlalchemy import create_engine, inspect, text
 
 
 class MigrationTests(unittest.TestCase):

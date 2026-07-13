@@ -21,7 +21,7 @@ ALLOWED_CUSTOM_HEADERS = {
     "x-access-token",
 }
 HEADER_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,119}$")
-LOCAL_DEV_EXAMPLE_SECRET_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+LOCAL_DEV_EXAMPLE_SECRET_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="  # noqa: S105 - rejected outside local mode
 
 
 @dataclass(frozen=True)

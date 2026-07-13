@@ -5,21 +5,32 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
-from sqlalchemy import delete, select
-
 from app.auth_profiles import AuthProfileError, encrypt_secret
 from app.core.contracts import Confidence, ScanStatus, ScanStep, Severity
 from app.db.session import SessionLocal
 from app.findings.schemas import NormalizedFindingInput
-from app.models import LEGACY_USER_ID, LEGACY_WORKSPACE_ID, AuthProfile, Finding, FindingOccurrenceState, FindingState, RiskScore, Scan, ScannerToolRun, Target, Workspace
+from app.models import (
+    LEGACY_USER_ID,
+    LEGACY_WORKSPACE_ID,
+    AuthProfile,
+    Finding,
+    FindingOccurrenceState,
+    FindingState,
+    RiskScore,
+    Scan,
+    ScannerToolRun,
+    Target,
+    Workspace,
+)
 from app.repo_scanner.adapters import RepoScanResult, ToolReceipt
+from app.scanner.passive import PassiveScanResult
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
 from app.scans.lifecycle import claim_next_queued_scan, recover_stale_scan_leases, run_passive_scan_job, run_repo_scan_job
-from app.scanner.passive import PassiveScanResult
 from app.security.allowlist import ScanAllowlist
 from app.zap.active import ZapActiveDemoResult
 from app.zap.client_spider import ZapClientSpiderResult
 from app.zap.passive import ZapPassiveResult
+from sqlalchemy import delete, select
 from worker.main import validate_worker_startup
 
 

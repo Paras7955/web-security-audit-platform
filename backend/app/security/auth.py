@@ -54,8 +54,6 @@ def validate_auth_settings(config: Settings = settings) -> None:
             raise AuthConfigurationError("Dev auth and production OIDC auth settings cannot coexist.")
         if not config.dev_auth_token.strip():
             raise AuthConfigurationError("DEV_AUTH_TOKEN is required when AUTH_MODE=dev.")
-        if config.dev_auth_token.strip() in {"dev-token", "changeme", "example", "password"} and app_env != "local":
-            raise AuthConfigurationError("Example development credentials are local-only.")
         return
 
     if not provider:
@@ -194,7 +192,7 @@ def provision_oidc_principal(
             select(Workspace).where(Workspace.owner_user_id == identity.user_id).order_by(Workspace.created_at.asc())
         )
         if workspace is None:
-            raise AuthError("Identity provisioning could not be completed safely.")
+            raise AuthError("Identity provisioning could not be completed safely.") from None
         user_id = identity.user_id
         workspace_id = workspace.id
     return AuthenticatedPrincipal(

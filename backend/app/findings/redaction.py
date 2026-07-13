@@ -1,6 +1,5 @@
 from app.core.contracts import DEFAULT_LIMITS
-from app.security.sanitization import REDACTION_TOKEN, sanitize_text
-
+from app.security.sanitization import sanitize_text
 
 EVIDENCE_SNIPPET_CAP = int(DEFAULT_LIMITS["evidence_snippet_bytes"])
 def redact_text(value: str | None) -> tuple[str | None, bool]:

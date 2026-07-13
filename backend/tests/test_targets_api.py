@@ -1,17 +1,17 @@
-import unittest
 import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlencode
 from uuid import uuid4
 
+from app.core.config import settings
+from app.db.session import SessionLocal
+from app.main import app
+from app.models import AuthProfile, Target
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
-from app.main import app
-from app.core.config import settings
-from app.db.session import SessionLocal
-from app.models import AuthProfile, Target
 from tests.helpers import DEV_AUTH_HEADERS
 
 

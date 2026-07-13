@@ -3,9 +3,6 @@ from datetime import UTC, datetime
 from urllib.parse import urlencode
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-from sqlalchemy import delete
-
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import (
@@ -22,6 +19,9 @@ from app.models import (
     Workspace,
 )
 from app.security.auth import ensure_user_workspace_identity
+from fastapi.testclient import TestClient
+from sqlalchemy import delete
+
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
@@ -78,7 +78,10 @@ class CursorPaginationIsolationTests(unittest.TestCase):
                 )
             db.flush()
             for scan_id, target_id, workspace_id, user_id in (
-                *[(scan_id, target_id, DEV_WORKSPACE_ID, DEV_USER_ID) for scan_id, target_id in zip(self.dev_scan_ids, self.dev_target_ids)],
+                *[
+                    (scan_id, target_id, DEV_WORKSPACE_ID, DEV_USER_ID)
+                    for scan_id, target_id in zip(self.dev_scan_ids, self.dev_target_ids, strict=True)
+                ],
                 (self.other_scan_id, self.other_target_id, self.other_workspace_id, self.other_user_id),
             ):
                 db.add(
@@ -100,7 +103,10 @@ class CursorPaginationIsolationTests(unittest.TestCase):
                 )
             db.flush()
             for finding_id, scan_id, workspace_id in (
-                *[(finding_id, scan_id, DEV_WORKSPACE_ID) for finding_id, scan_id in zip(self.dev_finding_ids, self.dev_scan_ids)],
+                *[
+                    (finding_id, scan_id, DEV_WORKSPACE_ID)
+                    for finding_id, scan_id in zip(self.dev_finding_ids, self.dev_scan_ids, strict=True)
+                ],
                 (self.other_finding_id, self.other_scan_id, self.other_workspace_id),
             ):
                 db.add(
@@ -136,7 +142,10 @@ class CursorPaginationIsolationTests(unittest.TestCase):
                     )
                 )
             for rule_id, target_id, workspace_id, user_id in (
-                *[(rule_id, target_id, DEV_WORKSPACE_ID, DEV_USER_ID) for rule_id, target_id in zip(self.dev_suppression_ids, self.dev_target_ids)],
+                *[
+                    (rule_id, target_id, DEV_WORKSPACE_ID, DEV_USER_ID)
+                    for rule_id, target_id in zip(self.dev_suppression_ids, self.dev_target_ids, strict=True)
+                ],
                 (self.other_suppression_id, self.other_target_id, self.other_workspace_id, self.other_user_id),
             ):
                 db.add(

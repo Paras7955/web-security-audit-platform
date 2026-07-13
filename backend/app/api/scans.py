@@ -7,18 +7,18 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_principal, get_db, get_scan_allowlist
 from app.api.pagination import PageRequest, page_items, page_request
-from app.api.schemas import CursorPage, ScanCreate, ScanRead, ScannerToolRunRead
-from app.core.contracts import ScanMode, ScanProfile, ScanStatus, ScanStep, scan_profile_for_id
+from app.api.schemas import CursorPage, ScanCreate, ScannerToolRunRead, ScanRead
 from app.core.config import settings
+from app.core.contracts import ScanMode, ScanProfile, ScanStatus, ScanStep, scan_profile_for_id
 from app.models import Scan, ScannerToolRun, Target
 from app.ops.audit import record_audit_event
 from app.ops.rate_limits import enforce_api_rate_limit
 from app.repo_scanner.paths import RepoPathError, resolve_stored_repo_path
+from app.scans.failures import safe_scan_failure
 from app.security.allowlist import ScanAllowlist
 from app.security.auth import AuthenticatedPrincipal
 from app.security.ssrf import SsrfGuardError, validate_destination
 from app.security.target_url import TargetUrlError, match_allowlisted_target
-from app.scans.failures import safe_scan_failure
 
 router = APIRouter(prefix="/scans", tags=["scans"])
 
@@ -183,7 +183,7 @@ def list_scan_tool_runs(
         db.scalars(statement.order_by(ScannerToolRun.created_at.desc(), ScannerToolRun.id.desc()).limit(page.limit + 1)).all()
     )
     visible, next_cursor = page_items(rows, page.limit)
-    return CursorPage(items=visible, next_cursor=next_cursor)
+    return CursorPage(items=[ScannerToolRunRead.model_validate(tool_run) for tool_run in visible], next_cursor=next_cursor)
 
 
 def resolve_scan_profile(payload: ScanCreate) -> ScanProfile:

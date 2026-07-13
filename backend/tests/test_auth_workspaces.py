@@ -5,11 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-from jwt import MissingRequiredClaimError
-from sqlalchemy import delete, select
-
-from app.auth_profiles import AuthProfileError, LOCAL_DEV_EXAMPLE_SECRET_KEY, validate_auth_profile_secret_settings
+from app.auth_profiles import LOCAL_DEV_EXAMPLE_SECRET_KEY, AuthProfileError, validate_auth_profile_secret_settings
 from app.core.config import Settings
 from app.db.session import SessionLocal
 from app.main import app
@@ -22,6 +18,10 @@ from app.security.auth import (
     provision_oidc_principal,
     validate_auth_settings,
 )
+from fastapi.testclient import TestClient
+from jwt import MissingRequiredClaimError
+from sqlalchemy import delete, select
+
 from tests.helpers import DEV_AUTH_HEADERS, ensure_dev_principal
 
 

@@ -1,12 +1,12 @@
 import unittest
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-from sqlalchemy import delete
-
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import Finding, FindingOccurrenceState, FindingState, Scan, Target
+from fastapi.testclient import TestClient
+from sqlalchemy import delete
+
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 

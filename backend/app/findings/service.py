@@ -10,7 +10,6 @@ from app.findings.schemas import EvidenceArtifactInput, NormalizedFindingInput
 from app.models import EvidenceArtifact, Finding, Scan
 from app.security.sanitization import sanitize_relative_path, sanitize_text, sanitize_url
 
-
 MAX_DEDUPE_KEY_LENGTH = 500
 
 

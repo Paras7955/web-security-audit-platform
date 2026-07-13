@@ -8,12 +8,11 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from app.core.config import settings
-from app.core.contracts import Confidence, DEFAULT_LIMITS, Severity
+from app.core.contracts import DEFAULT_LIMITS, Confidence, Severity
 from app.findings.schemas import NormalizedFindingInput
 from app.security.allowlist import AllowlistTarget
 from app.security.ssrf import Resolver, SsrfGuardError, validate_destination
 from app.security.target_url import NormalizedTargetUrl, TargetUrlError, normalize_target_url
-
 
 ZAP_PASSIVE_URL_CAP = int(DEFAULT_LIMITS["page_cap"])
 ZAP_ALERT_PAGE_SIZE = 100

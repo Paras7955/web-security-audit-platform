@@ -3,13 +3,13 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-from sqlalchemy import delete
-
 from app.ai.service import AiExplanationResult, AiRateLimitExceeded, TemplateAiProvider, generate_ai_explanations
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import AiExplanationCache, AiRequestLog, EvidenceArtifact, Finding, FindingState, Scan, SuppressionRule, Target
+from fastapi.testclient import TestClient
+from sqlalchemy import delete
+
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 

@@ -1,4 +1,5 @@
 from collections import Counter
+from typing import overload
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -38,7 +39,7 @@ def dashboard_overview(
         completed_scans_count=len(completed_scans),
         findings_count=len(findings),
         severity_counts=workspace_severity_counts(findings, target_id_by_scan_id),
-        latest_risk_score=latest_score,
+        latest_risk_score=risk_score_to_read(latest_score),
         recent_scans=scan_summaries(db, scans[:8], targets_by_id(targets)),
     )
 
@@ -75,7 +76,7 @@ def target_dashboard(
         completed_scan_count=len(completed_scans),
         findings_count=len(findings),
         severity_counts=severity_counts(findings),
-        latest_risk_score=latest_score,
+        latest_risk_score=risk_score_to_read(latest_score),
         recent_scans=scan_summaries(db, scans[:8], {target.id: target}),
     )
 
@@ -165,8 +166,8 @@ def build_comparison(db: Session, baseline_scan: Scan, comparison_scan: Scan) ->
         baseline_scan_id=baseline_scan.id,
         comparison_scan_id=comparison_scan.id,
         scoring_model_version=SCORING_MODEL_VERSION,
-        baseline_score=baseline_score,
-        comparison_score=comparison_score,
+        baseline_score=risk_score_to_read(baseline_score),
+        comparison_score=risk_score_to_read(comparison_score),
         score_delta=comparison_score.score - baseline_score.score,
         new_findings=new_findings,
         resolved_findings=resolved_findings,
@@ -210,7 +211,7 @@ def scan_summaries(db: Session, scans: list[Scan], target_lookup: dict[str, Targ
                 status=scan.status,
                 created_at=scan.created_at,
                 completed_at=scan.completed_at,
-                risk_score=risk_score,
+                risk_score=risk_score_to_read(risk_score),
             )
         )
     return summaries
@@ -218,6 +219,18 @@ def scan_summaries(db: Session, scans: list[Scan], target_lookup: dict[str, Targ
 
 def targets_by_id(targets: list[Target]) -> dict[str, Target]:
     return {target.id: target for target in targets}
+
+
+@overload
+def risk_score_to_read(score: RiskScore) -> RiskScoreRead: ...
+
+
+@overload
+def risk_score_to_read(score: None) -> None: ...
+
+
+def risk_score_to_read(score: RiskScore | None) -> RiskScoreRead | None:
+    return RiskScoreRead.model_validate(score) if score is not None else None
 
 
 def sort_completed_scans(scans: list[Scan]) -> list[Scan]:

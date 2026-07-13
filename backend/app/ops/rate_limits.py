@@ -46,7 +46,7 @@ def lock_rate_limit_scope(db: Session, principal: AuthenticatedPrincipal, action
     if bind.dialect.name != "postgresql":
         return
     digest = blake2b(
-        f"{principal.workspace_id}:{principal.user_id}:{action}".encode("utf-8"),
+        f"{principal.workspace_id}:{principal.user_id}:{action}".encode(),
         digest_size=8,
     ).digest()
     lock_key = int.from_bytes(digest, byteorder="big", signed=True)

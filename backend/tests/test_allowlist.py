@@ -3,9 +3,7 @@ import unittest
 from pathlib import Path
 
 import yaml
-
 from app.security.allowlist import AllowlistError, load_allowlist
-
 
 VALID_CONFIG = {
     "targets": [

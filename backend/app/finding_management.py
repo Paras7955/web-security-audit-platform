@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -177,8 +177,8 @@ def suppression_rule_is_active(rule: SuppressionRule) -> bool:
     if expires_at is None:
         return True
     if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    return expires_at > datetime.now(timezone.utc)
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return expires_at > datetime.now(UTC)
 
 
 def tags_for_resource(db: Session, workspace_id: str, resource_type: str, resource_id: str) -> list[Tag]:

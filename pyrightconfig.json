@@ -1,6 +1,9 @@
 {
   "venvPath": ".",
   "venv": ".venv",
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic",
   "extraPaths": ["backend"],
-  "include": ["backend"]
+  "include": ["backend/app", "backend/worker"],
+  "exclude": ["backend/alembic/versions"]
 }

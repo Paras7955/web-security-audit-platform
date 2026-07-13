@@ -90,7 +90,7 @@ def prune_operational_data(db: Session, *, older_than_days: int, apply: bool) ->
     if apply:
         for model in models:
             result = db.execute(delete(model).where(model.created_at < cutoff))
-            changed += int(result.rowcount or 0)
+            changed += int(getattr(result, "rowcount", 0) or 0)
         db.commit()
     return MaintenanceResult(
         "prune-operational",
@@ -158,7 +158,10 @@ def reencrypt_auth_profiles(db: Session, *, apply: bool) -> MaintenanceResult:
     transformed: list[tuple[AuthProfile, str]] = []
     try:
         for profile in profiles:
-            ciphertext = profile.encrypted_secret.encode("ascii")
+            encrypted_secret = profile.encrypted_secret
+            if not encrypted_secret:
+                continue
+            ciphertext = encrypted_secret.encode("ascii")
             try:
                 plaintext = previous.decrypt(ciphertext)
             except InvalidToken:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 from http import HTTPStatus
 from uuid import uuid4
 
@@ -9,7 +10,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.core.logging import log_event
-
 
 logger = logging.getLogger("scopeharbor.errors")
 
@@ -34,7 +34,7 @@ def problem_response(
     status_code: int,
     code: str,
     detail: str | None = None,
-    errors: list[dict[str, object]] | None = None,
+    errors: Sequence[Mapping[str, object]] | None = None,
 ) -> JSONResponse:
     title = HTTPStatus(status_code).phrase if status_code in HTTPStatus._value2member_map_ else "Error"
     body: dict[str, object] = {
@@ -47,7 +47,7 @@ def problem_response(
         "request_id": getattr(request.state, "request_id", str(uuid4())),
     }
     if errors:
-        body["errors"] = errors
+        body["errors"] = [dict(error) for error in errors]
     return JSONResponse(body, status_code=status_code, media_type="application/problem+json")
 
 

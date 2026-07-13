@@ -1,4 +1,5 @@
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -8,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from app.core.contracts import ScanStatus
 from app.models import Finding, RiskScore, Scan
-
 
 SCORING_MODEL_VERSION = "risk-v1"
 COMPLETED_SCAN_STATUSES = {ScanStatus.COMPLETED.value, ScanStatus.COMPLETED_WITH_WARNINGS.value}
@@ -202,7 +202,7 @@ def normalize_bucket(value: str | None, fallback: str) -> str:
     return value.strip().lower() or fallback
 
 
-def ordered_counts(counts: Counter[str], keys: object) -> dict[str, int]:
+def ordered_counts(counts: Counter[str], keys: Iterable[str]) -> dict[str, int]:
     ordered = {str(key): counts.get(str(key), 0) for key in keys}
     extras = sorted(key for key in counts if key not in ordered)
     for key in extras:
