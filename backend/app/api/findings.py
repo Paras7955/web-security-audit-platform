@@ -32,6 +32,7 @@ from app.finding_management import (
 from app.models import Finding, FindingOccurrenceState, FindingState, ReportArtifact, RiskScore, Scan, SuppressionRule, Tag, TagAssignment, Target
 from app.ops.audit import record_audit_event
 from app.security.auth import AuthenticatedPrincipal
+from app.security.sanitization import sanitize_text
 
 router = APIRouter(tags=["findings"])
 
@@ -226,10 +227,10 @@ def create_suppression_rule(
         id=str(uuid4()),
         workspace_id=principal.workspace_id,
         target_id=payload.target_id,
-        dedupe_key=payload.dedupe_key.strip() if payload.dedupe_key else None,
+        dedupe_key=sanitize_text(payload.dedupe_key, maximum=500),
         severity=severity,
         source_tool=source_tool,
-        reason=payload.reason.strip(),
+        reason=(sanitize_text(payload.reason, maximum=2000) or "").strip() or "Suppression reason redacted.",
         created_by_user_id=principal.user_id,
         expires_at=payload.expires_at,
     )
@@ -282,7 +283,7 @@ def create_tag(
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> Tag:
-    label = payload.label.strip()
+    label = (sanitize_text(payload.label, maximum=80) or "").strip() or "redacted-tag"
     existing = db.scalar(select(Tag).where(Tag.workspace_id == principal.workspace_id, Tag.label == label))
     if existing is not None:
         return existing

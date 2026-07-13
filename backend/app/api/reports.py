@@ -15,6 +15,7 @@ from app.reports.service import (
     ReportGenerationRateLimitError,
     generate_report_artifacts,
     read_report_artifact,
+    validate_report_artifact_read_eligibility,
 )
 from app.security.auth import AuthenticatedPrincipal
 
@@ -67,7 +68,11 @@ def list_reports(
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> CursorPage[ReportArtifactRead]:
-    require_workspace_scan(db, scan_id, principal)
+    scan = require_workspace_scan(db, scan_id, principal)
+    try:
+        validate_report_artifact_read_eligibility(scan)
+    except ReportGenerationError as exc:
+        raise report_error(exc) from exc
     statement = select(ReportArtifact).where(
         ReportArtifact.scan_id == scan_id,
         ReportArtifact.workspace_id == principal.workspace_id,

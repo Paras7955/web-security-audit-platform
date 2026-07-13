@@ -44,6 +44,10 @@ class Workspace(Base):
 
 class AuthProfile(Base):
     __tablename__ = "auth_profiles"
+    __table_args__ = (
+        CheckConstraint("rotation_count >= 0", name="ck_auth_profiles_rotation_count"),
+        Index("ix_auth_profiles_workspace_created_id", "workspace_id", "created_at", "id"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(
@@ -74,6 +78,7 @@ class AuthProfile(Base):
 
 class Target(Base):
     __tablename__ = "targets"
+    __table_args__ = (Index("ix_targets_workspace_created_id", "workspace_id", "created_at", "id"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(
@@ -107,6 +112,7 @@ class Scan(Base):
     __tablename__ = "scans"
     __table_args__ = (
         CheckConstraint("progress_percent >= 0 AND progress_percent <= 100", name="ck_scans_progress_percent"),
+        CheckConstraint("attempt_count >= 0", name="ck_scans_attempt_count"),
         Index("ix_scans_workspace_created_id", "workspace_id", "created_at", "id"),
         Index("ix_scans_status_lease", "status", "lease_expires_at"),
     )
@@ -155,6 +161,7 @@ class ScannerToolRun(Base):
         CheckConstraint("finding_count >= 0", name="ck_scanner_tool_runs_finding_count"),
         UniqueConstraint("scan_id", "tool_name", name="uq_scanner_tool_runs_scan_tool"),
         Index("ix_scanner_tool_runs_workspace_scan", "workspace_id", "scan_id"),
+        Index("ix_scanner_tool_runs_workspace_scan_created_id", "workspace_id", "scan_id", "created_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -197,6 +204,7 @@ class EvidenceArtifact(Base):
 
 class Finding(Base):
     __tablename__ = "findings"
+    __table_args__ = (Index("ix_findings_workspace_created_id", "workspace_id", "created_at", "id"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(
@@ -242,6 +250,7 @@ class FindingState(Base):
 
 class SuppressionRule(Base):
     __tablename__ = "suppression_rules"
+    __table_args__ = (Index("ix_suppression_rules_workspace_created_id", "workspace_id", "created_at", "id"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String(64), ForeignKey("workspaces.id"), nullable=False)
@@ -271,7 +280,10 @@ class FindingOccurrenceState(Base):
 
 class Tag(Base):
     __tablename__ = "tags"
-    __table_args__ = (UniqueConstraint("workspace_id", "label", name="uq_tags_workspace_label"),)
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "label", name="uq_tags_workspace_label"),
+        Index("ix_tags_workspace_created_id", "workspace_id", "created_at", "id"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String(64), ForeignKey("workspaces.id"), nullable=False)
@@ -282,7 +294,10 @@ class Tag(Base):
 
 class TagAssignment(Base):
     __tablename__ = "tag_assignments"
-    __table_args__ = (UniqueConstraint("workspace_id", "tag_id", "resource_type", "resource_id", name="uq_tag_assignments_resource"),)
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "tag_id", "resource_type", "resource_id", name="uq_tag_assignments_resource"),
+        Index("ix_tag_assignments_workspace_created_id", "workspace_id", "created_at", "id"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String(64), ForeignKey("workspaces.id"), nullable=False)
@@ -295,6 +310,10 @@ class TagAssignment(Base):
 
 class ReportArtifact(Base):
     __tablename__ = "report_artifacts"
+    __table_args__ = (
+        Index("ix_report_artifacts_workspace_created_id", "workspace_id", "created_at", "id"),
+        Index("ix_report_artifacts_workspace_scan_created_id", "workspace_id", "scan_id", "created_at", "id"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(
@@ -374,6 +393,7 @@ class ApiRateLimitLog(Base):
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
+    __table_args__ = (Index("ix_audit_logs_workspace_created_id", "workspace_id", "created_at", "id"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String(64), ForeignKey("workspaces.id"), nullable=False)

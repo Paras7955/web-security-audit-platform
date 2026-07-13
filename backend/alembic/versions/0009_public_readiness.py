@@ -19,8 +19,10 @@ down_revision: Union[str, None] = "0008_platform_ops"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-SECRET_PATTERN = re.compile(
-    r"(?i)(authorization|cookie|set-cookie|api[-_]?key|access[-_]?token|password|secret)\s*[:=]\s*[^\s,;]+"
+SECRET_PATTERNS = (
+    re.compile(r"(?i)(authorization\s*:\s*(?:bearer|basic)\s+)[^\s,;]+"),
+    re.compile(r"(?i)(cookie|set-cookie|api[-_]?key|access[-_]?token|password|secret)\s*[:=]\s*[^\s,;]+"),
+    re.compile(r"(?i)\b(?:raw|live|prod|production|demo|test)[-_](?:secret|token|api[-_]?key)(?:[-_][a-z0-9]{3,})*\b"),
 )
 
 
@@ -71,6 +73,12 @@ def upgrade() -> None:
         )
         connection.execute(
             sa.text("UPDATE targets SET auth_profile_attached_at = created_at WHERE auth_profile_id IS NOT NULL AND auth_profile_attached_at IS NULL")
+        )
+        connection.execute(
+            sa.text(
+                "UPDATE targets SET repo_path = NULL WHERE repo_path LIKE '/%' "
+                "OR repo_path ~ '(^|/)\\.\\.(/|$)' OR position(E'\\\\' in repo_path) > 0"
+            )
         )
         _sanitize_existing_findings(connection)
         _remove_stub_results(connection)
@@ -144,7 +152,9 @@ def _safe_url(value: object) -> str | None:
 def _safe_text(value: object, maximum: int) -> str | None:
     if value is None:
         return None
-    text = SECRET_PATTERN.sub(lambda match: f"{match.group(1)}=[REDACTED]", str(value))
+    text = str(value)
+    for pattern in SECRET_PATTERNS:
+        text = pattern.sub(lambda match: f"{match.group(1)}[REDACTED]" if match.lastindex else "[REDACTED]", text)
     return text.replace("\x00", "")[:maximum]
 
 

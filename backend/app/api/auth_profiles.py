@@ -12,6 +12,7 @@ from app.auth_profiles import AuthProfileError, encrypt_secret, secret_hint, val
 from app.models import AuthProfile, Scan, Target
 from app.ops.audit import record_audit_event
 from app.security.auth import AuthenticatedPrincipal
+from app.security.sanitization import sanitize_text
 
 
 router = APIRouter(prefix="/auth-profiles", tags=["auth-profiles"])
@@ -25,7 +26,7 @@ def create_auth_profile(
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> AuthProfileRead:
-    label = payload.label.strip()
+    label = (sanitize_text(payload.label, maximum=200) or "").strip()
     if not label:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Auth profile label is required.")
     try:

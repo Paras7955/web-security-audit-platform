@@ -128,7 +128,7 @@ class FindingManagementTests(unittest.TestCase):
 
     def test_lifecycle_transition_applies_to_target_dedupe_identity_without_rewriting_occurrences(self) -> None:
         response = self.client.patch(
-            f"/findings/{self.finding_id}/lifecycle",
+            f"/api/v1/findings/{self.finding_id}/lifecycle",
             headers=DEV_AUTH_HEADERS,
             json={"lifecycle_status": "confirmed"},
         )
@@ -136,7 +136,7 @@ class FindingManagementTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["lifecycle_status"], "confirmed")
 
-        previous = self.client.get(f"/findings/{self.previous_finding_id}", headers=DEV_AUTH_HEADERS)
+        previous = self.client.get(f"/api/v1/findings/{self.previous_finding_id}", headers=DEV_AUTH_HEADERS)
         self.assertEqual(previous.status_code, 200)
         self.assertEqual(previous.json()["lifecycle_status"], "confirmed")
 
@@ -148,7 +148,7 @@ class FindingManagementTests(unittest.TestCase):
 
     def test_suppression_marks_later_detected_finding_without_preventing_detection(self) -> None:
         suppression = self.client.post(
-            "/suppressions",
+            "/api/v1/suppressions",
             headers=DEV_AUTH_HEADERS,
             json={
                 "target_id": self.target_id,
@@ -199,19 +199,19 @@ class FindingManagementTests(unittest.TestCase):
             later_finding_id = persisted[0].id
             self.finding_ids.append(later_finding_id)
 
-        response = self.client.get(f"/scans/{later_scan_id}/findings", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/scans/{later_scan_id}/findings", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()[0]["id"], later_finding_id)
-        self.assertTrue(response.json()[0]["suppressed"])
-        self.assertEqual(response.json()[0]["lifecycle_status"], "suppressed")
+        self.assertEqual(response.json()["items"][0]["id"], later_finding_id)
+        self.assertTrue(response.json()["items"][0]["suppressed"])
+        self.assertEqual(response.json()["items"][0]["lifecycle_status"], "suppressed")
 
         with SessionLocal() as db:
             self.assertIsNotNone(db.get(Finding, later_finding_id))
 
     def test_expired_suppression_rule_is_not_applied(self) -> None:
         response = self.client.post(
-            "/suppressions",
+            "/api/v1/suppressions",
             headers=DEV_AUTH_HEADERS,
             json={
                 "target_id": self.target_id,
@@ -222,7 +222,7 @@ class FindingManagementTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 201)
 
-        finding = self.client.get(f"/findings/{self.finding_id}", headers=DEV_AUTH_HEADERS)
+        finding = self.client.get(f"/api/v1/findings/{self.finding_id}", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(finding.status_code, 200)
         self.assertFalse(finding.json()["suppressed"])
@@ -230,7 +230,7 @@ class FindingManagementTests(unittest.TestCase):
 
     def test_applied_suppression_stops_applying_after_expiration(self) -> None:
         response = self.client.post(
-            "/suppressions",
+            "/api/v1/suppressions",
             headers=DEV_AUTH_HEADERS,
             json={
                 "target_id": self.target_id,
@@ -242,7 +242,7 @@ class FindingManagementTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         rule_id = response.json()["id"]
 
-        suppressed = self.client.get(f"/findings/{self.finding_id}", headers=DEV_AUTH_HEADERS)
+        suppressed = self.client.get(f"/api/v1/findings/{self.finding_id}", headers=DEV_AUTH_HEADERS)
         self.assertTrue(suppressed.json()["suppressed"])
 
         with SessionLocal() as db:
@@ -251,14 +251,14 @@ class FindingManagementTests(unittest.TestCase):
             rule.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
             db.commit()
 
-        unsuppressed = self.client.get(f"/findings/{self.finding_id}", headers=DEV_AUTH_HEADERS)
+        unsuppressed = self.client.get(f"/api/v1/findings/{self.finding_id}", headers=DEV_AUTH_HEADERS)
         self.assertEqual(unsuppressed.status_code, 200)
         self.assertFalse(unsuppressed.json()["suppressed"])
         self.assertEqual(unsuppressed.json()["lifecycle_status"], "open")
 
     def test_suppression_rejects_invalid_match_fields(self) -> None:
         invalid_severity = self.client.post(
-            "/suppressions",
+            "/api/v1/suppressions",
             headers=DEV_AUTH_HEADERS,
             json={
                 "target_id": self.target_id,
@@ -270,7 +270,7 @@ class FindingManagementTests(unittest.TestCase):
         self.assertEqual(invalid_severity.status_code, 422)
 
         invalid_source = self.client.post(
-            "/suppressions",
+            "/api/v1/suppressions",
             headers=DEV_AUTH_HEADERS,
             json={
                 "target_id": self.target_id,
@@ -282,25 +282,25 @@ class FindingManagementTests(unittest.TestCase):
         self.assertEqual(invalid_source.status_code, 422)
 
     def test_tags_are_workspace_scoped_and_can_filter_findings(self) -> None:
-        tag = self.client.post("/tags", headers=DEV_AUTH_HEADERS, json={"label": self.tag_label})
+        tag = self.client.post("/api/v1/tags", headers=DEV_AUTH_HEADERS, json={"label": self.tag_label})
         self.assertEqual(tag.status_code, 201)
         tag_id = tag.json()["id"]
         self.tag_ids.append(tag_id)
 
         assignment = self.client.post(
-            "/tags/assignments",
+            "/api/v1/tags/assignments",
             headers=DEV_AUTH_HEADERS,
             json={"tag_id": tag_id, "resource_type": "target", "resource_id": self.target_id},
         )
         self.assertEqual(assignment.status_code, 201)
 
-        filtered = self.client.get(f"/findings?tag_id={tag_id}", headers=DEV_AUTH_HEADERS)
+        filtered = self.client.get(f"/api/v1/findings?tag_id={tag_id}", headers=DEV_AUTH_HEADERS)
         self.assertEqual(filtered.status_code, 200)
-        self.assertEqual({item["id"] for item in filtered.json()}, {self.previous_finding_id, self.finding_id})
-        self.assertEqual(filtered.json()[0]["tags"], [self.tag_label])
+        self.assertEqual({item["id"] for item in filtered.json()["items"]}, {self.previous_finding_id, self.finding_id})
+        self.assertEqual(filtered.json()["items"][0]["tags"], [self.tag_label])
 
         cross_workspace_assignment = self.client.post(
-            "/tags/assignments",
+            "/api/v1/tags/assignments",
             headers=DEV_AUTH_HEADERS,
             json={"tag_id": tag_id, "resource_type": "target", "resource_id": self.other_target_id},
         )
@@ -309,7 +309,7 @@ class FindingManagementTests(unittest.TestCase):
     def test_workspace_finding_filters_include_scan_profile_risk_and_normalized_fields(self) -> None:
         response = self.client.get(
             (
-                "/findings"
+                "/api/v1/findings"
                 f"?target_id={self.target_id}"
                 "&scan_profile_id=passive-web"
                 "&severity=low"
@@ -324,7 +324,7 @@ class FindingManagementTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual([item["id"] for item in response.json()], [self.finding_id])
+        self.assertEqual([item["id"] for item in response.json()["items"]], [self.finding_id])
 
     def make_finding(self, finding_id: str, scan_id: str, dedupe_key: str) -> Finding:
         return Finding(

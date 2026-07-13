@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.models import Scan, ScannerToolRun, Target
 from app.ops.audit import record_audit_event
 from app.ops.rate_limits import enforce_api_rate_limit
-from app.repo_scanner.paths import RepoPathError, validate_repo_path
+from app.repo_scanner.paths import RepoPathError, resolve_stored_repo_path
 from app.security.allowlist import ScanAllowlist
 from app.security.auth import AuthenticatedPrincipal
 from app.security.ssrf import SsrfGuardError, validate_destination
@@ -60,7 +60,7 @@ def create_scan(
         mode=mode.value,
         status=ScanStatus.QUEUED.value,
         current_step=ScanStep.TARGET_VALIDATION.value,
-        status_message=f"Queued for {mode.value} scanner worker using {profile.label} profile.",
+        status_message=f"Queued for scanner worker using the {profile.label} profile.",
         progress_percent=0,
     )
     db.add(scan)
@@ -70,7 +70,7 @@ def create_scan(
         event_type="scan.created",
         resource_type="scan",
         resource_id=scan.id,
-        metadata={"target_id": target.id, "scan_profile_id": profile.id, "mode": mode.value},
+        metadata={"target_id": target.id, "scan_profile_id": profile.id},
     )
     db.commit()
     db.refresh(scan)
@@ -220,7 +220,7 @@ def validate_scan_profile(
 
     if profile.requires_repo_path:
         try:
-            validate_repo_path(target.repo_path, repo_scan_root=settings.repo_scan_root)
+            resolve_stored_repo_path(target.repo_path, repo_scan_root=settings.repo_scan_root)
         except RepoPathError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

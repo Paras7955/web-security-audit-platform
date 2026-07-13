@@ -1,8 +1,12 @@
+import json
+import logging
 import unittest
 
 from fastapi.testclient import TestClient
 
+from app.api.schemas import AuditLogRead
 from app.main import app
+from app.core.logging import SecretSafeJsonFormatter
 from app.security.sanitization import sanitize_metadata, sanitize_relative_path, sanitize_text, sanitize_url
 
 
@@ -14,6 +18,9 @@ class PublicApiBoundaryTests(unittest.TestCase):
         response = self.client.get("/api/v1/contracts")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["product"]["name"], "ScopeHarbor")
+        self.assertNotIn("scan_modes", response.json())
+        self.assertNotIn("scan_steps", response.json())
+        self.assertTrue(all("mode" not in profile for profile in response.json()["scan_profiles"]))
         self.assertEqual(self.client.get("/contracts").status_code, 404)
 
     def test_security_headers_and_request_id_are_always_present(self) -> None:
@@ -56,6 +63,44 @@ class PersistenceSanitizationTests(unittest.TestCase):
         result = sanitize_metadata({"details": {"api-key": "canary"}, "url": "http://x/a?q=1"})
         self.assertNotIn("canary", str(result))
         self.assertNotIn("?q=1", str(result))
+
+    def test_structured_logs_strip_secrets_queries_and_raw_error_text(self) -> None:
+        record = logging.LogRecord(
+            name="scopeharbor.test",
+            level=logging.ERROR,
+            pathname=__file__,
+            lineno=1,
+            msg="provider failed with raw-secret-token",
+            args=(),
+            exc_info=None,
+        )
+        record.scopeharbor_metadata = {
+            "url": "http://juice-shop:3000/callback?token=raw-secret-token",
+            "authorization": "Bearer raw-secret-token",
+        }
+        rendered = SecretSafeJsonFormatter().format(record)
+        payload = json.loads(rendered)
+        self.assertEqual(payload["authorization"], "[REDACTED]")
+        self.assertNotIn("raw-secret-token", rendered)
+        self.assertNotIn("?token=", rendered)
+
+    def test_audit_projection_removes_internal_and_sensitive_metadata(self) -> None:
+        projected = AuditLogRead.model_validate(
+            {
+                "id": "audit-1",
+                "event_type": "scan.failed",
+                "resource_type": "scan",
+                "resource_id": "scan-1",
+                "metadata_json": {
+                    "mode": "repo",
+                    "error_detail": "raw-secret-token",
+                    "repo_path": "/Users/example/repo",
+                    "safe_code": "worker_interrupted",
+                },
+                "created_at": "2026-07-13T00:00:00Z",
+            }
+        )
+        self.assertEqual(projected.metadata_json, {"safe_code": "worker_interrupted"})
 
 
 if __name__ == "__main__":

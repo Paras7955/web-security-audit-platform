@@ -13,8 +13,12 @@ SECRET_PATTERNS = (
     re.compile(r"(?i)\b(api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|password|secret)\b\s*[:=]\s*([^\s,;]+)"),
     re.compile(r"(?i)((?:set-)?cookie\s*:\s*)([^\r\n]+)"),
     re.compile(r"(?i)(://)([^/@\s:]+):([^/@\s]+)@"),
+    re.compile(r"(?i)\b(?:raw|live|prod|production|demo|test)[-_](?:secret|token|api[-_]?key)(?:[-_][a-z0-9]{3,})*\b"),
+    re.compile(r"(?i)\b(?:secret|token|api[-_]?key)[-_][a-z0-9][a-z0-9_-]{3,}\b"),
+    re.compile(r"\b(?:AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9_-]{20,})\b"),
 )
 URL_PATTERN = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
+RELATIVE_URL_QUERY_PATTERN = re.compile(r"(?<![A-Za-z0-9])(/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+)[?#][^\s<>\"']*")
 CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
@@ -39,6 +43,7 @@ def sanitize_text(value: object | None, *, maximum: int) -> str | None:
     for pattern in SECRET_PATTERNS:
         text = pattern.sub(_redact_match, text)
     text = URL_PATTERN.sub(lambda match: sanitize_url(match.group(0)) or "[URL REDACTED]", text)
+    text = RELATIVE_URL_QUERY_PATTERN.sub(lambda match: match.group(1), text)
     return text[:maximum]
 
 
@@ -75,5 +80,7 @@ def sanitize_metadata(value: object, *, depth: int = 0) -> Any:
 def _redact_match(match: re.Match[str]) -> str:
     if match.lastindex and match.lastindex >= 3 and match.group(1) == "://":
         return "://[REDACTED]@"
-    prefix = match.group(1) if match.lastindex else ""
+    if not match.lastindex:
+        return REDACTION_TOKEN
+    prefix = match.group(1)
     return f"{prefix}{REDACTION_TOKEN}"

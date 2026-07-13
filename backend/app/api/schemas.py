@@ -3,11 +3,42 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.contracts import CONTRACTS
+from app.security.sanitization import sanitize_metadata
+
+
+def _known_acknowledgements() -> set[str]:
+    raw_codes = CONTRACTS.get("acknowledgement_codes")
+    if not isinstance(raw_codes, dict):
+        raise RuntimeError("Shared acknowledgement codes must be an object.")
+    known: set[str] = set()
+    for codes in raw_codes.values():
+        if not isinstance(codes, list):
+            raise RuntimeError("Shared acknowledgement code groups must be arrays.")
+        known.update(str(code) for code in codes)
+    return known
+
+
+KNOWN_ACKNOWLEDGEMENTS = _known_acknowledgements()
+
 
 class ScanCreate(BaseModel):
     target_id: str = Field(min_length=1, max_length=64)
     scan_profile_id: str = Field(min_length=1, max_length=80)
-    acknowledgements: set[str] = Field(default_factory=set, max_length=20)
+    acknowledgements: set[str] = Field(max_length=20)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("acknowledgements")
+    @classmethod
+    def validate_acknowledgements(cls, values: set[str]) -> set[str]:
+        normalized = {value.strip() for value in values}
+        if any(not value or len(value) > 80 for value in normalized):
+            raise ValueError("Acknowledgement codes must be non-empty and at most 80 characters.")
+        unknown = sorted(normalized - KNOWN_ACKNOWLEDGEMENTS)
+        if unknown:
+            raise ValueError("Unknown acknowledgement code.")
+        return normalized
 
 
 class ScanFailureRead(BaseModel):
@@ -164,6 +195,25 @@ class AuditLogRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @field_validator("metadata_json", mode="before")
+    @classmethod
+    def safe_metadata(cls, value: object) -> dict[str, Any]:
+        sanitized = sanitize_metadata(value)
+        if not isinstance(sanitized, dict):
+            return {}
+        forbidden = {
+            "mode",
+            "cancelled_by_user_id",
+            "cancellation_requested_by_user_id",
+            "error_detail",
+            "failure_detail",
+            "raw_error",
+            "repo_path",
+            "artifact_path",
+            "traceback",
+        }
+        return {str(key): item for key, item in sanitized.items() if str(key).lower() not in forbidden}
+
 
 class HealthComponentRead(BaseModel):
     status: str
@@ -202,7 +252,7 @@ class TargetRead(BaseModel):
     permission_confirmed: bool
     has_repo_path: bool
     auth_profile_id: str | None
-    allowed_modes: list[str]
+    available_scan_profile_ids: list[str]
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -212,7 +262,7 @@ class TargetValidationRead(BaseModel):
     allowlist_id: str
     name: str
     base_url: str
-    allowed_modes: list[str]
+    available_scan_profile_ids: list[str]
     max_redirects: int
     local_demo: bool
 

@@ -22,6 +22,9 @@ from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensur
 class PlatformOpsTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = TestClient(app)
+        self.scan_destination_guard = patch("app.api.scans.validate_destination")
+        self.scan_destination_guard.start()
+        self.addCleanup(self.scan_destination_guard.stop)
         self.target_id = str(uuid4())
         self.scan_id = str(uuid4())
         with SessionLocal() as db:
@@ -65,9 +68,9 @@ class PlatformOpsTests(unittest.TestCase):
     def test_scan_create_rate_limit_denies_and_records_log(self) -> None:
         with patch("app.api.scans.settings.scan_create_rate_limit_max_requests", 0):
             response = self.client.post(
-                "/scans",
+                "/api/v1/scans",
                 headers=DEV_AUTH_HEADERS,
-                json={"target_id": self.target_id, "scan_profile_id": "passive-web"},
+                json={"target_id": self.target_id, "scan_profile_id": "passive-web", "acknowledgements": ["authorized_target"]},
             )
 
         self.assertEqual(response.status_code, 429)
@@ -77,9 +80,9 @@ class PlatformOpsTests(unittest.TestCase):
 
     def test_scan_create_records_audit_event(self) -> None:
         response = self.client.post(
-            "/scans",
+            "/api/v1/scans",
             headers=DEV_AUTH_HEADERS,
-            json={"target_id": self.target_id, "scan_profile_id": "passive-web"},
+            json={"target_id": self.target_id, "scan_profile_id": "passive-web", "acknowledgements": ["authorized_target"]},
         )
 
         self.assertEqual(response.status_code, 201)
@@ -90,7 +93,7 @@ class PlatformOpsTests(unittest.TestCase):
         self.assertEqual(audit.metadata_json["target_id"], self.target_id)
 
     def test_cancel_queued_scan_marks_cancelled_and_audits(self) -> None:
-        response = self.client.post(f"/scans/{self.scan_id}/cancel", headers=DEV_AUTH_HEADERS)
+        response = self.client.post(f"/api/v1/scans/{self.scan_id}/cancel", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -110,7 +113,7 @@ class PlatformOpsTests(unittest.TestCase):
             db.add(scan)
             db.commit()
 
-        response = self.client.post(f"/scans/{self.scan_id}/cancel", headers=DEV_AUTH_HEADERS)
+        response = self.client.post(f"/api/v1/scans/{self.scan_id}/cancel", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "running")
@@ -146,7 +149,7 @@ class PlatformOpsTests(unittest.TestCase):
             db.add(scan)
             db.commit()
 
-        response = self.client.post(f"/scans/{self.scan_id}/cancel", headers=DEV_AUTH_HEADERS)
+        response = self.client.post(f"/api/v1/scans/{self.scan_id}/cancel", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "running")
@@ -158,12 +161,12 @@ class PlatformOpsTests(unittest.TestCase):
         self.assertEqual(audit_count, 0)
 
     def test_audit_logs_are_workspace_scoped(self) -> None:
-        self.client.post(f"/scans/{self.scan_id}/cancel", headers=DEV_AUTH_HEADERS)
+        self.client.post(f"/api/v1/scans/{self.scan_id}/cancel", headers=DEV_AUTH_HEADERS)
 
-        response = self.client.get("/audit-logs", headers=DEV_AUTH_HEADERS)
+        response = self.client.get("/api/v1/audit-logs", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(any(item["event_type"] == "scan.cancel_requested" for item in response.json()))
+        self.assertTrue(any(item["event_type"] == "scan.cancel_requested" for item in response.json()["items"]))
 
     def test_platform_health_reports_components(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -172,7 +175,7 @@ class PlatformOpsTests(unittest.TestCase):
 
             with patch("app.api.ops.settings.artifact_root", temp_dir), patch("app.api.ops.httpx.get") as get:
                 get.return_value.raise_for_status.return_value = None
-                response = self.client.get("/ops/health", headers=DEV_AUTH_HEADERS)
+                response = self.client.get("/api/v1/ops/health", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         body = response.json()

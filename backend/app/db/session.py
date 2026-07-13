@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 
-EXPECTED_MIGRATION_HEAD = "0009_public_readiness"
+EXPECTED_MIGRATION_HEAD = "0010_public_indexes"
 engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 

@@ -12,7 +12,7 @@ from app.core.contracts import DEFAULT_LIMITS, ScanMode, ScanStatus, ScanStep
 from app.findings.service import persist_normalized_findings
 from app.models import AuthProfile, Scan, ScannerToolRun
 from app.repo_scanner.adapters import ToolReceipt, run_repository_scan
-from app.repo_scanner.paths import validate_repo_path
+from app.repo_scanner.paths import resolve_stored_repo_path
 from app.repo_scanner.staging import StagedRepository, StagingLimits
 from app.risk import persist_scan_risk_score
 from app.scans.artifacts import ensure_scan_artifact_dir
@@ -303,7 +303,7 @@ def run_repo_scan_job(
             progress_percent=10,
         )
         check_scan_cancelled(db, scan)
-        repo_path = validate_repo_path(scan.target.repo_path, repo_scan_root=repo_scan_root)
+        repo_path = resolve_stored_repo_path(scan.target.repo_path, repo_scan_root=repo_scan_root)
         ensure_scan_artifact_dir(artifact_root, scan.id)
 
         update_scan_progress(
@@ -417,7 +417,9 @@ def load_scan_auth_headers(db: Session, scan: Scan) -> dict[str, str] | None:
     try:
         return build_scanner_auth_material(profile).headers
     except AuthProfileError as exc:
-        raise ScanLifecycleError(str(exc)) from exc
+        error = ScanLifecycleError("Scan auth profile is unavailable.")
+        error.code = "auth_profile_invalid"  # type: ignore[attr-defined]
+        raise error from exc
 
 
 def format_scan_mode(mode: str) -> str:

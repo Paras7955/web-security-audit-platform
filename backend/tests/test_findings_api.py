@@ -72,27 +72,27 @@ class FindingsApiTests(unittest.TestCase):
             db.commit()
 
     def test_list_scan_findings(self) -> None:
-        response = self.client.get(f"/scans/{self.scan_id}/findings", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/scans/{self.scan_id}/findings", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
-        body = response.json()
+        body = response.json()["items"]
         self.assertEqual(len(body), 1)
         self.assertEqual(body[0]["id"], self.finding_id)
         self.assertEqual(body[0]["source_tool"], "custom-passive")
 
     def test_get_finding_detail(self) -> None:
-        response = self.client.get(f"/findings/{self.finding_id}", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/findings/{self.finding_id}", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["scanner_rule_id"], "header:content-security-policy")
 
     def test_missing_scan_returns_404(self) -> None:
-        response = self.client.get(f"/scans/{uuid4()}/findings", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/scans/{uuid4()}/findings", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 404)
 
     def test_missing_finding_returns_404(self) -> None:
-        response = self.client.get(f"/findings/{uuid4()}", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/findings/{uuid4()}", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 404)
 

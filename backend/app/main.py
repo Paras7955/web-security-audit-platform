@@ -20,9 +20,13 @@ from app.api.problems import http_exception_handler, unhandled_exception_handler
 from app import __version__
 from app.core.config import settings
 from app.core.contracts import CONTRACTS
+from app.core.logging import configure_logging
 from app.core.validation import validate_runtime_settings
 from app.db.session import check_database_ready
 from app.security.auth import validate_auth_settings
+
+
+configure_logging()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -74,11 +78,43 @@ def health() -> dict[str, str]:
 
 @app.get("/ready")
 def ready() -> dict[str, str]:
+    validate_auth_settings(settings)
     validate_auth_profile_secret_settings(settings)
+    validate_runtime_settings(settings)
     check_database_ready()
     return {"status": "ready"}
 
 
 @app.get("/api/v1/contracts", tags=["contracts"])
 def contracts() -> dict[str, object]:
-    return CONTRACTS
+    profiles = CONTRACTS.get("scan_profiles")
+    acknowledgement_codes = CONTRACTS.get("acknowledgement_codes")
+    statuses = CONTRACTS.get("scan_statuses")
+    limits = CONTRACTS.get("default_limits")
+    return {
+        "product": CONTRACTS.get("product", {}),
+        "scan_profiles": [
+            {
+                "id": profile.get("id"),
+                "label": profile.get("label"),
+                "description": profile.get("description"),
+                "required_acknowledgements": profile.get("required_acknowledgements", []),
+                "requires_repository": bool(profile.get("requires_repo_path")),
+                "local_demo_only": bool(profile.get("local_demo_only")),
+                "reports_supported": bool(profile.get("reports_enabled")),
+                "ai_explanations_supported": bool(profile.get("ai_enabled")),
+            }
+            for profile in profiles
+            if isinstance(profile, dict)
+        ]
+        if isinstance(profiles, list)
+        else [],
+        "acknowledgement_codes": acknowledgement_codes if isinstance(acknowledgement_codes, dict) else {},
+        "scan_statuses": statuses if isinstance(statuses, list) else [],
+        "pagination": {
+            "default_limit": limits.get("page_default_limit", 50),
+            "maximum_limit": limits.get("page_max_limit", 200),
+        }
+        if isinstance(limits, dict)
+        else {"default_limit": 50, "maximum_limit": 200},
+    }

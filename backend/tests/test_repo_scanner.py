@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from app.core.config import Settings
 from app.repo_scanner.adapters import RepoToolOutputError, _load_json, _osv_findings, run_gitleaks
-from app.repo_scanner.paths import RepoPathError, validate_repo_path
+from app.repo_scanner.paths import RepoPathError, repo_path_for_storage, resolve_stored_repo_path, validate_repo_path
 from app.repo_scanner.staging import RepositoryLimitError, StagedRepository, StagingLimits
 
 
@@ -19,9 +19,13 @@ class RepoScannerTests(unittest.TestCase):
             repo_path.mkdir()
 
             self.assertEqual(validate_repo_path(str(repo_path), repo_scan_root=repo_root), repo_path.resolve())
+            self.assertEqual(repo_path_for_storage(str(repo_path), repo_scan_root=repo_root), "repo")
+            self.assertEqual(resolve_stored_repo_path("repo", repo_scan_root=repo_root), repo_path.resolve())
 
             with self.assertRaises(RepoPathError):
                 validate_repo_path("relative/repo", repo_scan_root=repo_root)
+            with self.assertRaises(RepoPathError):
+                resolve_stored_repo_path(str(repo_path), repo_scan_root=repo_root)
 
             with self.assertRaises(RepoPathError):
                 validate_repo_path(outside_dir, repo_scan_root=repo_root)

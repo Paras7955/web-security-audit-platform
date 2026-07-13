@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import logging
+from time import monotonic
 from uuid import uuid4
 
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from app.core.logging import log_event
+
+
+logger = logging.getLogger("scopeharbor.http")
 
 
 class PublicSafetyMiddleware:
@@ -19,10 +26,21 @@ class PublicSafetyMiddleware:
             return
 
         request_id = _request_id(Headers(scope=scope).get("x-request-id"))
+        started = monotonic()
+        status_code = 500
         scope.setdefault("state", {})["request_id"] = request_id
         content_length = Headers(scope=scope).get("content-length")
         if content_length and _too_large(content_length, self.max_body_bytes):
             await _send_too_large(send, request_id, str(scope.get("path", "")))
+            log_event(
+                logger,
+                "http_request_completed",
+                request_id=request_id,
+                method=str(scope.get("method", ""))[:12],
+                path=str(scope.get("path", ""))[:500],
+                status=413,
+                duration_ms=max(0, int((monotonic() - started) * 1000)),
+            )
             return
 
         received = 0
@@ -37,7 +55,9 @@ class PublicSafetyMiddleware:
             return message
 
         async def safe_send(message: Message) -> None:
+            nonlocal status_code
             if message["type"] == "http.response.start":
+                status_code = int(message["status"])
                 headers = list(message.get("headers", []))
                 headers.extend(
                     [
@@ -55,7 +75,18 @@ class PublicSafetyMiddleware:
         try:
             await self.app(scope, bounded_receive, safe_send)
         except RequestBodyTooLarge:
+            status_code = 413
             await _send_too_large(send, request_id, str(scope.get("path", "")))
+        finally:
+            log_event(
+                logger,
+                "http_request_completed",
+                request_id=request_id,
+                method=str(scope.get("method", ""))[:12],
+                path=str(scope.get("path", ""))[:500],
+                status=status_code,
+                duration_ms=max(0, int((monotonic() - started) * 1000)),
+            )
 
 
 class RequestBodyTooLarge(Exception):

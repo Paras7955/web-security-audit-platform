@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, settings
 from app.models import AuthIdentity, PlatformUser, Workspace
+from app.security.sanitization import sanitize_text
 
 
 class AuthConfigurationError(ValueError):
@@ -117,7 +118,7 @@ def authenticate_oidc_token(token: str, db: Session, config: Settings) -> Authen
     except Exception as exc:
         raise AuthError("OIDC token validation failed.") from exc
     subject = claims.get("sub")
-    if not isinstance(subject, str) or not subject:
+    if not isinstance(subject, str) or not subject or len(subject) > 300:
         raise AuthError("OIDC token is missing a subject.")
 
     provider = normalize(config.auth_provider)
@@ -141,7 +142,10 @@ def authenticate_oidc_token(token: str, db: Session, config: Settings) -> Authen
             provider_subject=subject,
         )
 
-    display_name = str(claims.get("name") or claims.get("email") or "Authenticated User")[:200]
+    display_name = sanitize_text(
+        claims.get("name") or claims.get("email") or "Authenticated User",
+        maximum=200,
+    ) or "Authenticated User"
     return provision_oidc_principal(db, provider=provider, subject=subject, display_name=display_name)
 
 
@@ -157,12 +161,15 @@ def provision_oidc_principal(
     subject: str,
     display_name: str,
 ) -> AuthenticatedPrincipal:
+    display_name = sanitize_text(display_name, maximum=200) or "Authenticated User"
     user_id = str(uuid4())
     workspace_id = str(uuid4())
     try:
         with db.begin_nested():
             db.add(PlatformUser(id=user_id, display_name=display_name))
+            db.flush()
             db.add(Workspace(id=workspace_id, owner_user_id=user_id, name="Default Workspace"))
+            db.flush()
             db.add(
                 AuthIdentity(
                     id=str(uuid4()),
@@ -210,12 +217,12 @@ def ensure_user_workspace_identity(
 ) -> None:
     user = db.get(PlatformUser, user_id)
     if user is None:
-        db.add(PlatformUser(id=user_id, display_name=display_name))
+        db.add(PlatformUser(id=user_id, display_name=sanitize_text(display_name, maximum=200) or "User"))
         db.flush()
 
     workspace = db.get(Workspace, workspace_id)
     if workspace is None:
-        db.add(Workspace(id=workspace_id, owner_user_id=user_id, name=workspace_name))
+        db.add(Workspace(id=workspace_id, owner_user_id=user_id, name=sanitize_text(workspace_name, maximum=200) or "Workspace"))
         db.flush()
 
     identity = db.scalar(

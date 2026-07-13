@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import logging
 from http import HTTPStatus
 from uuid import uuid4
 
 from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+
+from app.core.logging import log_event
+
+
+logger = logging.getLogger("scopeharbor.errors")
 
 
 SAFE_DEFAULTS = {
@@ -64,4 +70,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 async def unhandled_exception_handler(request: Request, _exc: Exception) -> JSONResponse:
+    log_event(
+        logger,
+        "unhandled_request_error",
+        request_id=getattr(request.state, "request_id", "unknown"),
+        path=request.url.path,
+        code="internal_error",
+    )
     return problem_response(request, status_code=500, code="internal_error")

@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     dev_auth_workspace_id: str = "dev-workspace"
     dev_auth_subject: str = "dev-user"
     auth_profile_secret_key: str = ""
+    auth_profile_previous_secret_key: str | None = None
     ai_provider: str = "template"
     ai_rate_limit_window_seconds: int = 3600
     ai_rate_limit_max_requests: int = 20

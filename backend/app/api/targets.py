@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -10,13 +11,15 @@ from app.api.pagination import PageRequest, page_items, page_request
 from app.api.schemas import TargetAuthProfileUpdate, TargetCreate, TargetRead, TargetRepoPathUpdate, TargetValidationRead
 from app.api.schemas import CursorPage
 from app.core.config import settings
+from app.core.contracts import SCAN_PROFILES, ScanMode
 from app.models import AuthProfile, Target
 from app.ops.audit import record_audit_event
 from app.security.auth import AuthenticatedPrincipal
-from app.repo_scanner.paths import RepoPathError, validate_repo_path
+from app.repo_scanner.paths import RepoPathError, repo_path_for_storage
 from app.security.allowlist import ScanAllowlist
 from app.security.ssrf import SsrfGuardError, validate_destination
 from app.security.target_url import TargetUrlError, match_allowlisted_target
+from app.security.sanitization import sanitize_text
 
 router = APIRouter(prefix="/targets", tags=["targets"])
 
@@ -33,7 +36,7 @@ def validate_target(
         allowlist_id=target.id,
         name=target.name,
         base_url=target.base_url,
-        allowed_modes=[mode.value for mode in target.allowed_modes],
+        available_scan_profile_ids=available_scan_profile_ids(target.allowed_modes),
         max_redirects=target.max_redirects,
         local_demo=target.local_demo,
     )
@@ -58,7 +61,7 @@ def create_target(
     repo_path = payload.repo_path.strip() if payload.repo_path else None
     if repo_path is not None:
         try:
-            validate_repo_path(repo_path, repo_scan_root=settings.repo_scan_root)
+            repo_path = repo_path_for_storage(repo_path, repo_scan_root=settings.repo_scan_root)
         except RepoPathError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -67,7 +70,7 @@ def create_target(
         workspace_id=principal.workspace_id,
         created_by_user_id=principal.user_id,
         allowlist_id=allowlist_target.id,
-        name=allowlist_target.name,
+        name=sanitize_text(allowlist_target.name, maximum=200) or "Allowlisted target",
         base_url=match.url.normalized_url,
         permission_confirmed=True,
         authorization_confirmed_at=datetime.now(UTC),
@@ -124,7 +127,7 @@ def update_target_repo_path(
     repo_path = payload.repo_path.strip() if payload.repo_path else None
     if repo_path is not None:
         try:
-            validate_repo_path(repo_path, repo_scan_root=settings.repo_scan_root)
+            repo_path = repo_path_for_storage(repo_path, repo_scan_root=settings.repo_scan_root)
         except RepoPathError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -206,7 +209,7 @@ def require_workspace_auth_profile(db: Session, auth_profile_id: str | None, pri
 
 def target_to_read(target: Target, allowlist: ScanAllowlist) -> TargetRead:
     allowlist_target = allowlist.get_target(target.allowlist_id)
-    allowed_modes = [mode.value for mode in allowlist_target.allowed_modes] if allowlist_target else []
+    profile_ids = available_scan_profile_ids(allowlist_target.allowed_modes) if allowlist_target else []
     return TargetRead(
         id=target.id,
         allowlist_id=target.allowlist_id,
@@ -215,6 +218,11 @@ def target_to_read(target: Target, allowlist: ScanAllowlist) -> TargetRead:
         permission_confirmed=target.permission_confirmed,
         has_repo_path=target.repo_path is not None,
         auth_profile_id=target.auth_profile_id,
-        allowed_modes=allowed_modes,
+        available_scan_profile_ids=profile_ids,
         created_at=target.created_at,
     )
+
+
+def available_scan_profile_ids(allowed_modes: Iterable[ScanMode]) -> list[str]:
+    allowed = {mode.value for mode in allowed_modes}
+    return [profile.id for profile in SCAN_PROFILES if profile.mode.value in allowed]

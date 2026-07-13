@@ -10,7 +10,7 @@ from sqlalchemy import delete, select
 
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import AiRequestLog, Finding, ReportArtifact, Scan, Target, Workspace
+from app.models import AiRequestLog, Finding, ReportArtifact, Scan, ScannerToolRun, Target, Workspace
 from app.reports.service import ReportGenerationError, generate_report_artifacts, read_report_artifact_file
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
@@ -107,22 +107,50 @@ class ReportsTests(unittest.TestCase):
             self.assertIn("&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;", html_content)
             self.assertNotIn("<script>alert('xss')</script>", html_content)
 
+    def test_reports_include_safe_scanner_tool_receipts_without_raw_output(self) -> None:
+        tool_run_id = str(uuid4())
+        with tempfile.TemporaryDirectory() as temp_dir, SessionLocal() as db:
+            db.add(
+                ScannerToolRun(
+                    id=tool_run_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    scan_id=self.scan_id,
+                    tool_name="gitleaks",
+                    tool_version="8.30.1",
+                    status="completed",
+                    warning_code=None,
+                    finding_count=2,
+                    started_at=datetime(2026, 6, 17, 17, 59, tzinfo=UTC),
+                    completed_at=datetime(2026, 6, 17, 18, 0, tzinfo=UTC),
+                )
+            )
+            db.commit()
+            artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+            markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
+            content = read_report_artifact_file(markdown, artifact_root=temp_dir)
+
+        self.assertIn("## Scanner Tool Runs", content)
+        self.assertIn("### gitleaks", content)
+        self.assertIn("Version: 8.30.1", content)
+        self.assertIn("Findings: 2", content)
+        self.assertNotIn("raw output", content.lower())
+
     def test_generate_reports_api_lists_and_serves_reports(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("app.api.reports.settings.artifact_root", temp_dir):
-                generate_response = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+                generate_response = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
                 self.assertEqual(generate_response.status_code, 201)
-                generated = generate_response.json()
+                generated = generate_response.json()["items"]
                 self.assertEqual(len(generated), 2)
 
-                list_response = self.client.get(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+                list_response = self.client.get(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
                 self.assertEqual(list_response.status_code, 200)
-                self.assertEqual(len(list_response.json()), 2)
+                self.assertEqual(len(list_response.json()["items"]), 2)
 
                 markdown = next(report for report in generated if report["report_type"] == "markdown")
                 view_response = self.client.get(markdown["view_url"], headers=DEV_AUTH_HEADERS)
                 self.assertEqual(view_response.status_code, 200)
-                self.assertIn("Defensive Web App Security Audit Report", view_response.text)
+                self.assertIn("ScopeHarbor Security Audit Report", view_response.text)
 
                 download_response = self.client.get(markdown["download_url"], headers=DEV_AUTH_HEADERS)
                 self.assertEqual(download_response.status_code, 200)
@@ -131,8 +159,8 @@ class ReportsTests(unittest.TestCase):
     def test_report_generation_reuses_ai_cache_for_unchanged_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("app.api.reports.settings.artifact_root", temp_dir):
-                first = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
-                second = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+                first = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+                second = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(first.status_code, 201)
         self.assertEqual(second.status_code, 201)
@@ -154,7 +182,7 @@ class ReportsTests(unittest.TestCase):
             db.commit()
 
         with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
-            response = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+            response = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("completed scans", response.json()["detail"])
@@ -162,7 +190,7 @@ class ReportsTests(unittest.TestCase):
     def test_report_ai_rate_limit_returns_429(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("app.api.reports.settings.artifact_root", temp_dir), patch("app.ai.service.settings.ai_rate_limit_max_requests", 0):
-                response = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+                response = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 429)
         self.assertIn("rate limit", response.json()["detail"].lower())
@@ -208,10 +236,10 @@ class ReportsTests(unittest.TestCase):
             db.commit()
 
         with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
-            response = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+            response = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(len(response.json()), 2)
+        self.assertEqual(len(response.json()["items"]), 2)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with SessionLocal() as db:
@@ -219,7 +247,7 @@ class ReportsTests(unittest.TestCase):
                 markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
                 markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
 
-        self.assertIn("Scan mode: Active Demo", markdown_content)
+        self.assertIn("Scan profile: active-demo", markdown_content)
         self.assertIn("ZAP active scan: used.", markdown_content)
         self.assertIn("Source tool: zap-active", markdown_content)
 
@@ -233,7 +261,7 @@ class ReportsTests(unittest.TestCase):
             db.commit()
 
         with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
-            response = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+            response = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("passive, Active Demo, and Repo scans", response.json()["detail"])
@@ -248,7 +276,7 @@ class ReportsTests(unittest.TestCase):
             db.commit()
 
         with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
-            response = self.client.post(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+            response = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("passive, Active Demo, and Repo scans", response.json()["detail"])
@@ -261,7 +289,7 @@ class ReportsTests(unittest.TestCase):
             scan.scan_profile_id = "repository"
             finding = db.get(Finding, self.finding_id)
             self.assertIsNotNone(finding)
-            finding.source_tool = "gitleaks-stub"
+            finding.source_tool = "gitleaks"
             finding.affected_url = None
             finding.affected_file = ".env.example"
             finding.evidence = "stub_secret=[REDACTED]"
@@ -277,10 +305,10 @@ class ReportsTests(unittest.TestCase):
                     markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
 
         ai_provider.assert_not_called()
-        self.assertIn("Scan mode: Repo", markdown_content)
+        self.assertIn("Scan profile: repository", markdown_content)
         self.assertIn("Repo scanning: used.", markdown_content)
         self.assertIn("AI explanations: not generated for repo scans.", markdown_content)
-        self.assertIn("Source tool: gitleaks-stub", markdown_content)
+        self.assertIn("Source tool: gitleaks", markdown_content)
 
     def test_reports_omit_unredacted_finding_text(self) -> None:
         unsafe_secret = "raw-secret-token"
@@ -309,8 +337,8 @@ class ReportsTests(unittest.TestCase):
         self.assertNotIn("user:pass", markdown_content)
         self.assertNotIn("user:pass", html_content)
         self.assertIn("http://juice-shop:3000/callback", markdown_content)
-        self.assertIn("No evidence snippet recorded.", markdown_content)
-        self.assertIn("No reproduction steps recorded.", markdown_content)
+        self.assertIn("authorization: bearer [REDACTED]", markdown_content)
+        self.assertIn("Visit /callback", markdown_content)
 
     def test_report_reader_rejects_paths_outside_artifact_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
@@ -326,7 +354,7 @@ class ReportsTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 read_report_artifact_file(artifact, artifact_root=temp_dir)
 
-    def test_report_artifact_api_rejects_excluded_scan_modes(self) -> None:
+    def test_completed_historical_ajax_report_artifacts_remain_readable(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
             with SessionLocal() as db:
                 artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
@@ -339,13 +367,13 @@ class ReportsTests(unittest.TestCase):
                 db.add(scan)
                 db.commit()
 
-            list_response = self.client.get(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
-            view_response = self.client.get(f"/reports/{artifact_id}", headers=DEV_AUTH_HEADERS)
-            download_response = self.client.get(f"/reports/{artifact_id}/download", headers=DEV_AUTH_HEADERS)
+            list_response = self.client.get(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+            view_response = self.client.get(f"/api/v1/reports/{artifact_id}", headers=DEV_AUTH_HEADERS)
+            download_response = self.client.get(f"/api/v1/reports/{artifact_id}/download", headers=DEV_AUTH_HEADERS)
 
-        self.assertEqual(list_response.status_code, 400)
-        self.assertEqual(view_response.status_code, 400)
-        self.assertEqual(download_response.status_code, 400)
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(view_response.status_code, 200)
+        self.assertEqual(download_response.status_code, 200)
 
     def test_report_artifact_api_rejects_non_completed_scans(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
@@ -359,9 +387,9 @@ class ReportsTests(unittest.TestCase):
                 db.add(scan)
                 db.commit()
 
-            list_response = self.client.get(f"/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
-            view_response = self.client.get(f"/reports/{artifact_id}", headers=DEV_AUTH_HEADERS)
-            download_response = self.client.get(f"/reports/{artifact_id}/download", headers=DEV_AUTH_HEADERS)
+            list_response = self.client.get(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
+            view_response = self.client.get(f"/api/v1/reports/{artifact_id}", headers=DEV_AUTH_HEADERS)
+            download_response = self.client.get(f"/api/v1/reports/{artifact_id}/download", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(list_response.status_code, 400)
         self.assertEqual(view_response.status_code, 400)

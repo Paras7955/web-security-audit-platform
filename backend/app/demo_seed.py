@@ -27,7 +27,7 @@ from app.models import (
     Target,
     Workspace,
 )
-from app.reports.service import safe_report_dir
+from app.reports.service import safe_report_dir, write_report_file
 from app.risk import SCORING_MODEL_VERSION, calculate_scan_risk_score
 
 
@@ -165,9 +165,9 @@ FINDING_SEEDS = (
         severity="high",
         confidence="confirmed",
         dedupe_key="demo:repo:hardcoded-api-key",
-        source_tool="repo-stub",
+        source_tool="gitleaks",
         scanner_rule_id="generic-api-key",
-        affected_file="/app/repositories/security-project/example.env",
+        affected_file="example.env",
         evidence="api_key=[REDACTED]",
         cwe="CWE-798",
         owasp_category="A02:2021",
@@ -182,9 +182,9 @@ FINDING_SEEDS = (
         severity="medium",
         confidence="medium",
         dedupe_key="demo:repo:outdated-demo-dependency",
-        source_tool="repo-stub",
+        source_tool="osv-scanner",
         scanner_rule_id="dependency-version-demo",
-        affected_file="/app/repositories/security-project/package.json",
+        affected_file="package.json",
         evidence="demo dependency version is intentionally illustrative",
         cwe="CWE-1104",
         owasp_category="A06:2021",
@@ -316,6 +316,7 @@ def upsert_targets(db: Session, *, workspace_id: str, user_id: str, repo_path: P
             name="OWASP Juice Shop Demo",
             base_url="http://juice-shop:3000",
             permission_confirmed=True,
+            authorization_confirmed_at=DEMO_STARTED_AT,
             repo_path=None,
             auth_profile_id=None,
         ),
@@ -327,7 +328,8 @@ def upsert_targets(db: Session, *, workspace_id: str, user_id: str, repo_path: P
             name="Security Project Repository Demo",
             base_url="http://juice-shop:3000",
             permission_confirmed=True,
-            repo_path=str(repo_path),
+            authorization_confirmed_at=DEMO_STARTED_AT,
+            repo_path=repo_path.name,
             auth_profile_id=None,
         ),
     )
@@ -352,6 +354,7 @@ def upsert_scans(db: Session, *, workspace_id: str, user_id: str) -> None:
             completed_at=DEMO_STARTED_AT + timedelta(minutes=5),
             error_code=None,
             error_detail=None,
+            attempt_count=0,
         ),
         Scan(
             id=LATEST_SCAN_ID,
@@ -368,6 +371,7 @@ def upsert_scans(db: Session, *, workspace_id: str, user_id: str) -> None:
             completed_at=DEMO_STARTED_AT + timedelta(days=1, minutes=6),
             error_code=None,
             error_detail=None,
+            attempt_count=0,
         ),
         Scan(
             id=REPO_SCAN_ID,
@@ -378,12 +382,13 @@ def upsert_scans(db: Session, *, workspace_id: str, user_id: str) -> None:
             scan_profile_id="repository",
             status=ScanStatus.COMPLETED.value,
             current_step=ScanStep.NORMALIZING_FINDINGS.value,
-            status_message="Seeded deterministic repository scan.",
+            status_message="Seeded repository scan example using safe normalized findings.",
             progress_percent=100,
             started_at=DEMO_STARTED_AT + timedelta(days=2),
             completed_at=DEMO_STARTED_AT + timedelta(days=2, minutes=4),
             error_code=None,
             error_detail=None,
+            attempt_count=0,
         ),
     )
     for scan in scans:
@@ -477,7 +482,7 @@ def upsert_management_examples(db: Session, *, workspace_id: str, user_id: str) 
         target_id=REPO_TARGET_ID,
         dedupe_key="demo:repo:hardcoded-api-key",
         severity=None,
-        source_tool="repo-stub",
+        source_tool="gitleaks",
         reason="Seeded demo suppression for a known non-production example.",
         created_by_user_id=user_id,
         expires_at=DEMO_STARTED_AT + timedelta(days=365),
@@ -572,7 +577,7 @@ def upsert_reports(db: Session, *, artifact_root: Path, workspace_id: str, user_
             continue
         report_dir = safe_report_dir(artifact_root, scan_id)
         report_path = report_dir / filename
-        report_path.write_text(render_seed_report(db, scan, report_type), encoding="utf-8")
+        write_report_file(report_path, render_seed_report(db, scan, report_type))
         artifact = ReportArtifact(
             id=report_id,
             workspace_id=workspace_id,
@@ -616,7 +621,7 @@ def render_seed_report(db: Session, scan: Scan, report_type: str) -> str:
     escaped_scan_id = escape(scan.id)
     return (
         "<!doctype html>\n"
-        "<html><head><meta charset=\"utf-8\"><title>Seeded Demo Report</title></head>"
+        "<html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\"><title>ScopeHarbor Seeded Demo Report</title></head>"
         f"<body><h1>{escaped_title}</h1><p>Scan ID: {escaped_scan_id}</p><p>Risk: {risk_text}</p><h2>Findings</h2><ul>{items}</ul></body></html>\n"
     )
 

@@ -549,7 +549,7 @@ class ScanWorkerTests(unittest.TestCase):
                 scan = db.get(Scan, self.scan_id)
                 self.assertIsNotNone(target)
                 self.assertIsNotNone(scan)
-                target.repo_path = str(repo_path)
+                target.repo_path = repo_path.name
                 scan.mode = "repo"
                 db.add(target)
                 db.add(scan)
@@ -597,7 +597,7 @@ class ScanWorkerTests(unittest.TestCase):
                 scan = db.get(Scan, self.scan_id)
                 self.assertIsNotNone(target)
                 self.assertIsNotNone(scan)
-                target.repo_path = str(repo_path)
+                target.repo_path = repo_path.name
                 scan.mode = "repo"
                 db.add(target)
                 db.add(scan)
@@ -618,7 +618,7 @@ class ScanWorkerTests(unittest.TestCase):
                 scan = db.get(Scan, self.scan_id)
                 self.assertIsNotNone(target)
                 self.assertIsNotNone(scan)
-                target.repo_path = str(repo_path)
+                target.repo_path = repo_path.name
                 target.allowlist_id = "removed-target"
                 scan.mode = "repo"
                 db.add(target)

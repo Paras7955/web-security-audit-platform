@@ -96,7 +96,8 @@ class DemoSeedTests(unittest.TestCase):
 
                 repo_target = db.get(Target, REPO_TARGET_ID)
                 self.assertIsNotNone(repo_target)
-                self.assertTrue(Path(repo_target.repo_path).resolve().is_relative_to(repo_root.resolve()))
+                self.assertFalse(Path(repo_target.repo_path).is_absolute())
+                self.assertTrue((repo_root / repo_target.repo_path).resolve().is_relative_to(repo_root.resolve()))
 
                 other_workspace = Workspace(id="demo-seed-other-workspace", owner_user_id=DEV_USER_ID, name="Other")
                 db.add(other_workspace)

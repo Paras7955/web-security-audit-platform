@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.service import AiExplanationError, AiExplanationResult, AiRateLimitExceeded, generate_ai_explanations
 from app.core.contracts import ScanMode, ScanStatus, scan_profile_for_values
-from app.models import Finding, ReportArtifact, Scan, Target
+from app.models import Finding, ReportArtifact, Scan, ScannerToolRun, Target
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
 from app.security.sanitization import sanitize_relative_path, sanitize_text, sanitize_url
 
@@ -67,8 +67,20 @@ class ReportData:
     scan: Scan
     target: Target
     findings: tuple[ReportFinding, ...]
+    tool_runs: tuple["ReportToolRun", ...]
     generated_at: datetime
     ai_explanations: AiExplanationResult
+
+
+@dataclass(frozen=True)
+class ReportToolRun:
+    tool_name: str
+    tool_version: str | None
+    status: str
+    warning_code: str | None
+    finding_count: int
+    started_at: datetime | None
+    completed_at: datetime | None
 
 
 def build_report_data(
@@ -107,6 +119,22 @@ def build_report_data(
         safe_report_finding(finding)
         for finding in sorted(findings, key=lambda finding: (SEVERITY_ORDER.get(finding.severity, 99), finding.title.lower()))
     )
+    tool_runs = tuple(
+        ReportToolRun(
+            tool_name=sanitize_text(tool_run.tool_name, maximum=100) or "unknown",
+            tool_version=sanitize_text(tool_run.tool_version, maximum=100),
+            status=sanitize_text(tool_run.status, maximum=40) or "unknown",
+            warning_code=sanitize_text(tool_run.warning_code, maximum=100),
+            finding_count=max(0, int(tool_run.finding_count)),
+            started_at=tool_run.started_at,
+            completed_at=tool_run.completed_at,
+        )
+        for tool_run in db.scalars(
+            select(ScannerToolRun)
+            .where(ScannerToolRun.scan_id == scan.id, ScannerToolRun.workspace_id == scan.workspace_id)
+            .order_by(ScannerToolRun.created_at.asc(), ScannerToolRun.id.asc())
+        ).all()
+    )
     try:
         ai_explanations = (
             generate_ai_explanations(
@@ -131,6 +159,7 @@ def build_report_data(
         scan=scan,
         target=target,
         findings=sorted_findings,
+        tool_runs=tool_runs,
         generated_at=report_timestamp(scan),
         ai_explanations=ai_explanations,
     )
@@ -207,7 +236,7 @@ def list_report_artifacts(db: Session, *, scan_id: str, workspace_id: str | None
         raise ReportGenerationError("Scan not found.")
     if workspace_id is not None and scan.workspace_id != workspace_id:
         raise ReportGenerationError("Scan not found.")
-    validate_report_scan_eligibility(scan)
+    validate_report_artifact_read_eligibility(scan)
     return list(
         db.scalars(
             select(ReportArtifact)
@@ -232,7 +261,7 @@ def read_report_artifact(
         raise ReportGenerationError("Scan not found.")
     if workspace_id is not None and (scan.workspace_id != workspace_id or artifact.workspace_id != workspace_id):
         raise ReportGenerationError("Scan not found.")
-    validate_report_scan_eligibility(scan)
+    validate_report_artifact_read_eligibility(scan)
     return read_report_artifact_file(artifact, artifact_root=artifact_root)
 
 
@@ -309,6 +338,15 @@ def validate_report_scan_eligibility(scan: Scan) -> None:
         raise ReportGenerationError("Reports can only be generated for completed scans.")
     if not scan_reports_enabled(scan):
         raise ReportGenerationError("Reports can only be generated for passive, Active Demo, and Repo scans.")
+
+
+def validate_report_artifact_read_eligibility(scan: Scan) -> None:
+    if scan.status not in TERMINAL_REPORT_STATUSES:
+        raise ReportGenerationError("Reports can only be read for completed scans.")
+    if scan.mode == ScanMode.AJAX_SHORT.value:
+        return
+    if not scan_reports_enabled(scan):
+        raise ReportGenerationError("Reports are not available for this scan profile.")
 
 
 def scan_reports_enabled(scan: Scan) -> bool:
@@ -390,6 +428,10 @@ def render_markdown_report(data: ReportData) -> str:
         "## Redaction Notice",
         "",
         "Evidence is normalized and redacted before persistence and reporting. Full HTTP response bodies are not stored by default.",
+        "",
+        "## Scanner Tool Runs",
+        "",
+        render_markdown_tool_runs(data.tool_runs),
         "",
         "## AI Explanations",
         "",
@@ -474,16 +516,39 @@ def render_markdown_ai_explanations(explanations: AiExplanationResult) -> str:
     return "\n".join(lines)
 
 
+def render_markdown_tool_runs(tool_runs: tuple[ReportToolRun, ...]) -> str:
+    if not tool_runs:
+        return "No scanner tool receipts were recorded for this scan."
+    lines: list[str] = []
+    for run in tool_runs:
+        lines.extend(
+            [
+                f"### {run.tool_name}",
+                "",
+                f"- Version: {run.tool_version or 'not reported'}",
+                f"- Status: {run.status}",
+                f"- Warning code: {run.warning_code or 'none'}",
+                f"- Findings: {run.finding_count}",
+                f"- Started at: {format_timestamp(run.started_at) if run.started_at else 'not reported'}",
+                f"- Completed at: {format_timestamp(run.completed_at) if run.completed_at else 'not reported'}",
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
 def render_html_report(data: ReportData) -> str:
     finding_sections = "\n".join(render_html_finding(index, finding) for index, finding in enumerate(data.findings, start=1))
     if not finding_sections:
         finding_sections = "<p>No normalized findings were recorded for this scan.</p>"
     ai_section = render_html_ai_explanations(data.ai_explanations)
+    tool_run_section = render_html_tool_runs(data.tool_runs)
 
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
   <title>ScopeHarbor Security Audit Report</title>
   <style>
     body {{ color: #17202a; font-family: Arial, sans-serif; line-height: 1.5; margin: 32px; }}
@@ -533,11 +598,36 @@ def render_html_report(data: ReportData) -> str:
   <h2>AI Explanations</h2>
   {ai_section}
 
+  <h2>Scanner Tool Runs</h2>
+  {tool_run_section}
+
   <h2>Findings</h2>
   {finding_sections}
 </body>
 </html>
 """
+
+
+def render_html_tool_runs(tool_runs: tuple[ReportToolRun, ...]) -> str:
+    if not tool_runs:
+        return "<p>No scanner tool receipts were recorded for this scan.</p>"
+    rows = "".join(
+        "<tr>"
+        f"<td>{escape(run.tool_name)}</td>"
+        f"<td>{escape(run.tool_version or 'not reported')}</td>"
+        f"<td>{escape(run.status)}</td>"
+        f"<td>{escape(run.warning_code or 'none')}</td>"
+        f"<td>{run.finding_count}</td>"
+        f"<td>{escape(format_timestamp(run.started_at) if run.started_at else 'not reported')}</td>"
+        f"<td>{escape(format_timestamp(run.completed_at) if run.completed_at else 'not reported')}</td>"
+        "</tr>"
+        for run in tool_runs
+    )
+    return (
+        "<table><thead><tr><th>Scanner</th><th>Version</th><th>Status</th><th>Warning</th>"
+        "<th>Findings</th><th>Started</th><th>Completed</th></tr></thead><tbody>"
+        f"{rows}</tbody></table>"
+    )
 
 
 def render_html_ai_explanations(explanations: AiExplanationResult) -> str:

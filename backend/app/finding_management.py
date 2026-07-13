@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Finding, FindingOccurrenceState, FindingState, Scan, SuppressionRule, Tag, TagAssignment
+from app.security.sanitization import sanitize_text
 
 LIFECYCLE_STATUSES = {"open", "confirmed", "in_progress", "resolved", "suppressed", "false_positive"}
 SEVERITIES = {"critical", "high", "medium", "low", "info"}
@@ -37,7 +38,7 @@ def normalize_suppression_severity(value: str | None) -> str | None:
 def normalize_suppression_source_tool(value: str | None) -> str | None:
     if value is None:
         return None
-    source_tool = value.strip().lower()
+    source_tool = (sanitize_text(value, maximum=100) or "").strip().lower()
     if not source_tool:
         raise ValueError("Suppression source tool must not be blank.")
     return source_tool
