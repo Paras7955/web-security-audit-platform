@@ -3,6 +3,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 
+EXPECTED_MIGRATION_HEAD = "0009_public_readiness"
 engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
@@ -37,4 +38,9 @@ def check_database_ready() -> bool:
         missing_tables = required_tables - existing_tables
         if missing_tables:
             raise RuntimeError(f"Database schema is not ready; missing tables: {sorted(missing_tables)}")
+        if "alembic_version" not in existing_tables:
+            raise RuntimeError("Database schema is not managed by Alembic.")
+        revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
+        if revision != EXPECTED_MIGRATION_HEAD:
+            raise RuntimeError("Database migration is not at the required ScopeHarbor schema head.")
     return True

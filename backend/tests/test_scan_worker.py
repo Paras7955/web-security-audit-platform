@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
@@ -10,14 +11,14 @@ from app.auth_profiles import AuthProfileError, encrypt_secret
 from app.core.contracts import Confidence, ScanStatus, ScanStep, Severity
 from app.db.session import SessionLocal
 from app.findings.schemas import NormalizedFindingInput
-from app.models import LEGACY_USER_ID, LEGACY_WORKSPACE_ID, AuthProfile, Finding, FindingOccurrenceState, FindingState, Scan, Target, Workspace
-from app.repo_scanner.stubs import RepoScanResult
+from app.models import LEGACY_USER_ID, LEGACY_WORKSPACE_ID, AuthProfile, Finding, FindingOccurrenceState, FindingState, RiskScore, Scan, ScannerToolRun, Target, Workspace
+from app.repo_scanner.adapters import RepoScanResult, ToolReceipt
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
-from app.scans.lifecycle import claim_next_queued_scan, run_internal_lifecycle_job, run_passive_scan_job, run_repo_scan_job
+from app.scans.lifecycle import claim_next_queued_scan, recover_stale_scan_leases, run_passive_scan_job, run_repo_scan_job
 from app.scanner.passive import PassiveScanResult
 from app.security.allowlist import ScanAllowlist
 from app.zap.active import ZapActiveDemoResult
-from app.zap.ajax import ZapAjaxShortResult
+from app.zap.client_spider import ZapClientSpiderResult
 from app.zap.passive import ZapPassiveResult
 from worker.main import validate_worker_startup
 
@@ -56,6 +57,8 @@ class ScanWorkerTests(unittest.TestCase):
                 db.execute(delete(FindingOccurrenceState).where(FindingOccurrenceState.finding_id.in_(finding_ids)))
             db.execute(delete(FindingState).where(FindingState.target_id == self.target_id))
             db.execute(delete(Finding).where(Finding.scan_id == self.scan_id))
+            db.execute(delete(RiskScore).where(RiskScore.scan_id == self.scan_id))
+            db.execute(delete(ScannerToolRun).where(ScannerToolRun.scan_id == self.scan_id))
             db.execute(delete(Scan).where(Scan.id == self.scan_id))
             db.execute(delete(Target).where(Target.id == self.target_id))
             db.execute(delete(AuthProfile).where(AuthProfile.id == "auth-profile-1"))
@@ -72,28 +75,47 @@ class ScanWorkerTests(unittest.TestCase):
             self.assertEqual(scan.current_step, "target_validation")
             self.assertEqual(scan.progress_percent, 5)
             self.assertIsNotNone(scan.started_at)
+            self.assertIsNotNone(scan.lease_owner)
+            self.assertIsNotNone(scan.lease_expires_at)
+            self.assertEqual(scan.attempt_count, 1)
+
+    def test_stale_worker_lease_fails_without_retry_or_raw_detail(self) -> None:
+        with SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            scan.status = ScanStatus.RUNNING.value
+            scan.started_at = datetime.now(UTC) - timedelta(minutes=5)
+            scan.lease_owner = "crashed-worker"
+            scan.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            scan.attempt_count = 1
+            db.add(scan)
+            db.commit()
+
+            self.assertEqual(recover_stale_scan_leases(db), 1)
+            db.refresh(scan)
+            self.assertEqual(scan.status, ScanStatus.FAILED.value)
+            self.assertEqual(scan.error_code, "worker_interrupted")
+            self.assertIsNone(scan.error_detail)
+            self.assertEqual(scan.attempt_count, 1)
+            self.assertIsNone(scan.lease_owner)
+
+    def test_historical_ajax_job_fails_as_retired(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            scan.mode = "ajax_short"
+            scan.scan_profile_id = "ajax-short"
+            db.add(scan)
+            db.commit()
+            run_passive_scan_job(db, scan, temp_dir, build_test_allowlist())
+            self.assertEqual(scan.status, ScanStatus.FAILED.value)
+            self.assertEqual(scan.error_code, "retired_profile")
+            self.assertIsNone(scan.error_detail)
 
     def test_worker_startup_fails_on_invalid_auth_profile_secret_key(self) -> None:
         with patch("worker.main.settings.auth_profile_secret_key", "not-a-fernet-key"):
             with self.assertRaises(AuthProfileError):
                 validate_worker_startup()
-
-    def test_internal_lifecycle_job_completes_scan_and_writes_artifact(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with SessionLocal() as db:
-                scan = db.get(Scan, self.scan_id)
-                self.assertIsNotNone(scan)
-
-                run_internal_lifecycle_job(db, scan, temp_dir)
-
-                self.assertEqual(scan.status, "completed")
-                self.assertEqual(scan.current_step, "target_validation")
-                self.assertEqual(scan.progress_percent, 100)
-                self.assertIsNotNone(scan.completed_at)
-                self.assertIn("internal lifecycle job completed", scan.status_message)
-
-            artifact_file = Path(temp_dir) / "scans" / self.scan_id / "internal_lifecycle.txt"
-            self.assertTrue(artifact_file.exists())
 
     def test_artifact_path_must_stay_inside_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -131,11 +153,11 @@ class ScanWorkerTests(unittest.TestCase):
                 db.commit()
                 db.refresh(scan)
 
-                run_internal_lifecycle_job(db, scan, temp_dir)
+                run_passive_scan_job(db, scan, temp_dir, build_test_allowlist())
 
                 self.assertEqual(scan.status, "failed")
                 self.assertEqual(scan.error_code, "scan_worker_failed")
-                self.assertIn("only supports passive, Active Demo, AJAX Short, and Repo", scan.error_detail)
+                self.assertIsNone(scan.error_detail)
 
     def test_worker_fails_unconfirmed_target(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -149,11 +171,11 @@ class ScanWorkerTests(unittest.TestCase):
                 db.commit()
                 db.refresh(scan)
 
-                run_internal_lifecycle_job(db, scan, temp_dir)
+                run_passive_scan_job(db, scan, temp_dir, build_test_allowlist())
 
                 self.assertEqual(scan.status, "failed")
                 self.assertEqual(scan.error_code, "scan_worker_failed")
-                self.assertIn("authorization is not confirmed", scan.error_detail)
+                self.assertIsNone(scan.error_detail)
 
     def test_worker_fails_workspace_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -168,11 +190,11 @@ class ScanWorkerTests(unittest.TestCase):
                 db.commit()
                 db.refresh(scan)
 
-                run_internal_lifecycle_job(db, scan, temp_dir)
+                run_passive_scan_job(db, scan, temp_dir, build_test_allowlist())
 
                 self.assertEqual(scan.status, "failed")
                 self.assertEqual(scan.error_code, "scan_worker_failed")
-                self.assertIn("workspace does not match target workspace", scan.error_detail)
+                self.assertIsNone(scan.error_detail)
 
     def test_passive_scan_job_persists_findings(self) -> None:
         allowlist = ScanAllowlist.model_validate(
@@ -281,7 +303,7 @@ class ScanWorkerTests(unittest.TestCase):
 
                 self.assertEqual(scan.status, "failed")
                 self.assertEqual(scan.error_code, "scan_worker_failed")
-                self.assertIn("supported only for passive-web", scan.error_detail)
+                self.assertIsNone(scan.error_detail)
 
     def test_passive_scan_job_persists_zap_passive_findings(self) -> None:
         allowlist = build_test_allowlist(allowed_modes=("passive", "active_demo"))
@@ -422,7 +444,7 @@ class ScanWorkerTests(unittest.TestCase):
                 run_passive_scan_job(db, scan, temp_dir, allowlist, zap_base_url="http://zap:8080")
 
                 self.assertEqual(scan.status, "failed")
-                self.assertIn("no longer allowed", scan.error_detail)
+                self.assertIsNone(scan.error_detail)
 
     def test_active_demo_scan_job_fails_without_zap_base_url(self) -> None:
         allowlist = build_test_allowlist(allowed_modes=("passive", "active_demo"))
@@ -439,17 +461,17 @@ class ScanWorkerTests(unittest.TestCase):
                 run_passive_scan_job(db, scan, temp_dir, allowlist, zap_base_url=None)
 
                 self.assertEqual(scan.status, "failed")
-                self.assertIn("require a configured ZAP daemon", scan.error_detail)
+                self.assertIsNone(scan.error_detail)
 
-    def test_ajax_short_scan_job_persists_zap_ajax_findings(self) -> None:
-        allowlist = build_test_allowlist(allowed_modes=("passive", "ajax_short"))
-        ajax_finding = NormalizedFindingInput(
-            title="ZAP AJAX Alert",
+    def test_modern_web_crawl_job_persists_client_spider_findings(self) -> None:
+        allowlist = build_test_allowlist(allowed_modes=("passive", "modern_web_crawl"))
+        client_finding = NormalizedFindingInput(
+            title="ZAP Client Spider Alert",
             severity=Severity.LOW,
             confidence=Confidence.MEDIUM,
             affected_url="http://juice-shop:3000/search",
-            evidence="ZAP AJAX alert metadata.",
-            source_tool="zap-ajax",
+            evidence="ZAP Client Spider alert metadata.",
+            source_tool="zap-client-spider",
             scanner_rule_id="10038",
             cwe="CWE-693",
         )
@@ -462,39 +484,41 @@ class ScanWorkerTests(unittest.TestCase):
                 artifact_dir=Path(temp_dir) / "scans" / self.scan_id,
             )
             fake_zap_passive = ZapPassiveResult(findings=(), errors=(), submitted_urls=("http://juice-shop:3000/",))
-            fake_zap_ajax = ZapAjaxShortResult(
-                findings=(ajax_finding,),
+            fake_client_spider = ZapClientSpiderResult(
+                findings=(client_finding,),
                 errors=(),
                 submitted_url="http://juice-shop:3000/",
             )
             with SessionLocal() as db:
                 scan = db.get(Scan, self.scan_id)
                 self.assertIsNotNone(scan)
-                scan.mode = "ajax_short"
+                scan.mode = "modern_web_crawl"
+                scan.scan_profile_id = "modern-web-crawl"
                 db.add(scan)
                 db.commit()
                 db.refresh(scan)
 
                 with patch("app.scans.lifecycle.run_passive_scan", return_value=fake_result), patch(
                     "app.scans.lifecycle.run_zap_passive_scan", return_value=fake_zap_passive
-                ), patch("app.scans.lifecycle.run_zap_ajax_short_scan", return_value=fake_zap_ajax) as ajax:
+                ), patch("app.scans.lifecycle.run_zap_client_spider_scan", return_value=fake_client_spider) as spider:
                     run_passive_scan_job(db, scan, temp_dir, allowlist, zap_base_url="http://zap:8080")
 
-                ajax.assert_called_once()
+                spider.assert_called_once()
                 self.assertEqual(scan.status, "completed")
                 self.assertEqual(scan.current_step, "normalizing_findings")
                 persisted = db.scalars(select(Finding).where(Finding.scan_id == self.scan_id)).all()
                 self.assertEqual(len(persisted), 1)
-                self.assertEqual(persisted[0].source_tool, "zap-ajax")
+                self.assertEqual(persisted[0].source_tool, "zap-client-spider")
 
-    def test_ajax_short_scan_job_fails_without_zap_base_url(self) -> None:
-        allowlist = build_test_allowlist(allowed_modes=("passive", "ajax_short"))
+    def test_modern_web_crawl_job_fails_without_zap_base_url(self) -> None:
+        allowlist = build_test_allowlist(allowed_modes=("passive", "modern_web_crawl"))
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with SessionLocal() as db:
                 scan = db.get(Scan, self.scan_id)
                 self.assertIsNotNone(scan)
-                scan.mode = "ajax_short"
+                scan.mode = "modern_web_crawl"
+                scan.scan_profile_id = "modern-web-crawl"
                 db.add(scan)
                 db.commit()
                 db.refresh(scan)
@@ -502,17 +526,17 @@ class ScanWorkerTests(unittest.TestCase):
                 run_passive_scan_job(db, scan, temp_dir, allowlist, zap_base_url=None)
 
                 self.assertEqual(scan.status, "failed")
-                self.assertIn("require a configured ZAP daemon", scan.error_detail)
+                self.assertIsNone(scan.error_detail)
 
-    def test_repo_scan_job_persists_stub_findings(self) -> None:
+    def test_repo_scan_job_persists_real_tool_findings_and_receipts(self) -> None:
         repo_finding = NormalizedFindingInput(
-            title="Potential hardcoded secret detected by deterministic stub",
+            title="Potential hardcoded secret",
             severity=Severity.HIGH,
             confidence=Confidence.CONFIRMED,
             affected_file=".env.example",
-            evidence="stub_secret=[REDACTED]",
-            source_tool="gitleaks-stub",
-            scanner_rule_id="stub-generic-secret",
+            evidence="[REDACTED] secret matched rule generic-secret.",
+            source_tool="gitleaks",
+            scanner_rule_id="generic-secret",
             cwe="CWE-798",
             redaction_applied=True,
         )
@@ -532,17 +556,22 @@ class ScanWorkerTests(unittest.TestCase):
                 db.commit()
                 db.refresh(scan)
 
-                fake_result = RepoScanResult(findings=(repo_finding,), errors=())
-                with patch("app.scans.lifecycle.run_repo_stub_scan", return_value=fake_result) as repo_scan:
+                now = datetime.now(UTC)
+                receipt = ToolReceipt("gitleaks", "8.30.1", "completed", None, 1, now, now)
+                fake_result = RepoScanResult(findings=(repo_finding,), receipts=(receipt,), warning_codes=())
+                with patch("app.scans.lifecycle.run_repository_scan", return_value=fake_result) as repo_scan:
                     run_repo_scan_job(db, scan, temp_dir, temp_dir, build_test_allowlist(allowed_modes=("passive", "repo")))
 
-                repo_scan.assert_called_once_with(repo_path=repo_path.resolve())
+                repo_scan.assert_called_once()
                 self.assertEqual(scan.status, "completed")
                 self.assertEqual(scan.current_step, "normalizing_findings")
                 persisted = db.scalars(select(Finding).where(Finding.scan_id == self.scan_id)).all()
                 self.assertEqual(len(persisted), 1)
-                self.assertEqual(persisted[0].source_tool, "gitleaks-stub")
+                self.assertEqual(persisted[0].source_tool, "gitleaks")
                 self.assertTrue(persisted[0].redaction_applied)
+                tool_run = db.scalar(select(ScannerToolRun).where(ScannerToolRun.scan_id == self.scan_id))
+                self.assertIsNotNone(tool_run)
+                self.assertEqual(tool_run.tool_version, "8.30.1")
 
     def test_repo_scan_job_fails_without_valid_repo_path(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -557,7 +586,7 @@ class ScanWorkerTests(unittest.TestCase):
                 run_repo_scan_job(db, scan, temp_dir, temp_dir, build_test_allowlist(allowed_modes=("passive", "repo")))
 
                 self.assertEqual(scan.status, "failed")
-                self.assertIn("Repo scans require", scan.error_detail)
+                self.assertIsNone(scan.error_detail)
 
     def test_repo_scan_job_fails_when_mode_removed_from_allowlist(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -578,7 +607,7 @@ class ScanWorkerTests(unittest.TestCase):
                 run_repo_scan_job(db, scan, temp_dir, temp_dir, build_test_allowlist(allowed_modes=("passive",)))
 
                 self.assertEqual(scan.status, "failed")
-                self.assertIn("no longer allowed", scan.error_detail)
+                self.assertIsNone(scan.error_detail)
 
     def test_repo_scan_job_fails_when_target_removed_from_allowlist(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -600,7 +629,7 @@ class ScanWorkerTests(unittest.TestCase):
                 run_repo_scan_job(db, scan, temp_dir, temp_dir, build_test_allowlist(allowed_modes=("passive", "repo")))
 
                 self.assertEqual(scan.status, "failed")
-                self.assertIn("not present in the allowlist", scan.error_detail)
+                self.assertIsNone(scan.error_detail)
 
 
 def build_test_allowlist(allowed_modes: tuple[str, ...] = ("passive",)) -> ScanAllowlist:

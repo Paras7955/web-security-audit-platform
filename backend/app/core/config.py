@@ -58,7 +58,13 @@ class Settings(BaseSettings):
     repo_tool_timeout_seconds: int = 120
     repo_tool_output_bytes: int = 10 * 1024 * 1024
     repo_tool_max_findings: int = 1_000
+    repo_staging_root: str = "/tmp/scopeharbor-repo-staging"
+    gitleaks_binary: str = "gitleaks"
+    gitleaks_config_path: str = "/app/config/gitleaks.toml"
+    osv_scanner_binary: str = "osv-scanner"
+    osv_config_path: str = "/app/config/osv-scanner.toml"
     osv_database_path: str = "/var/lib/osv-scanner"
+    osv_database_max_age_days: int = 7
     worker_lease_seconds: int = 45
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

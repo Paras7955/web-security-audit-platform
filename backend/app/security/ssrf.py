@@ -92,6 +92,9 @@ def validate_ip_for_target(ip: ipaddress._BaseAddress, host: str, allowlist_targ
     if is_internal_address(ip):
         raise SsrfGuardError("private, loopback, link-local, and internal destinations are blocked")
 
+    if allowlist_target.local_demo:
+        raise SsrfGuardError("local Docker service targets must resolve only to an RFC1918 container address")
+
 
 def is_internal_address(ip: ipaddress._BaseAddress) -> bool:
     return bool(

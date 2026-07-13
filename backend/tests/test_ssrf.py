@@ -26,17 +26,6 @@ ALLOWLIST = ScanAllowlist.model_validate(
                 "max_redirects": 5,
                 "local_demo": True,
             },
-            {
-                "id": "owned-demo",
-                "name": "Owned Demo",
-                "base_url": "https://owned.example.test",
-                "schemes": ["https"],
-                "hosts": ["owned.example.test"],
-                "ports": [443],
-                "allowed_modes": ["passive"],
-                "max_redirects": 5,
-                "local_demo": False,
-            },
         ]
     }
 )
@@ -68,21 +57,14 @@ class SsrfGuardTests(unittest.TestCase):
         with self.assertRaises(SsrfGuardError):
             validate_destination(match.url, match.allowlist_target, resolver_for(["169.254.169.254"]))
 
-    def test_private_ip_for_non_local_demo_is_blocked(self) -> None:
-        match = match_allowlisted_target("https://owned.example.test", ALLOWLIST)
+    def test_public_resolution_for_local_service_is_blocked(self) -> None:
+        match = match_allowlisted_target("http://juice-shop:3000", ALLOWLIST)
 
         with self.assertRaises(SsrfGuardError):
-            validate_destination(match.url, match.allowlist_target, resolver_for(["10.0.0.5"]))
-
-    def test_public_ip_for_exact_non_local_target_is_allowed(self) -> None:
-        match = match_allowlisted_target("https://owned.example.test", ALLOWLIST)
-
-        result = validate_destination(match.url, match.allowlist_target, resolver_for(["93.184.216.34"]))
-
-        self.assertEqual(result.resolved_ips, ("93.184.216.34",))
+            validate_destination(match.url, match.allowlist_target, resolver_for(["93.184.216.34"]))
 
     def test_all_resolved_ips_must_be_allowed(self) -> None:
-        match = match_allowlisted_target("https://owned.example.test", ALLOWLIST)
+        match = match_allowlisted_target("http://juice-shop:3000", ALLOWLIST)
 
         with self.assertRaises(SsrfGuardError):
             validate_destination(match.url, match.allowlist_target, resolver_for(["93.184.216.34", "127.0.0.1"]))

@@ -20,6 +20,7 @@ from app.api.problems import http_exception_handler, unhandled_exception_handler
 from app import __version__
 from app.core.config import settings
 from app.core.contracts import CONTRACTS
+from app.core.validation import validate_runtime_settings
 from app.db.session import check_database_ready
 from app.security.auth import validate_auth_settings
 
@@ -27,6 +28,8 @@ from app.security.auth import validate_auth_settings
 async def lifespan(_app: FastAPI):
     validate_auth_settings(settings)
     validate_auth_profile_secret_settings(settings)
+    validate_runtime_settings(settings)
+    check_database_ready()
     yield
 
 

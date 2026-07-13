@@ -4,11 +4,14 @@ from sqlalchemy import text
 
 from app.auth_profiles import validate_auth_profile_secret_settings
 from app.core.config import settings
+from app.core.validation import validate_runtime_settings
 from app.db.session import engine
 from app.db.session import SessionLocal
+from app.db.session import check_database_ready
 from app.core.contracts import ScanMode
 from app.ops.heartbeat import record_worker_heartbeat
-from app.scans.lifecycle import claim_next_queued_scan, run_passive_scan_job, run_repo_scan_job
+from app.repo_scanner.adapters import verify_repo_tools
+from app.scans.lifecycle import claim_next_queued_scan, recover_stale_scan_leases, run_passive_scan_job, run_repo_scan_job
 from app.security.allowlist import load_allowlist
 
 
@@ -27,11 +30,13 @@ def wait_for_database(max_attempts: int = 30) -> None:
 def main() -> None:
     validate_worker_startup()
     wait_for_database()
+    check_database_ready()
     print("Worker ready. Polling database-backed scan jobs.", flush=True)
     while True:
         with SessionLocal() as db:
             record_worker_heartbeat(db, worker_id=settings.worker_id, status="polling")
-            scan = claim_next_queued_scan(db)
+            recover_stale_scan_leases(db)
+            scan = claim_next_queued_scan(db, worker_id=settings.worker_id)
             if scan is not None:
                 print(f"Processing scan {scan.id}", flush=True)
                 record_worker_heartbeat(db, worker_id=settings.worker_id, status="processing", current_scan_id=scan.id)
@@ -47,6 +52,8 @@ def main() -> None:
 
 def validate_worker_startup() -> None:
     validate_auth_profile_secret_settings(settings)
+    validate_runtime_settings(settings)
+    verify_repo_tools(settings)
 
 
 if __name__ == "__main__":

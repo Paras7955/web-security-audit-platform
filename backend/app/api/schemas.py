@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ScanCreate(BaseModel):
@@ -277,13 +277,20 @@ class RiskScoreRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @field_validator("input_summary", mode="before")
+    @classmethod
+    def safe_input_summary(cls, value: object) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return {}
+        allowed = {"finding_count", "severity_counts", "confidence_counts", "weighted_total", "scan_profile_id"}
+        return {str(key): item for key, item in value.items() if key in allowed}
+
 
 class DashboardScanSummaryRead(BaseModel):
     id: str
     target_id: str
     target_name: str
     scan_profile_id: str
-    mode: str
     status: str
     created_at: datetime
     completed_at: datetime | None

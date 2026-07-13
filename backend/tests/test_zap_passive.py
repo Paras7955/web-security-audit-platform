@@ -119,9 +119,9 @@ class ZapPassiveTests(unittest.TestCase):
     def test_zap_api_access_url_disables_redirects(self) -> None:
         calls = []
 
-        def handler(url, *, params, timeout):
+        def handler(url, *, params, headers, timeout):
             del timeout
-            calls.append((url, params))
+            calls.append((url, params, headers))
             return MockResponse({"Result": "OK"})
 
         with patch_httpx_get(handler):
@@ -130,10 +130,11 @@ class ZapPassiveTests(unittest.TestCase):
 
         self.assertEqual(calls[0][0], "http://zap:8080/JSON/core/action/accessUrl/")
         self.assertEqual(calls[0][1]["followRedirects"], "false")
+        self.assertIn("X-ZAP-API-Key", calls[0][2])
 
     def test_zap_api_alerts_paginates_without_warning_at_exact_cap(self) -> None:
-        def handler(url, *, params, timeout):
-            del url, timeout
+        def handler(url, *, params, headers, timeout):
+            del url, headers, timeout
             start = int(params["start"])
             if start < 500:
                 return MockResponse({"alerts": [{"alert": f"alert-{start + index}"} for index in range(100)]})
@@ -147,8 +148,8 @@ class ZapPassiveTests(unittest.TestCase):
         self.assertFalse(page.truncated)
 
     def test_zap_api_alerts_reports_truncation_above_cap(self) -> None:
-        def handler(url, *, params, timeout):
-            del url, timeout
+        def handler(url, *, params, headers, timeout):
+            del url, headers, timeout
             start = int(params["start"])
             count = int(params["count"])
             if start < 501:

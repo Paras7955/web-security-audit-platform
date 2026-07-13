@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Iterable
 from urllib.parse import urlparse
 
@@ -78,6 +79,10 @@ class AllowlistTarget(BaseModel):
 
         if parsed.username or parsed.password:
             raise ValueError("base_url must not contain credentials")
+        if not self.local_demo:
+            raise ValueError("ScopeHarbor 1.0 targets must be explicitly marked as local demo services")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", self.hosts[0]):
+            raise ValueError("ScopeHarbor 1.0 target hosts must be exact Docker service names")
         return self
 
 

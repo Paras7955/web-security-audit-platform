@@ -14,7 +14,7 @@ from app.api.schemas import (
     TargetDashboardRead,
 )
 from app.models import Finding, RiskScore, Scan, Target
-from app.risk import COMPLETED_SCAN_STATUSES, SCORING_MODEL_VERSION, dedupe_findings, dedupe_findings_by_target, persist_scan_risk_score
+from app.risk import COMPLETED_SCAN_STATUSES, SCORING_MODEL_VERSION, dedupe_findings, dedupe_findings_by_target, read_scan_risk_score
 from app.security.auth import AuthenticatedPrincipal
 
 router = APIRouter(tags=["dashboard"])
@@ -30,7 +30,7 @@ def dashboard_overview(
     completed_scans = sort_completed_scans([scan for scan in scans if scan.status in COMPLETED_SCAN_STATUSES])
     findings = list(db.scalars(select(Finding).where(Finding.workspace_id == principal.workspace_id)).all())
     target_id_by_scan_id = {scan.id: scan.target_id for scan in scans}
-    latest_score = persist_scan_risk_score(db, completed_scans[0], findings_for_scan(findings, completed_scans[0].id)) if completed_scans else None
+    latest_score = read_scan_risk_score(db, completed_scans[0], findings_for_scan(findings, completed_scans[0].id)) if completed_scans else None
 
     return DashboardOverviewRead(
         targets_count=len(targets),
@@ -65,7 +65,7 @@ def target_dashboard(
             .where(Finding.workspace_id == principal.workspace_id, Scan.target_id == target.id)
         ).all()
     )
-    latest_score = persist_scan_risk_score(db, completed_scans[0], findings_for_scan(findings, completed_scans[0].id)) if completed_scans else None
+    latest_score = read_scan_risk_score(db, completed_scans[0], findings_for_scan(findings, completed_scans[0].id)) if completed_scans else None
 
     return TargetDashboardRead(
         target_id=target.id,
@@ -88,7 +88,7 @@ def scan_risk_score(
 ) -> RiskScore:
     scan = get_completed_scan_or_404(db, scan_id, principal.workspace_id)
     findings = list(db.scalars(select(Finding).where(Finding.workspace_id == principal.workspace_id, Finding.scan_id == scan.id)).all())
-    return persist_scan_risk_score(db, scan, findings)
+    return read_scan_risk_score(db, scan, findings)
 
 
 @router.get("/scans/{scan_id}/comparison", response_model=ScanComparisonRead)
@@ -135,8 +135,8 @@ def build_comparison(db: Session, baseline_scan: Scan, comparison_scan: Scan) ->
     comparison_findings = list(
         db.scalars(select(Finding).where(Finding.workspace_id == comparison_scan.workspace_id, Finding.scan_id == comparison_scan.id)).all()
     )
-    baseline_score = persist_scan_risk_score(db, baseline_scan, baseline_findings)
-    comparison_score = persist_scan_risk_score(db, comparison_scan, comparison_findings)
+    baseline_score = read_scan_risk_score(db, baseline_scan, baseline_findings)
+    comparison_score = read_scan_risk_score(db, comparison_scan, comparison_findings)
     baseline_by_key = finding_map(baseline_findings)
     comparison_by_key = finding_map(comparison_findings)
 
@@ -200,14 +200,13 @@ def scan_summaries(db: Session, scans: list[Scan], target_lookup: dict[str, Targ
         risk_score: RiskScore | None = None
         if scan.status in COMPLETED_SCAN_STATUSES:
             findings = list(db.scalars(select(Finding).where(Finding.workspace_id == scan.workspace_id, Finding.scan_id == scan.id)).all())
-            risk_score = persist_scan_risk_score(db, scan, findings)
+            risk_score = read_scan_risk_score(db, scan, findings)
         summaries.append(
             DashboardScanSummaryRead(
                 id=scan.id,
                 target_id=scan.target_id,
                 target_name=target.name,
                 scan_profile_id=scan.scan_profile_id,
-                mode=scan.mode,
                 status=scan.status,
                 created_at=scan.created_at,
                 completed_at=scan.completed_at,

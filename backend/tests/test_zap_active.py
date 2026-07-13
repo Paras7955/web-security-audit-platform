@@ -1,5 +1,6 @@
 import unittest
 
+from pydantic import ValidationError
 from app.security.allowlist import AllowlistTarget
 from app.zap.active import run_zap_active_demo_scan
 from app.zap.passive import ZapAlertPage
@@ -18,21 +19,6 @@ ALLOWLIST_TARGET = AllowlistTarget.model_validate(
         "local_demo": True,
     }
 )
-REMOTE_TARGET = AllowlistTarget.model_validate(
-    {
-        "id": "remote",
-        "name": "Remote Example",
-        "base_url": "https://owned.example.test",
-        "schemes": ["https"],
-        "hosts": ["owned.example.test"],
-        "ports": [443],
-        "allowed_modes": ["passive", "active_demo"],
-        "max_redirects": 2,
-        "local_demo": False,
-    }
-)
-
-
 def resolver(host: str, port: int) -> list[str]:
     if host == "juice-shop" and port == 3000:
         return ["172.20.0.10"]
@@ -59,19 +45,21 @@ class ZapActiveDemoTests(unittest.TestCase):
         self.assertEqual(result.findings[0].source_tool, "zap-active")
         self.assertEqual(result.findings[0].affected_url, "http://juice-shop:3000/")
 
-    def test_active_demo_rejects_non_local_demo_allowlist_target(self) -> None:
-        result = run_zap_active_demo_scan(
-            scan_id="scan-1",
-            target_url="https://owned.example.test/",
-            allowlist_target=REMOTE_TARGET,
-            zap_base_url="http://zap:8080",
-            client=FakeActiveZapClient(),
-            resolver=resolver,
-        )
-
-        self.assertEqual(result.findings, ())
-        self.assertIsNone(result.submitted_url)
-        self.assertIn("local/demo", result.errors[0])
+    def test_non_local_or_https_target_cannot_enter_active_scanner_contract(self) -> None:
+        with self.assertRaises(ValidationError):
+            AllowlistTarget.model_validate(
+                {
+                    "id": "remote",
+                    "name": "Remote Example",
+                    "base_url": "https://owned.example.test",
+                    "schemes": ["https"],
+                    "hosts": ["owned.example.test"],
+                    "ports": [443],
+                    "allowed_modes": ["active_demo"],
+                    "max_redirects": 2,
+                    "local_demo": False,
+                }
+            )
 
 
 class FakeActiveZapClient:
