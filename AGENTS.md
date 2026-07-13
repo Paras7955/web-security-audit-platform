@@ -12,6 +12,13 @@ Build the Defensive Web App Security Audit Platform incrementally and safely. Th
 
 ## Phase Approval Gate
 
+> **Temporary Phase 20 exception (approved 2026-07-13):** Phase 20 is one
+> continuous public-readiness program. The phase-boundary stop gate and the
+> sub-agent review loop below are suspended for this phase only. Keep using the
+> dedicated phase branch, multi-commit workflow, per-commit reporting, safety
+> boundaries, focused self-review, and final self-review. This note does not
+> remove or permanently change the standing workflow.
+
 Stop after each phase and wait for explicit user approval before beginning the next phase.
 
 This gate does not apply between commit-sized subdivisions inside a phase. Once a phase is approved, continue through that phase's subdivisions until the phase is complete or a blocker appears.

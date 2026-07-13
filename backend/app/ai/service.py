@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Protocol
-from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 import httpx
@@ -15,6 +14,7 @@ from app.core.config import settings
 from app.core.contracts import ScanStatus, scan_profile_for_values
 from app.models import AiExplanationCache, AiRequestLog, Finding, FindingOccurrenceState, FindingState, Scan, SuppressionRule
 from app.risk import SCORING_MODEL_VERSION, calculate_scan_risk_score
+from app.security.sanitization import sanitize_relative_path, sanitize_text, sanitize_url
 
 
 SEVERITY_PRIORITY = {
@@ -79,7 +79,6 @@ class SafeFindingInput:
             "cwe": self.cwe,
             "reproduction_steps": self.reproduction_steps,
             "remediation": self.remediation,
-            "redaction_applied": self.redaction_applied,
         }
 
 
@@ -242,7 +241,7 @@ def generate_ai_explanations(
     model_label = openai_model or ""
     config_hash = ai_config_hash(provider_name=provider.provider_name, model=model_label)
     raw_findings = load_findings(db, scan_id=scan_id, workspace_id=scan.workspace_id)
-    safe_findings = tuple(safe_finding_input(finding) for finding in raw_findings)
+    safe_findings = bound_ai_findings(tuple(safe_finding_input(finding) for finding in raw_findings))
     fingerprint = build_ai_input_fingerprint(
         db,
         scan=scan,
@@ -305,13 +304,13 @@ def generate_ai_explanations(
 
     try:
         result = provider.explain(scan_id=scan_id, findings=safe_findings)
-    except Exception as exc:
+    except Exception:
         fallback = template_provider.explain(scan_id=scan_id, findings=safe_findings)
         result = AiExplanationResult(
             scan_id=fallback.scan_id,
             provider=fallback.provider,
             fallback_used=provider.provider_name != template_provider.provider_name,
-            provider_error=str(exc),
+            provider_error="provider_unavailable",
             summary=fallback.summary,
             executive_summary=fallback.executive_summary,
             risk_score_explanation=fallback.risk_score_explanation,
@@ -372,23 +371,32 @@ def load_findings(db: Session, *, scan_id: str, workspace_id: str) -> list[Findi
 
 
 def safe_finding_input(finding: Finding) -> SafeFindingInput:
-    redaction_confirmed = bool(finding.redaction_applied)
     return SafeFindingInput(
         id=finding.id,
-        title=finding.title,
-        severity=finding.severity,
-        confidence=finding.confidence,
-        affected_url=sanitize_provider_url(finding.affected_url),
-        affected_file=finding.affected_file,
-        evidence=truncate_text(finding.evidence, EVIDENCE_PROVIDER_CAP) if redaction_confirmed else None,
-        source_tool=finding.source_tool,
-        scanner_rule_id=finding.scanner_rule_id,
-        owasp_category=finding.owasp_category,
-        cwe=finding.cwe,
-        reproduction_steps=finding.reproduction_steps if redaction_confirmed else None,
-        remediation=finding.remediation if redaction_confirmed else None,
-        redaction_applied=redaction_confirmed,
+        title=sanitize_text(finding.title, maximum=300) or "Security finding",
+        severity=sanitize_text(finding.severity, maximum=40) or "info",
+        confidence=sanitize_text(finding.confidence, maximum=40) or "low",
+        affected_url=sanitize_url(finding.affected_url),
+        affected_file=sanitize_relative_path(finding.affected_file),
+        evidence=sanitize_text(finding.evidence, maximum=EVIDENCE_PROVIDER_CAP),
+        source_tool=sanitize_text(finding.source_tool, maximum=100) or "unknown",
+        scanner_rule_id=sanitize_text(finding.scanner_rule_id, maximum=200),
+        owasp_category=sanitize_text(finding.owasp_category, maximum=100),
+        cwe=sanitize_text(finding.cwe, maximum=100),
+        reproduction_steps=sanitize_text(finding.reproduction_steps, maximum=2000),
+        remediation=sanitize_text(finding.remediation, maximum=2000),
+        redaction_applied=True,
     )
+
+
+def bound_ai_findings(findings: tuple[SafeFindingInput, ...]) -> tuple[SafeFindingInput, ...]:
+    selected = list(prioritize_findings(findings)[: settings.ai_max_findings])
+    while selected:
+        encoded = json.dumps([finding.to_provider_dict() for finding in selected], separators=(",", ":")).encode("utf-8")
+        if len(encoded) <= settings.ai_max_payload_bytes:
+            break
+        selected.pop()
+    return tuple(selected)
 
 
 def prioritize_findings(findings: tuple[SafeFindingInput, ...]) -> tuple[SafeFindingInput, ...]:
@@ -484,11 +492,11 @@ def parse_openai_response(
             FindingExplanation(
                 finding_id=finding_id,
                 priority=template.priority,
-                summary=str(item.get("summary") or template.summary),
-                why_it_matters=str(item.get("why_it_matters") or template.why_it_matters),
-                recommended_action=str(item.get("recommended_action") or template.recommended_action),
-                owasp_mapping=str(item.get("owasp_mapping") or template.owasp_mapping),
-                limitations=str(item.get("limitations") or template.limitations),
+                summary=safe_provider_output(item.get("summary"), template.summary, 1000),
+                why_it_matters=safe_provider_output(item.get("why_it_matters"), template.why_it_matters, 2000),
+                recommended_action=safe_provider_output(item.get("recommended_action"), template.recommended_action, 2000),
+                owasp_mapping=safe_provider_output(item.get("owasp_mapping"), template.owasp_mapping, 500),
+                limitations=safe_provider_output(item.get("limitations"), template.limitations, 1000),
             )
         )
 
@@ -502,7 +510,7 @@ def parse_openai_response(
         provider=provider_name,
         fallback_used=False,
         provider_error=None,
-        summary=str(summary) if summary else build_summary(findings),
+        summary=safe_provider_output(summary, build_summary(findings), 2000),
         executive_summary="",
         risk_score_explanation="",
         scoring_model_version=SCORING_MODEL_VERSION,
@@ -511,6 +519,10 @@ def parse_openai_response(
         groups=build_groups(findings),
         explanations=tuple(sorted(explanations, key=lambda explanation: explanation.priority, reverse=True)),
     )
+
+
+def safe_provider_output(value: object, fallback: str, maximum: int) -> str:
+    return sanitize_text(value if value else fallback, maximum=maximum) or fallback[:maximum]
 
 
 def enrich_result(
@@ -899,11 +911,3 @@ def truncate_text(value: str | None, limit: int) -> str | None:
     if len(value) <= limit:
         return value
     return value[: limit - 24] + "\n[TRUNCATED FOR AI INPUT]"
-
-
-def sanitize_provider_url(value: str | None) -> str | None:
-    if value is None:
-        return None
-    parsed = urlsplit(value)
-    netloc = parsed.netloc.rsplit("@", 1)[-1]
-    return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))

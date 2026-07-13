@@ -1,11 +1,14 @@
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_principal, get_db, get_scan_allowlist
+from app.api.pagination import PageRequest, page_items, page_request
 from app.api.schemas import TargetAuthProfileUpdate, TargetCreate, TargetRead, TargetRepoPathUpdate, TargetValidationRead
+from app.api.schemas import CursorPage
 from app.core.config import settings
 from app.models import AuthProfile, Target
 from app.ops.audit import record_audit_event
@@ -67,8 +70,10 @@ def create_target(
         name=allowlist_target.name,
         base_url=match.url.normalized_url,
         permission_confirmed=True,
+        authorization_confirmed_at=datetime.now(UTC),
         repo_path=repo_path,
         auth_profile_id=auth_profile_id,
+        auth_profile_attached_at=datetime.now(UTC) if auth_profile_id else None,
     )
     db.add(target)
     record_audit_event(
@@ -84,18 +89,24 @@ def create_target(
     return target_to_read(target, allowlist)
 
 
-@router.get("", response_model=list[TargetRead])
+@router.get("", response_model=CursorPage[TargetRead])
 def list_targets(
+    page: PageRequest = Depends(page_request),
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
     allowlist: ScanAllowlist = Depends(get_scan_allowlist),
-) -> list[TargetRead]:
-    targets = db.scalars(
-        select(Target)
-        .where(Target.workspace_id == principal.workspace_id)
-        .order_by(Target.created_at.desc())
-    ).all()
-    return [target_to_read(target, allowlist) for target in targets]
+) -> CursorPage[TargetRead]:
+    statement = select(Target).where(Target.workspace_id == principal.workspace_id)
+    if page.cursor_created_at is not None and page.cursor_id is not None:
+        statement = statement.where(
+            or_(
+                Target.created_at < page.cursor_created_at,
+                and_(Target.created_at == page.cursor_created_at, Target.id < page.cursor_id),
+            )
+        )
+    targets = list(db.scalars(statement.order_by(Target.created_at.desc(), Target.id.desc()).limit(page.limit + 1)).all())
+    visible, next_cursor = page_items(targets, page.limit)
+    return CursorPage(items=[target_to_read(target, allowlist) for target in visible], next_cursor=next_cursor)
 
 
 @router.patch("/{target_id}/repo-path", response_model=TargetRead)
@@ -145,6 +156,7 @@ def update_target_auth_profile(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
 
     target.auth_profile_id = require_workspace_auth_profile(db, payload.auth_profile_id, principal)
+    target.auth_profile_attached_at = datetime.now(UTC) if target.auth_profile_id else None
     db.add(target)
     record_audit_event(
         db,
@@ -187,6 +199,8 @@ def require_workspace_auth_profile(db: Session, auth_profile_id: str | None, pri
     profile = db.scalar(select(AuthProfile).where(AuthProfile.id == auth_profile_id, AuthProfile.workspace_id == principal.workspace_id))
     if profile is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Auth profile not found.")
+    if profile.revoked_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Revoked auth profiles cannot be attached to targets.")
     return profile.id
 
 
@@ -199,7 +213,7 @@ def target_to_read(target: Target, allowlist: ScanAllowlist) -> TargetRead:
         name=target.name,
         base_url=target.base_url,
         permission_confirmed=target.permission_confirmed,
-        repo_path=target.repo_path,
+        has_repo_path=target.repo_path is not None,
         auth_profile_id=target.auth_profile_id,
         allowed_modes=allowed_modes,
         created_at=target.created_at,

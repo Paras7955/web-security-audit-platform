@@ -1,3 +1,5 @@
+import os
+import stat
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from html import escape
@@ -7,10 +9,11 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.service import AiExplanationError, AiExplanationResult, AiRateLimitExceeded, generate_ai_explanations, sanitize_provider_url
+from app.ai.service import AiExplanationError, AiExplanationResult, AiRateLimitExceeded, generate_ai_explanations
 from app.core.contracts import ScanMode, ScanStatus, scan_profile_for_values
 from app.models import Finding, ReportArtifact, Scan, Target
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
+from app.security.sanitization import sanitize_relative_path, sanitize_text, sanitize_url
 
 
 REPORT_TYPES = ("markdown", "html")
@@ -239,7 +242,16 @@ def read_report_artifact_file(artifact: ReportArtifact, *, artifact_root: str | 
         raise ReportGenerationError("Report artifact file must not be a symlink.")
     if not path.exists() or not path.is_file():
         raise ReportGenerationError("Report artifact file not found.")
-    return path.read_text(encoding="utf-8")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+        with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+            file_stat = os.fstat(handle.fileno())
+            if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_size > 10 * 1024 * 1024:
+                raise ReportGenerationError("Report artifact file is invalid.")
+            return handle.read()
+    except OSError as exc:
+        raise ReportGenerationError("Report artifact file could not be read safely.") from exc
 
 
 def validate_report_path(path: str, artifact_root: str | Path, *, scan_id: str, report_type: str) -> Path:
@@ -266,7 +278,8 @@ def safe_report_dir(artifact_root: str | Path, scan_id: str) -> Path:
     if reports_dir.is_symlink():
         raise ReportGenerationError("Report artifact directory must not be a symlink.")
 
-    reports_dir.mkdir(parents=True, exist_ok=True)
+    reports_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    reports_dir.chmod(0o700)
     resolved_reports_dir = reports_dir.resolve()
     if scan_dir != resolved_reports_dir and scan_dir not in resolved_reports_dir.parents:
         raise ReportGenerationError("Report artifact directory escaped scan artifact directory.")
@@ -276,7 +289,19 @@ def safe_report_dir(artifact_root: str | Path, scan_id: str) -> Path:
 def write_report_file(path: Path, content: str) -> None:
     if path.is_symlink():
         raise ReportGenerationError("Report artifact file must not be a symlink.")
-    path.write_text(content, encoding="utf-8")
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(temporary, flags, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        path.chmod(0o600)
+    except OSError as exc:
+        temporary.unlink(missing_ok=True)
+        raise ReportGenerationError("Report artifact could not be written safely.") from exc
 
 
 def validate_report_scan_eligibility(scan: Scan) -> None:
@@ -297,7 +322,7 @@ def disabled_ai_explanations(scan_id: str) -> AiExplanationResult:
         provider="not_generated",
         fallback_used=False,
         provider_error=None,
-        summary="AI explanations are not generated for repo scans in Phase 10.",
+        summary="AI explanations are not generated for repository scans.",
         executive_summary="AI explanations are not generated for this scan profile.",
         risk_score_explanation="No AI risk explanation was generated.",
         scoring_model_version="risk-v1",
@@ -309,30 +334,29 @@ def disabled_ai_explanations(scan_id: str) -> AiExplanationResult:
 
 
 def safe_report_finding(finding: Finding) -> ReportFinding:
-    redaction_confirmed = bool(finding.redaction_applied)
     return ReportFinding(
         id=finding.id,
-        title=finding.title,
-        severity=finding.severity,
-        confidence=finding.confidence,
-        affected_url=sanitize_provider_url(finding.affected_url),
-        affected_file=finding.affected_file,
-        evidence=finding.evidence if redaction_confirmed else None,
-        source_tool=finding.source_tool,
-        scanner_rule_id=finding.scanner_rule_id,
-        cwe=finding.cwe,
-        owasp_category=finding.owasp_category,
-        reproduction_steps=finding.reproduction_steps if redaction_confirmed else None,
-        remediation=finding.remediation if redaction_confirmed else None,
-        false_positive_notes=finding.false_positive_notes if redaction_confirmed else None,
-        redaction_applied=redaction_confirmed,
+        title=sanitize_text(finding.title, maximum=300) or "Security finding",
+        severity=sanitize_text(finding.severity, maximum=40) or "info",
+        confidence=sanitize_text(finding.confidence, maximum=40) or "low",
+        affected_url=sanitize_url(finding.affected_url),
+        affected_file=sanitize_relative_path(finding.affected_file),
+        evidence=sanitize_text(finding.evidence, maximum=2048),
+        source_tool=sanitize_text(finding.source_tool, maximum=100) or "unknown",
+        scanner_rule_id=sanitize_text(finding.scanner_rule_id, maximum=200),
+        cwe=sanitize_text(finding.cwe, maximum=100),
+        owasp_category=sanitize_text(finding.owasp_category, maximum=100),
+        reproduction_steps=sanitize_text(finding.reproduction_steps, maximum=16_384),
+        remediation=sanitize_text(finding.remediation, maximum=16_384),
+        false_positive_notes=sanitize_text(finding.false_positive_notes, maximum=16_384),
+        redaction_applied=True,
         created_at=finding.created_at,
     )
 
 
 def render_markdown_report(data: ReportData) -> str:
     lines = [
-        "# Defensive Web App Security Audit Report",
+        "# ScopeHarbor Security Audit Report",
         "",
         "## Summary",
         "",
@@ -341,7 +365,7 @@ def render_markdown_report(data: ReportData) -> str:
         f"- Target allowlist ID: {data.target.allowlist_id}",
         f"- Target URL: {data.target.base_url}",
         f"- Scan ID: {data.scan.id}",
-        f"- Scan mode: {format_scan_mode(data.scan.mode)}",
+        f"- Scan profile: {data.scan.scan_profile_id}",
         f"- Scan status: {data.scan.status}",
         f"- Findings: {len(data.findings)}",
         "",
@@ -350,7 +374,7 @@ def render_markdown_report(data: ReportData) -> str:
         f"- Custom passive scanner: {tooling_used_unless_repo(data.scan.mode)}.",
         f"- ZAP passive analysis: {zap_passive_tooling(data.scan.mode)}.",
         f"- ZAP active scan: {tooling_used(data.scan.mode, ScanMode.ACTIVE_DEMO.value)}.",
-        f"- AJAX crawl: {tooling_used(data.scan.mode, ScanMode.AJAX_SHORT.value)}.",
+        f"- Modern web crawl: {tooling_used(data.scan.mode, ScanMode.MODERN_WEB_CRAWL.value)}.",
         f"- AI explanations: {ai_tooling(data.ai_explanations)}.",
         f"- Repo scanning: {tooling_used(data.scan.mode, ScanMode.REPO.value)}.",
         "- Authenticated workflows: not tested.",
@@ -460,7 +484,7 @@ def render_html_report(data: ReportData) -> str:
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Defensive Web App Security Audit Report</title>
+  <title>ScopeHarbor Security Audit Report</title>
   <style>
     body {{ color: #17202a; font-family: Arial, sans-serif; line-height: 1.5; margin: 32px; }}
     h1, h2, h3 {{ line-height: 1.2; }}
@@ -472,7 +496,7 @@ def render_html_report(data: ReportData) -> str:
   </style>
 </head>
 <body>
-  <h1>Defensive Web App Security Audit Report</h1>
+  <h1>ScopeHarbor Security Audit Report</h1>
   <h2>Summary</h2>
   <table>
     <tr><th>Generated at</th><td>{escape(format_timestamp(data.generated_at))}</td></tr>
@@ -480,7 +504,7 @@ def render_html_report(data: ReportData) -> str:
     <tr><th>Target allowlist ID</th><td>{escape(data.target.allowlist_id)}</td></tr>
     <tr><th>Target URL</th><td>{escape(data.target.base_url)}</td></tr>
     <tr><th>Scan ID</th><td>{escape(data.scan.id)}</td></tr>
-    <tr><th>Scan mode</th><td>{escape(format_scan_mode(data.scan.mode))}</td></tr>
+    <tr><th>Scan profile</th><td>{escape(data.scan.scan_profile_id)}</td></tr>
     <tr><th>Scan status</th><td>{escape(data.scan.status)}</td></tr>
     <tr><th>Findings</th><td>{len(data.findings)}</td></tr>
   </table>
@@ -490,7 +514,7 @@ def render_html_report(data: ReportData) -> str:
     <li>Custom passive scanner: {escape(tooling_used_unless_repo(data.scan.mode))}.</li>
     <li>ZAP passive analysis: {escape(zap_passive_tooling(data.scan.mode))}.</li>
     <li>ZAP active scan: {escape(tooling_used(data.scan.mode, ScanMode.ACTIVE_DEMO.value))}.</li>
-    <li>AJAX crawl: {escape(tooling_used(data.scan.mode, ScanMode.AJAX_SHORT.value))}.</li>
+    <li>Modern web crawl: {escape(tooling_used(data.scan.mode, ScanMode.MODERN_WEB_CRAWL.value))}.</li>
     <li>AI explanations: {escape(ai_tooling(data.ai_explanations))}.</li>
     <li>Repo scanning: {escape(tooling_used(data.scan.mode, ScanMode.REPO.value))}.</li>
     <li>Authenticated workflows: not tested.</li>
@@ -583,7 +607,8 @@ def format_scan_mode(mode: str) -> str:
     return {
         "passive": "Passive",
         "active_demo": "Active Demo",
-        "ajax_short": "AJAX Short",
+        "modern_web_crawl": "Modern Web Crawl",
+        "ajax_short": "Retired AJAX Short (historical)",
         "repo": "Repo",
     }.get(mode, mode)
 

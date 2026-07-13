@@ -1,5 +1,10 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.ai import router as ai_router
 from app.api.auth_profiles import router as auth_profiles_router
@@ -10,39 +15,53 @@ from app.api.reports import router as reports_router
 from app.api.scans import router as scans_router
 from app.api.targets import router as targets_router
 from app.auth_profiles import validate_auth_profile_secret_settings
+from app.api.middleware import PublicSafetyMiddleware
+from app.api.problems import http_exception_handler, unhandled_exception_handler, validation_exception_handler
+from app import __version__
 from app.core.config import settings
 from app.core.contracts import CONTRACTS
 from app.db.session import check_database_ready
 from app.security.auth import validate_auth_settings
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    validate_auth_settings(settings)
+    validate_auth_profile_secret_settings(settings)
+    yield
+
+
 app = FastAPI(
-    title="Defensive Web App Security Audit Platform",
-    version="0.1.0",
+    title="ScopeHarbor — Local AppSec Audit Platform",
+    version=__version__,
     description="Local-first defensive web application security audit platform.",
+    lifespan=lifespan,
 )
 
+app.add_middleware(PublicSafetyMiddleware, max_body_bytes=settings.max_request_body_bytes)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3001"],
+    allow_origins=settings.cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH"],
     allow_headers=["*"],
 )
 
-app.include_router(targets_router)
-app.include_router(auth_profiles_router)
-app.include_router(scans_router)
-app.include_router(dashboard_router)
-app.include_router(findings_router)
-app.include_router(reports_router)
-app.include_router(ai_router)
-app.include_router(ops_router)
+for router in (
+    targets_router,
+    auth_profiles_router,
+    scans_router,
+    dashboard_router,
+    findings_router,
+    reports_router,
+    ai_router,
+    ops_router,
+):
+    app.include_router(router, prefix="/api/v1")
 
-
-@app.on_event("startup")
-def validate_startup_configuration() -> None:
-    validate_auth_settings(settings)
-    validate_auth_profile_secret_settings(settings)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, unhandled_exception_handler)
 
 
 @app.get("/health")
@@ -57,9 +76,6 @@ def ready() -> dict[str, str]:
     return {"status": "ready"}
 
 
-@app.get("/contracts")
+@app.get("/api/v1/contracts", tags=["contracts"])
 def contracts() -> dict[str, object]:
-    return {
-        **CONTRACTS,
-        "ai_provider": settings.ai_provider,
-    }
+    return CONTRACTS

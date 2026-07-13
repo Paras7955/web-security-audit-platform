@@ -1,22 +1,23 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class ScanCreate(BaseModel):
     target_id: str = Field(min_length=1, max_length=64)
-    scan_profile_id: str | None = Field(default=None, max_length=80)
-    mode: str | None = Field(default=None, max_length=40)
-    active_demo_acknowledged: bool = False
-    ajax_short_acknowledged: bool = False
+    scan_profile_id: str = Field(min_length=1, max_length=80)
+    acknowledgements: set[str] = Field(default_factory=set, max_length=20)
+
+
+class ScanFailureRead(BaseModel):
+    code: str
+    message: str
 
 
 class ScanRead(BaseModel):
     id: str
     target_id: str
-    auth_profile_id: str | None
-    mode: str
     scan_profile_id: str
     status: str
     current_step: str | None
@@ -25,9 +26,7 @@ class ScanRead(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     cancellation_requested_at: datetime | None
-    cancellation_requested_by_user_id: str | None
-    error_code: str | None
-    error_detail: str | None
+    failure: ScanFailureRead | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -51,8 +50,6 @@ class FindingRead(BaseModel):
     reproduction_steps: str | None
     remediation: str | None
     false_positive_notes: str | None
-    redaction_applied: bool
-    raw_artifact_ref: str | None
     lifecycle_status: str = "open"
     suppressed: bool = False
     suppression_rule_id: str | None = None
@@ -146,7 +143,7 @@ class AiExplanationRead(BaseModel):
     scan_id: str
     provider: str
     fallback_used: bool
-    provider_error: str | None
+    provider_error_code: str | None
     summary: str
     executive_summary: str
     risk_score_explanation: str
@@ -203,7 +200,7 @@ class TargetRead(BaseModel):
     name: str
     base_url: str
     permission_confirmed: bool
-    repo_path: str | None
+    has_repo_path: bool
     auth_profile_id: str | None
     allowed_modes: list[str]
     created_at: datetime
@@ -233,9 +230,39 @@ class AuthProfileRead(BaseModel):
     profile_type: str
     header_name: str | None
     secret_hint: str
+    status: str
+    rotated_at: datetime | None
+    revoked_at: datetime | None
+    rotation_count: int
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AuthProfileRotate(BaseModel):
+    secret: str = Field(min_length=1, max_length=4096)
+
+
+class ScannerToolRunRead(BaseModel):
+    id: str
+    scan_id: str
+    tool_name: str
+    tool_version: str | None
+    status: str
+    warning_code: str | None
+    finding_count: int
+    started_at: datetime | None
+    completed_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+PageItem = TypeVar("PageItem")
+
+
+class CursorPage(BaseModel, Generic[PageItem]):
+    items: list[PageItem]
+    next_cursor: str | None
 
 
 class RiskScoreRead(BaseModel):

@@ -34,9 +34,12 @@ class AllowlistTarget(BaseModel):
         normalized = [scheme.lower() for scheme in schemes]
         if len(normalized) != 1:
             raise ValueError("each allowlist target must define exactly one scheme")
-        invalid = [scheme for scheme in normalized if scheme not in {"http", "https"}]
+        # The guarded client pins the validated destination IP. Safe TLS support
+        # additionally requires correct SNI and certificate verification, which
+        # is intentionally not declared until that transport exists.
+        invalid = [scheme for scheme in normalized if scheme != "http"]
         if invalid:
-            raise ValueError(f"unsupported schemes: {invalid}")
+            raise ValueError("ScopeHarbor 1.0 allowlist targets must use exact HTTP Docker service URLs")
         return normalized
 
     @field_validator("hosts")

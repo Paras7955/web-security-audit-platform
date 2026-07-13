@@ -31,6 +31,7 @@ def check_database_ready() -> bool:
             "api_rate_limit_logs",
             "audit_logs",
             "worker_heartbeats",
+            "scanner_tool_runs",
         }
         existing_tables = set(inspect(connection).get_table_names())
         missing_tables = required_tables - existing_tables

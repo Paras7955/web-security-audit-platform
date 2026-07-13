@@ -22,7 +22,8 @@ CONTRACTS = _load_contracts()
 class ScanMode(StrEnum):
     PASSIVE = "passive"
     ACTIVE_DEMO = "active_demo"
-    AJAX_SHORT = "ajax_short"
+    MODERN_WEB_CRAWL = "modern_web_crawl"
+    AJAX_SHORT = "ajax_short"  # Historical records only; never launchable.
     REPO = "repo"
 
 
@@ -44,7 +45,8 @@ class ScanStep(StrEnum):
     ZAP_SPIDER = "zap_spider"
     ZAP_PASSIVE = "zap_passive"
     ZAP_ACTIVE = "zap_active"
-    ZAP_AJAX = "zap_ajax"
+    ZAP_CLIENT_SPIDER = "zap_client_spider"
+    ZAP_AJAX = "zap_ajax"  # Historical records only.
     REPO_SECRETS_SCAN = "repo_secrets_scan"
     REPO_DEPENDENCY_SCAN = "repo_dependency_scan"
     NORMALIZING_FINDINGS = "normalizing_findings"
@@ -76,8 +78,7 @@ class ScanProfile:
     label: str
     mode: ScanMode
     description: str
-    requires_active_demo_acknowledgement: bool
-    requires_ajax_short_acknowledgement: bool
+    required_acknowledgements: frozenset[str]
     requires_repo_path: bool
     local_demo_only: bool
     reports_enabled: bool
@@ -92,8 +93,7 @@ def _load_scan_profiles() -> tuple[ScanProfile, ...]:
             label=str(raw_profile["label"]),
             mode=ScanMode(str(raw_profile["mode"])),
             description=str(raw_profile["description"]),
-            requires_active_demo_acknowledgement=bool(raw_profile["requires_active_demo_acknowledgement"]),
-            requires_ajax_short_acknowledgement=bool(raw_profile["requires_ajax_short_acknowledgement"]),
+            required_acknowledgements=frozenset(str(code) for code in raw_profile["required_acknowledgements"]),
             requires_repo_path=bool(raw_profile["requires_repo_path"]),
             local_demo_only=bool(raw_profile["local_demo_only"]),
             reports_enabled=bool(raw_profile["reports_enabled"]),

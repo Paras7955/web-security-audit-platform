@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -56,7 +56,7 @@ class AuthProfile(Base):
     label: Mapped[str] = mapped_column(String(200), nullable=False)
     profile_type: Mapped[str] = mapped_column(String(40), nullable=False, default="bearer_token", server_default="bearer_token")
     header_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    encrypted_secret: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    encrypted_secret: Mapped[str | None] = mapped_column(Text, nullable=True, default="")
     secret_hint: Mapped[str] = mapped_column(String(80), nullable=False, default="", server_default="")
     created_by_user_id: Mapped[str] = mapped_column(
         String(64),
@@ -66,6 +66,10 @@ class AuthProfile(Base):
         server_default=LEGACY_USER_ID,
     )
     created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    rotated_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by_user_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=True)
+    rotation_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
 
 class Target(Base):
@@ -93,12 +97,19 @@ class Target(Base):
         server_default=LEGACY_USER_ID,
     )
     created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    authorization_confirmed_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    auth_profile_attached_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     scans: Mapped[list["Scan"]] = relationship(back_populates="target")
 
 
 class Scan(Base):
     __tablename__ = "scans"
+    __table_args__ = (
+        CheckConstraint("progress_percent >= 0 AND progress_percent <= 100", name="ck_scans_progress_percent"),
+        Index("ix_scans_workspace_created_id", "workspace_id", "created_at", "id"),
+        Index("ix_scans_status_lease", "status", "lease_expires_at"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(
@@ -129,9 +140,34 @@ class Scan(Base):
     cancellation_requested_by_user_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    lease_expires_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_heartbeat_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     target: Mapped[Target] = relationship(back_populates="scans")
+
+
+class ScannerToolRun(Base):
+    __tablename__ = "scanner_tool_runs"
+    __table_args__ = (
+        CheckConstraint("finding_count >= 0", name="ck_scanner_tool_runs_finding_count"),
+        UniqueConstraint("scan_id", "tool_name", name="uq_scanner_tool_runs_scan_tool"),
+        Index("ix_scanner_tool_runs_workspace_scan", "workspace_id", "scan_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(64), ForeignKey("workspaces.id"), nullable=False)
+    scan_id: Mapped[str] = mapped_column(String(64), ForeignKey("scans.id", ondelete="CASCADE"), nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    tool_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    warning_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    finding_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    started_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class EvidenceArtifact(Base):

@@ -1,6 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,8 +44,42 @@ class Settings(BaseSettings):
     openai_model: str | None = None
     openai_api_key: str | None = None
     zap_base_url: str = "http://zap:8080"
+    zap_api_key: str = ""
+    cors_origins: list[str] = ["http://localhost:3001"]
+    trusted_hosts: list[str] = ["localhost", "127.0.0.1", "testserver", "backend"]
+    max_request_body_bytes: int = 1_048_576
+    page_default_limit: int = 50
+    page_max_limit: int = 200
+    ai_max_findings: int = 100
+    ai_max_payload_bytes: int = 131_072
+    repo_max_files: int = 20_000
+    repo_max_file_bytes: int = 20 * 1024 * 1024
+    repo_max_total_bytes: int = 512 * 1024 * 1024
+    repo_tool_timeout_seconds: int = 120
+    repo_tool_output_bytes: int = 10 * 1024 * 1024
+    repo_tool_max_findings: int = 1_000
+    osv_database_path: str = "/var/lib/osv-scanner"
+    worker_lease_seconds: int = 45
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, origins: list[str]) -> list[str]:
+        for origin in origins:
+            parsed = urlsplit(origin)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path not in {"", "/"}:
+                raise ValueError("CORS_ORIGINS must contain exact HTTP(S) origins without paths")
+            if "*" in origin or parsed.username or parsed.password or parsed.query or parsed.fragment:
+                raise ValueError("CORS_ORIGINS cannot contain wildcards, credentials, queries, or fragments")
+        return origins
+
+    @field_validator("trusted_hosts")
+    @classmethod
+    def validate_trusted_hosts(cls, hosts: list[str]) -> list[str]:
+        if not hosts or any(not host or "*" in host or "/" in host for host in hosts):
+            raise ValueError("TRUSTED_HOSTS must contain exact host names")
+        return hosts
 
 
 @lru_cache
