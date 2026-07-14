@@ -32,6 +32,13 @@ ALLOWLIST = ScanAllowlist.model_validate(
 
 
 class RedirectValidationTests(unittest.TestCase):
+    def test_empty_redirect_location_is_rejected(self) -> None:
+        match = match_allowlisted_target("http://juice-shop:3000", ALLOWLIST)
+
+        for location in ("", "   "):
+            with self.assertRaises(RedirectValidationError):
+                validate_redirect_location(match.url, location, match.allowlist_target, resolver_for(["172.20.0.10"]))
+
     def test_same_target_relative_redirect_is_allowed(self) -> None:
         match = match_allowlisted_target("http://juice-shop:3000/login", ALLOWLIST)
 

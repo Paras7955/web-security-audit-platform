@@ -11,7 +11,7 @@ from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, sca
 from app.security.allowlist import AllowlistTarget
 from app.security.auth import AuthError, authenticate_dev_token, authenticate_oidc_token
 from app.security.sanitization import REDACTION_TOKEN, sanitize_metadata, sanitize_relative_path, sanitize_text, sanitize_url
-from app.security.ssrf import SsrfGuardError, is_local_demo_network_address, resolve_host, validate_destination
+from app.security.ssrf import SsrfGuardError, is_local_demo_network_address, resolve_host, validate_destination, validate_ip_for_target
 from app.security.target_url import normalize_target_url
 
 
@@ -92,6 +92,9 @@ class SecurityHardeningTests(unittest.TestCase):
         nonlocal_target = local_target.model_copy(update={"local_demo": False})
         with self.assertRaises(SsrfGuardError):
             validate_destination(url, nonlocal_target, resolver=lambda _host, _port: ["10.0.0.4"])
+        with self.assertRaises(SsrfGuardError):
+            validate_ip_for_target(ipaddress.ip_address("198.18.0.1"), "juice-shop", nonlocal_target)
+        validate_ip_for_target(ipaddress.ip_address("8.8.8.8"), "juice-shop", nonlocal_target)
         self.assertTrue(is_local_demo_network_address(ipaddress.ip_address("fd00::1")))
 
     def test_persistence_sanitizers_cover_nested_and_malformed_inputs(self) -> None:
@@ -102,6 +105,7 @@ class SecurityHardeningTests(unittest.TestCase):
         self.assertIsNone(sanitize_text(None, maximum=50))
         self.assertEqual(sanitize_text("Authorization: Bearer canary", maximum=100), f"Authorization: Bearer {REDACTION_TOKEN}")
         self.assertNotIn("cookie-value", sanitize_text("Set-Cookie: sid=cookie-value", maximum=100) or "")
+        self.assertEqual(sanitize_text("http://user:password@example.test/path", maximum=100), "[URL REDACTED]")
         self.assertEqual(sanitize_relative_path(None), None)
         self.assertEqual(sanitize_relative_path(""), "[PATH REDACTED]")
         self.assertEqual(sanitize_relative_path("src\\nested\\app.py"), "src/nested/app.py")
@@ -124,12 +128,21 @@ class SecurityHardeningTests(unittest.TestCase):
         self.assertIn("[TRUNCATED]", str(sanitized))
 
     def test_artifact_paths_are_private_and_confined(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as outside:
             created = ensure_scan_artifact_dir(root, "scan-id")
             self.assertTrue(created.is_dir())
             self.assertEqual(created.stat().st_mode & 0o777, 0o700)
             with self.assertRaises(ArtifactPathError):
                 scan_artifact_dir(root, "../../escape")
+
+            created.rmdir()
+            scans_root = Path(root) / "scans"
+            scans_root.rmdir()
+            scans_root.symlink_to(outside, target_is_directory=True)
+            with patch.object(Path, "is_symlink", return_value=False), self.assertRaisesRegex(
+                ArtifactPathError, "escaped artifact root"
+            ):
+                scan_artifact_dir(root, "scan-id")
 
     def test_runtime_validation_rejects_unsafe_configuration(self) -> None:
         with tempfile.TemporaryDirectory() as root:

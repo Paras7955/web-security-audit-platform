@@ -1,12 +1,13 @@
 import json
 import os
+import stat
 import subprocess
 import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app.core.config import Settings
 from app.findings.schemas import NormalizedFindingInput
@@ -17,8 +18,11 @@ from app.repo_scanner.adapters import (
     RepoToolTimeoutError,
     RepoToolUnavailableError,
     ToolReceipt,
+    _limit_child,
     _load_json,
+    _optional_version,
     _osv_findings,
+    _osv_severity,
     _relative_scanner_path,
     _run_tool,
     _safe_positive_int,
@@ -30,7 +34,14 @@ from app.repo_scanner.adapters import (
     verify_repo_tools,
 )
 from app.repo_scanner.paths import RepoPathError, repo_path_for_storage, resolve_stored_repo_path, validate_repo_path
-from app.repo_scanner.staging import RepositoryLimitError, StagedRepository, StagingLimits
+from app.repo_scanner.staging import (
+    RepositoryLimitError,
+    RepositoryStagingError,
+    StagedRepository,
+    StagingLimits,
+    _copy_regular_file,
+    _copy_tree,
+)
 
 
 class RepoScannerTests(unittest.TestCase):
@@ -51,6 +62,30 @@ class RepoScannerTests(unittest.TestCase):
 
             with self.assertRaises(RepoPathError):
                 validate_repo_path(outside_dir, repo_scan_root=repo_root)
+
+            for missing in (None, "   "):
+                with self.assertRaises(RepoPathError):
+                    validate_repo_path(missing, repo_scan_root=repo_root)
+            file_path = repo_root / "not-a-directory"
+            file_path.touch()
+            with self.assertRaises(RepoPathError):
+                validate_repo_path(str(file_path), repo_scan_root=repo_root)
+            with self.assertRaises(RepoPathError):
+                validate_repo_path(str(repo_root / "missing"), repo_scan_root=repo_root)
+
+            relative_root = Path(os.path.relpath(repo_root, Path.cwd()))
+            self.assertEqual(validate_repo_path(str(repo_path), repo_scan_root=relative_root), repo_path.resolve())
+
+    def test_validate_repo_path_keeps_direct_symlink_check_as_defense_in_depth(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            real_repo = repo_root / "real"
+            real_repo.mkdir()
+            repo_link = repo_root / "repo-link"
+            repo_link.symlink_to(real_repo, target_is_directory=True)
+            with patch("app.repo_scanner.paths.reject_symlink_components_under_root"):
+                with self.assertRaisesRegex(RepoPathError, "must not be a symlink"):
+                    validate_repo_path(str(repo_link), repo_scan_root=repo_root)
 
     def test_validate_repo_path_rejects_symlinked_repo(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
@@ -126,6 +161,74 @@ class RepoScannerTests(unittest.TestCase):
                 with StagedRepository(source, Path(staging_dir), StagingLimits(10, 10, 100)):
                     pass
 
+            (source / "large").write_bytes(b"x")
+            with self.assertRaises(RepositoryLimitError):
+                with StagedRepository(source, Path(staging_dir), StagingLimits(0, 10, 100)):
+                    pass
+
+    def test_staging_fails_closed_on_directory_and_entry_races(self) -> None:
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as staging_dir:
+            source = Path(source_dir)
+            destination = Path(staging_dir) / "destination"
+            destination.mkdir()
+            limits = StagingLimits(10, 1024, 4096)
+
+            with patch("app.repo_scanner.staging.os.scandir", side_effect=OSError("private read detail")), self.assertRaisesRegex(
+                RepositoryStagingError, "could not be read safely"
+            ):
+                _copy_tree(source, destination, limits)
+
+            changed = MagicMock()
+            changed.name = "changed.py"
+            changed.path = str(source / changed.name)
+            changed.is_symlink.return_value = False
+            changed.is_dir.return_value = False
+            changed.is_file.return_value = True
+            changed.stat.side_effect = OSError("private stat detail")
+            with patch("app.repo_scanner.staging.os.scandir", return_value=[changed]), self.assertRaisesRegex(
+                RepositoryStagingError, "entry changed"
+            ):
+                _copy_tree(source, destination, limits)
+
+            special = MagicMock()
+            special.name = "special"
+            special.path = str(source / special.name)
+            special.is_symlink.return_value = False
+            special.is_dir.return_value = False
+            special.is_file.return_value = True
+            special.stat.return_value = SimpleNamespace(st_mode=stat.S_IFIFO)
+            with patch("app.repo_scanner.staging.os.scandir", return_value=[special]):
+                self.assertEqual(_copy_tree(source, destination, limits), (0, 0, 1))
+
+            never_entered = StagedRepository(source, Path(staging_dir), limits)
+            never_entered.__exit__(None, None, None)
+
+    def test_regular_file_copy_detects_replacement_and_io_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source.py"
+            source.write_text("safe", encoding="utf-8")
+            expected = source.stat()
+
+            replaced = SimpleNamespace(st_mode=expected.st_mode, st_dev=expected.st_dev, st_ino=expected.st_ino + 1)
+            with patch("app.repo_scanner.staging.os.fstat", return_value=replaced), self.assertRaisesRegex(
+                RepositoryStagingError, "changed during staging"
+            ):
+                _copy_regular_file(source, root / "replaced.py", expected)
+
+            changed_size = SimpleNamespace(st_size=expected.st_size + 1, st_mtime_ns=expected.st_mtime_ns)
+            with patch("app.repo_scanner.staging.os.fstat", side_effect=[expected, changed_size]), self.assertRaisesRegex(
+                RepositoryStagingError, "changed during staging"
+            ):
+                _copy_regular_file(source, root / "changed.py", expected)
+
+            destination = root / "io-error.py"
+            with patch("app.repo_scanner.staging.os.open", side_effect=OSError("private io detail")), self.assertRaisesRegex(
+                RepositoryStagingError, "could not be staged safely"
+            ):
+                _copy_regular_file(source, destination, expected)
+            self.assertFalse(destination.exists())
+
     def test_gitleaks_adapter_never_persists_reported_secret(self) -> None:
         canary = "scopeharbor-canary-secret"
         report = [
@@ -195,6 +298,8 @@ class RepoScannerTests(unittest.TestCase):
             path.write_text("[]" * 100, encoding="utf-8")
             with self.assertRaises(RepoToolOutputError):
                 _load_json(path, 10)
+            with self.assertRaises(RepoToolOutputError):
+                _load_json(Path(temp_dir) / "missing.json", 100)
 
     def test_repository_scan_makes_osv_failure_an_explicit_warning(self) -> None:
         now = datetime.now(UTC)
@@ -248,6 +353,17 @@ class RepoScannerTests(unittest.TestCase):
             "app.repo_scanner.adapters.subprocess.run", side_effect=subprocess.TimeoutExpired("tool", 5)
         ), self.assertRaises(RepoToolUnavailableError):
             _verify_version("tool", "1.0")
+        with patch("app.repo_scanner.adapters._verify_version", side_effect=RepoToolUnavailableError("missing")):
+            self.assertIsNone(_optional_version("tool", "1.0"))
+
+    def test_child_limits_are_applied_before_scanner_execution(self) -> None:
+        with patch("app.repo_scanner.adapters.resource.setrlimit") as set_limit, patch(
+            "app.repo_scanner.adapters.os.umask"
+        ) as set_umask:
+            _limit_child(1024, 7)
+
+        self.assertEqual(set_limit.call_count, 2)
+        set_umask.assert_called_once_with(0o077)
 
     def test_tool_runner_maps_failures_and_bounds_output(self) -> None:
         config = Settings(_env_file=None, repo_tool_output_bytes=32, repo_tool_timeout_seconds=2)
@@ -294,6 +410,20 @@ class RepoScannerTests(unittest.TestCase):
         ), self.assertRaises(RepoToolError):
             run_osv_scanner(Path(staged_dir), Settings(_env_file=None))
 
+        with tempfile.TemporaryDirectory() as staged_dir, patch(
+            "app.repo_scanner.adapters._verify_version", return_value="8.30.1"
+        ), patch("app.repo_scanner.adapters._run_tool", return_value=7), self.assertRaises(RepoToolError):
+            run_gitleaks(Path(staged_dir), Settings(_env_file=None))
+
+        def malformed_gitleaks(command, **_kwargs):
+            Path(command[command.index("--report-path") + 1]).write_text("{}", encoding="utf-8")
+            return 0
+
+        with tempfile.TemporaryDirectory() as staged_dir, patch(
+            "app.repo_scanner.adapters._verify_version", return_value="8.30.1"
+        ), patch("app.repo_scanner.adapters._run_tool", side_effect=malformed_gitleaks), self.assertRaises(RepoToolOutputError):
+            run_gitleaks(Path(staged_dir), Settings(_env_file=None))
+
     def test_osv_parser_rejects_shape_and_bounds_findings(self) -> None:
         with self.assertRaises(RepoToolOutputError):
             _osv_findings([], Path("/tmp/staged"), 10)
@@ -323,6 +453,7 @@ class RepoScannerTests(unittest.TestCase):
         findings = _osv_findings(payload, Path("/tmp/staged"), 2)
         self.assertEqual([finding.scanner_rule_id for finding in findings], ["OSV-1", "OSV-2"])
         self.assertEqual([finding.severity for finding in findings], ["critical", "high"])
+        self.assertEqual(_osv_severity({"database_specific": {"severity": "unknown"}, "severity": [None, {"score": "n/a"}]}), "medium")
 
     def test_relative_paths_numbers_and_osv_database_are_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as staged_dir, tempfile.TemporaryDirectory() as outside_dir:
@@ -336,7 +467,7 @@ class RepoScannerTests(unittest.TestCase):
             self.assertEqual(_relative_scanner_path(outside.as_posix(), staged), "private.py")
             self.assertEqual(_relative_scanner_path(None, staged), "unknown")
 
-        for value, expected in (("12", 12), (0, None), (-1, None), (10_000_000, None), ({}, None)):
+        for value, expected in (("12", 12), ("invalid", None), (0, None), (-1, None), (10_000_000, None), ({}, None)):
             self.assertEqual(_safe_positive_int(value), expected)
 
         with tempfile.TemporaryDirectory() as database_dir:
@@ -354,6 +485,10 @@ class RepoScannerTests(unittest.TestCase):
             self.assertEqual(stale.exception.code, "osv_database_stale")
             archive.touch()
             _validate_osv_database(config)
+
+        with tempfile.TemporaryDirectory() as database_dir, patch.object(Path, "glob", side_effect=OSError("private glob detail")):
+            with self.assertRaisesRegex(RepoToolUnavailableError, "unavailable"):
+                _validate_osv_database(Settings(_env_file=None, osv_database_path=database_dir))
 
     @unittest.skipUnless(os.environ.get("SCOPEHARBOR_REAL_SCANNER_TESTS") == "1", "real scanner binaries not requested")
     def test_real_gitleaks_binary_redacts_secret_and_never_executes_package_scripts(self) -> None:

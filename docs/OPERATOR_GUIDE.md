@@ -185,6 +185,8 @@ python3 -m venv .venv
 .venv/bin/pyright
 PYTHONPATH=backend .venv/bin/coverage run --branch -m unittest discover -s backend/tests
 .venv/bin/coverage report --fail-under=85
+.venv/bin/coverage json -o coverage.json
+.venv/bin/python scripts/check_security_coverage.py coverage.json
 cd frontend && npm ci && npm run lint && npm run build
 ```
 

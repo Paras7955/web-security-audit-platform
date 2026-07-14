@@ -2,7 +2,8 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from app.auth_profiles import LOCAL_DEV_EXAMPLE_SECRET_KEY, AuthProfileError, validate_auth_profile_secret_settings
@@ -21,6 +22,7 @@ from app.security.auth import (
 from fastapi.testclient import TestClient
 from jwt import MissingRequiredClaimError
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 
 from tests.helpers import DEV_AUTH_HEADERS, ensure_dev_principal
 
@@ -157,7 +159,10 @@ class AuthWorkspaceTests(unittest.TestCase):
 
     def test_invalid_auth_configuration_fails_closed(self) -> None:
         invalid_configs = [
+            Settings(app_env="local", auth_mode="optional", auth_provider="dev"),
             Settings(app_env="production", auth_mode="dev", auth_provider="dev"),
+            Settings(app_env="local", auth_mode="dev", auth_provider="auth0"),
+            Settings(app_env="local", auth_mode="dev", auth_provider="dev", dev_auth_token=" "),
             Settings(app_env="local", auth_mode="dev", auth_provider="dev", auth_oidc_issuer="https://issuer.example/"),
             Settings(app_env="local", auth_mode="required", auth_provider="dev"),
             Settings(app_env="local", auth_mode="required", auth_provider=" "),
@@ -263,6 +268,46 @@ class AuthWorkspaceTests(unittest.TestCase):
                     db.execute(delete(PlatformUser).where(PlatformUser.id == user_id))
                     db.commit()
 
+    def test_oidc_existing_identity_recreates_only_its_missing_workspace(self) -> None:
+        subject = f"auth0|workspace-recovery-{uuid4()}"
+        user_id = str(uuid4())
+        claims = {"sub": subject, "name": "Recovered User", "exp": 4_102_444_800, "iat": 1_700_000_000}
+        oidc_settings = Settings(
+            _env_file=None,
+            app_env="production",
+            auth_mode="required",
+            auth_provider="auth0",
+            auth_oidc_issuer="https://tenant.example/",
+            auth_oidc_audience="scopeharbor-api",
+            auth_oidc_jwks_url="https://tenant.example/.well-known/jwks.json",
+        )
+        signing_key = SimpleNamespace(key="unused")
+
+        try:
+            with SessionLocal() as db:
+                db.add(PlatformUser(id=user_id, display_name="Recovered User"))
+                db.flush()
+                db.add(AuthIdentity(id=str(uuid4()), user_id=user_id, provider="auth0", provider_subject=subject))
+                db.commit()
+            with (
+                SessionLocal() as db,
+                patch("app.security.auth.oidc_jwk_client") as jwk_client,
+                patch("app.security.auth.jwt.decode", return_value=claims),
+            ):
+                jwk_client.return_value.get_signing_key_from_jwt.return_value = signing_key
+                principal = authenticate_oidc_token("token", db, oidc_settings)
+                workspace = db.scalar(select(Workspace).where(Workspace.id == principal.workspace_id))
+
+            self.assertEqual(principal.user_id, user_id)
+            self.assertIsNotNone(workspace)
+            self.assertEqual(workspace.owner_user_id, user_id)
+        finally:
+            with SessionLocal() as db:
+                db.execute(delete(AuthIdentity).where(AuthIdentity.user_id == user_id))
+                db.execute(delete(Workspace).where(Workspace.owner_user_id == user_id))
+                db.execute(delete(PlatformUser).where(PlatformUser.id == user_id))
+                db.commit()
+
     def test_oidc_validation_requires_subject_expiry_and_issued_at_claims(self) -> None:
         oidc_settings = Settings(
             app_env="production",
@@ -324,6 +369,23 @@ class AuthWorkspaceTests(unittest.TestCase):
                     db.execute(delete(Workspace).where(Workspace.owner_user_id == user_id))
                     db.execute(delete(PlatformUser).where(PlatformUser.id == user_id))
                     db.commit()
+
+    def test_oidc_provisioning_race_fails_closed_when_winner_is_incomplete(self) -> None:
+        duplicate = IntegrityError("insert identity", {}, Exception("duplicate"))
+
+        missing_identity = MagicMock()
+        missing_identity.begin_nested.side_effect = duplicate
+        missing_identity.scalar.return_value = None
+        with self.assertRaisesRegex(AuthError, "could not be completed safely"):
+            provision_oidc_principal(missing_identity, provider="auth0", subject="missing", display_name="User")
+        missing_identity.rollback.assert_called_once()
+
+        missing_workspace = MagicMock()
+        missing_workspace.begin_nested.side_effect = duplicate
+        missing_workspace.scalar.side_effect = [SimpleNamespace(user_id="existing-user"), None]
+        with self.assertRaisesRegex(AuthError, "could not be completed safely"):
+            provision_oidc_principal(missing_workspace, provider="auth0", subject="incomplete", display_name="User")
+        missing_workspace.rollback.assert_called_once()
 
 
 if __name__ == "__main__":

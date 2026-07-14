@@ -89,6 +89,8 @@ jobs:
           coverage erase
           coverage run --branch -m unittest discover -s backend/tests
           coverage report --fail-under=85
+          coverage json -o coverage.json
+          python scripts/check_security_coverage.py coverage.json
 
       - name: Audit Python runtime dependencies
         run: pip-audit --require-hashes --disable-pip --requirement backend/requirements.txt
