@@ -9,7 +9,7 @@ x-container-hardening: &container-hardening
 
 x-backend-runtime: &backend-runtime
   env_file:
-    - .env
+    - ${SCOPEHARBOR_ENV_FILE:-.env}
   environment:
     DATABASE_URL: postgresql+psycopg://security_audit:${POSTGRES_PASSWORD:?Run python3 scripts/bootstrap_env.py}@postgres:5432/security_audit
     ALLOWLIST_PATH: /app/config/scan-allowlist.yml
@@ -30,6 +30,14 @@ services:
   postgres:
     <<: *container-hardening
     image: postgres:16.14-alpine3.24@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    # The official entrypoint needs these only while initializing a fresh volume;
+    # the running postgres process drops to UID 70 with no effective capabilities.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
     environment:
       POSTGRES_DB: security_audit
       POSTGRES_USER: security_audit
@@ -40,6 +48,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
     networks:
       - internal
+      - egress
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U security_audit -d security_audit"]
       interval: 5s
@@ -84,13 +93,15 @@ services:
     <<: *container-hardening
     image: bkimminich/juice-shop:v20.1.1@sha256:cd58d79c5cb4d82f22fbaf616f9ff43bbd04ba630cd6b448a9ed99cf652fcebf
     user: "65532:65532"
-    read_only: true
+    # Juice Shop updates its bundled demo database and fixtures during startup,
+    # so its root filesystem cannot be read-only. It remains non-root/capability-free.
     ports:
       - "127.0.0.1:${JUICE_SHOP_PORT:-3000}:3000"
     tmpfs:
       - /tmp:size=64m,mode=1777
     networks:
       - internal
+      - egress
     healthcheck:
       test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
@@ -223,6 +234,8 @@ services:
 networks:
   internal:
     internal: true
+  # Host-published loopback ports require a non-internal bridge on Docker Desktop.
+  # Scanner services stay exclusively on the internal network.
   egress: {}
 
 volumes:
