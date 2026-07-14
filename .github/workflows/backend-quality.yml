@@ -2,7 +2,7 @@ name: Backend quality
 
 on:
   push:
-    branches: [main, "phase-*"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 

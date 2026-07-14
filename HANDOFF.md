@@ -102,7 +102,10 @@ Default host endpoints are frontend `127.0.0.1:3001`, API
    ```
 
 3. Enable GitHub Private Vulnerability Reporting and the desired repository
-   security features in GitHub settings.
+   security features in GitHub settings. While the repository is private, set
+   the repository Actions variable `SCOPEHARBOR_CODE_SECURITY_ENABLED=true`
+   after GitHub Code Security is enabled; CodeQL and Dependency Review skip
+   until then. Public repositories run those checks automatically.
 4. For production-like login, replace local dev auth with the documented strict
    OIDC configuration.
 

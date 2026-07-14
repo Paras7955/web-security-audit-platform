@@ -8,6 +8,7 @@ permissions:
 
 jobs:
   review:
+    if: ${{ github.event.repository.private == false || vars.SCOPEHARBOR_CODE_SECURITY_ENABLED == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

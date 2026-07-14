@@ -2,7 +2,7 @@ name: Container builds
 
 on:
   push:
-    branches: [main, "phase-*"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -25,6 +25,7 @@ jobs:
 
       - name: Validate Compose configuration
         env:
+          SCOPEHARBOR_ENV_FILE: /dev/null
           POSTGRES_PASSWORD: scopeharbor-ci-database
           DEV_AUTH_TOKEN: scopeharbor-ci-development-token
           NEXT_PUBLIC_DEV_AUTH_TOKEN: scopeharbor-ci-development-token
