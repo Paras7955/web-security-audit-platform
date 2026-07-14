@@ -1,52 +1,58 @@
-import { TargetSetup } from "@/components/TargetSetup";
-import { SCAN_PROFILES, SCAN_STATUSES } from "@/lib/contracts";
+"use client";
 
-const safetyRules = [
-  "Allowlisted targets only",
-  "Workspace-owned records",
-  "Redacted evidence",
-  "Template AI by default"
-];
+import { AppIcon } from "@/components/AppIcon";
+import { ScopeHarborMark } from "@/components/ScopeHarborMark";
+import { TargetSetup } from "@/components/TargetSetup";
+import { WebGLScopeField } from "@/components/WebGLScopeField";
+
+const safetyRules = ["Exact allowlist", "Workspace isolated", "Evidence redacted"];
 
 export function AppShell() {
+  function toggleTheme() {
+    const root = document.documentElement;
+    const nextTheme = root.dataset.theme === "light" ? "dark" : "light";
+    root.dataset.theme = nextTheme;
+    root.style.colorScheme = nextTheme;
+    window.localStorage.setItem("scopeharbor-theme", nextTheme);
+  }
+
   return (
     <main className="appShell">
       <header className="appTopbar">
-        <div>
-          <p className="eyebrow">ScopeHarbor — Local AppSec Audit Platform</p>
-          <h1>Authorized security reviews, kept inside your environment</h1>
-        </div>
-        <div className="workspaceBadge" aria-label="Workspace data model">
-          <span>Data model</span>
-          <strong>Workspace-owned</strong>
+        <a className="brandLockup" href="#workspace-console" aria-label="ScopeHarbor workspace home">
+          <ScopeHarborMark />
+          <span>
+            <strong>ScopeHarbor</strong>
+            <small>Local AppSec Audit Platform</small>
+          </span>
+        </a>
+
+        <div className="topbarActions">
+          <div className="localOnlyBadge">
+            <span className="liveDot" />
+            Local workspace
+          </div>
+          <button className="iconButton themeToggle" type="button" onClick={toggleTheme} aria-label="Toggle light and dark mode">
+            <span className="themeIcon themeIconSun"><AppIcon name="sun" /></span>
+            <span className="themeIcon themeIconMoon"><AppIcon name="moon" /></span>
+          </button>
         </div>
       </header>
 
-      <section id="overview" className="overviewBand" aria-label="Workspace overview">
-        <div className="metricStrip">
-          <div>
-            <span>Scan profiles</span>
-            <strong>{SCAN_PROFILES.length}</strong>
-          </div>
-          <div>
-            <span>Status states</span>
-            <strong>{SCAN_STATUSES.length}</strong>
-          </div>
-          <div>
-            <span>API surface</span>
-            <strong>/api/v1</strong>
-          </div>
-          <div>
-            <span>Target scope</span>
-            <strong>Allowlist</strong>
-          </div>
+      <section className="commandHero" aria-labelledby="workspace-title">
+        <div className="commandHeroCopy">
+          <p className="eyebrow"><AppIcon name="shield" size={15} /> Defensive security workspace</p>
+          <h1 id="workspace-title">See the attack surface.<br /><span>Keep control of the scope.</span></h1>
+          <p className="heroSummary">
+            Launch authorized scans, triage normalized findings, and turn evidence into clear remediation decisions—without sending raw artifacts outside your environment.
+          </p>
+          <ul className="safetyStrip" aria-label="Safety boundaries">
+            {safetyRules.map((rule) => (
+              <li key={rule}><AppIcon name="check" size={14} />{rule}</li>
+            ))}
+          </ul>
         </div>
-
-        <ul className="safetyStrip">
-          {safetyRules.map((rule) => (
-            <li key={rule}>{rule}</li>
-          ))}
-        </ul>
+        <WebGLScopeField />
       </section>
 
       <section id="workspace-console" className="workspaceConsole">
