@@ -4,6 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { AppIcon } from "@/components/AppIcon";
 import type { Scan, ScannerToolRun, Target } from "@/lib/securityAuditApi";
 import { ACKNOWLEDGEMENT_LABELS, SCAN_PROFILES } from "@/lib/contracts";
 
@@ -169,16 +170,50 @@ export function ScanHistory({
   selectedScanId: string;
   onSelectScan: (scanId: string) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [profileFilter, setProfileFilter] = useState("all");
+  const filteredScans = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return scans.filter((scan) => {
+      const matchesStatus = statusFilter === "all" || scan.status === statusFilter;
+      const matchesProfile = profileFilter === "all" || scan.scan_profile_id === profileFilter;
+      const matchesQuery = !normalizedQuery || [
+        scan.id,
+        scan.status,
+        scan.current_step,
+        formatScanProfileLabel(scan.scan_profile_id)
+      ].some((value) => value?.toLowerCase().includes(normalizedQuery));
+      return matchesStatus && matchesProfile && matchesQuery;
+    });
+  }, [profileFilter, query, scans, statusFilter]);
+
   return (
     <div className="panel historyPanel">
       <div className="panelHeader">
-        <h3>Scan History</h3>
-        <span className="contextBadge">{scans.length}</span>
+        <div><p className="panelKicker">Audit trail</p><h3>Scan history</h3></div>
+        <span className="contextBadge">{filteredScans.length}/{scans.length}</span>
       </div>
 
-      {scans.length > 0 ? (
+      <div className="historyFilters">
+        <label className="searchField compactSearch">
+          <AppIcon name="search" size={15} />
+          <span className="srOnly">Search scans</span>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search scans" />
+        </label>
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter scan history by status">
+          <option value="all">All statuses</option>
+          {[...new Set(scans.map((scan) => scan.status))].map((status) => <option value={status} key={status}>{status.replaceAll("_", " ")}</option>)}
+        </select>
+        <select value={profileFilter} onChange={(event) => setProfileFilter(event.target.value)} aria-label="Filter scan history by profile">
+          <option value="all">All profiles</option>
+          {[...new Set(scans.map((scan) => scan.scan_profile_id))].map((profileId) => <option value={profileId} key={profileId}>{formatScanProfileLabel(profileId)}</option>)}
+        </select>
+      </div>
+
+      {filteredScans.length > 0 ? (
         <ul className="scanTimeline">
-          {scans.slice(0, 10).map((scan) => (
+          {filteredScans.map((scan) => (
             <li key={scan.id}>
               <button
                 type="button"
@@ -187,8 +222,8 @@ export function ScanHistory({
               >
                 <span className={`statusDot status-${scan.status}`} />
                 <span>
-                  <strong>{scan.status}</strong>
-                  <small>{scan.current_step ?? "no current step"}</small>
+                  <strong>{formatScanProfileLabel(scan.scan_profile_id)}</strong>
+                  <small>{scan.status.replaceAll("_", " ")} · {formatScanDate(scan.created_at)}</small>
                 </span>
                 <em>{scan.progress_percent}%</em>
               </button>
@@ -196,10 +231,14 @@ export function ScanHistory({
           ))}
         </ul>
       ) : (
-        <p className="emptyState">No scans yet.</p>
+        <p className="emptyState">{scans.length ? "No scans match these filters." : "No scans yet."}</p>
       )}
     </div>
   );
+}
+
+function formatScanDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
 }
 
 export function ScanProgress({

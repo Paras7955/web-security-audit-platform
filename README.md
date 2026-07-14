@@ -24,6 +24,9 @@ and all reuse rights are reserved. See [CONTRIBUTING.md](CONTRIBUTING.md).
 - Produces restrictive Markdown and HTML reports from safe projections.
 - Supports encrypted bearer-token and static-header target auth profiles for the
   guarded passive scanner only.
+- Provides a responsive operator workspace with dedicated overview, scanning,
+  findings, intelligence, credentials, and operations tabs, plus light/dark
+  themes and a reduced-motion-aware WebGL scope visualization.
 
 It does **not** scan arbitrary public URLs. Public cloud scanning, authenticated
 browser workflows, business-logic testing, RBAC/team administration, full SAST,
@@ -113,6 +116,32 @@ scanner output.
 | ZAP | not published | Worker-only scanner service |
 
 Published ports bind to loopback by default and can be changed in `.env`.
+
+## Operator workspace
+
+The frontend separates daily work into six focused tabs instead of one long
+page:
+
+- **Overview** summarizes target, scan, finding, risk, readiness, and recent
+  activity signals.
+- **Targets & scans** manages the authorized target inventory, guarded scan
+  launch controls, searchable scan history, scanner receipts, and cancellation.
+- **Findings** provides severity and management filters, workspace/scan scope,
+  free-text search, lifecycle updates, suppressions, tags, and redacted detail.
+- **Intelligence** groups risk trends, same-target comparisons, safe reports,
+  and bounded explanations.
+- **Credentials** contains target auth-profile creation, attachment, rotation,
+  and revocation.
+- **Operations** shows safe database, worker, queue, ZAP, and artifact readiness.
+
+The theme control persists locally in the browser. Animation respects reduced
+motion preferences, and the WebGL visualization has a non-WebGL fallback; no
+scanner or authorization control depends on it.
+
+Removing a saved target is history-preserving. ScopeHarbor blocks removal while
+the target has a nonterminal scan, then archives the target, clears its stored
+repository/auth attachment, and keeps scan, finding, report, risk, and audit
+history readable. This is intentionally not a cascading delete.
 
 ## Authentication
 

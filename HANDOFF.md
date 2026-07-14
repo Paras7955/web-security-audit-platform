@@ -3,8 +3,9 @@
 ## Current state
 
 ScopeHarbor — Local AppSec Audit Platform is at version `1.0.0`. V1 phases
-1–19 and the approved Phase 20 public-readiness program are complete. Any new
-development is post-1.0 scope and requires explicit approval.
+1–19, the approved Phase 20 public-readiness program, and the approved Phase 21
+operator-workspace redesign are complete. Any new development is post-1.0 scope
+and requires explicit approval.
 
 The release provides:
 
@@ -25,6 +26,12 @@ The release provides:
 - Encrypted passive-client auth profiles with rotation and revocation, worker
   leases, schema/legacy cleanup migrations, dry-run-first maintenance, an
   explicit safe demo seed, and hardened container defaults.
+- A responsive six-tab operator workspace with persistent light/dark themes,
+  reduced-motion-aware native WebGL, target and scan search/filter controls,
+  finding search/reset, and clear readiness/activity views.
+- History-preserving target removal backed by schema `0011`: active scans block
+  removal, launch configuration is cleared, and historical evidence remains
+  workspace-readable.
 
 ## Safety invariants
 
@@ -61,7 +68,7 @@ Read `SECURITY.md` and `docs/THREAT_MODEL.md` before changing a trust boundary.
 | Reports and AI | `backend/app/reports/`, `backend/app/ai/` | Safe downstream projections |
 | Operations | `backend/app/ops/`, `backend/app/maintenance.py` | Audit, health, limits, and maintenance |
 | Public contract | `shared/contracts.json` | Profiles, acknowledgements, limits, and version |
-| Operator UI | `frontend/` | Local frontend |
+| Operator UI | `frontend/src/components/`, `frontend/src/app/globals.css` | Tabbed local workspace, themes, and visualization |
 | Runtime | `docker-compose.yml`, `backend/Dockerfile`, `frontend/Dockerfile` | Hardened local deployment |
 
 Default host endpoints are frontend `127.0.0.1:3001`, API
@@ -70,16 +77,18 @@ Default host endpoints are frontend `127.0.0.1:3001`, API
 
 ## Final verification record
 
-- Clean PostgreSQL migration from zero through `0010`, representative upgrade
+- Clean PostgreSQL migration from zero through `0011`, representative upgrade
   from schema `0008`, and Alembic model-drift check: passed.
-- Backend: 263 tests passed; 2 real-binary integration tests are intentionally
+- Backend: 265 tests passed; 2 real-binary integration tests are intentionally
   opt-in and were exercised separately with the pinned tools.
 - Backend branch coverage: 87% overall. Focused coverage: authentication 100%,
   SSRF/redirects 100%, persistence redaction 96.21%, artifact paths 98.28%, and
   repository runner boundaries 100%.
 - Ruff and Pyright: clean.
 - Python runtime/dev dependency audits and npm audit: no known vulnerabilities.
-- Frontend lint and production build: passed.
+- Frontend lint and production build: passed. Live seeded-data QA covered every
+  workspace tab, both themes, theme persistence, WebGL rendering, target/scan
+  and finding search/filter behavior, and keyboard cancellation of removal.
 - API, worker, and frontend image builds: passed on the pinned runtime inputs.
 - Compose bootstrap, migrations, health/readiness, loopback bindings, container
   users/capabilities, and hardened service startup: passed. Runtime processes

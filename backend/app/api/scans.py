@@ -37,7 +37,15 @@ def create_scan(
         max_requests=settings.scan_create_rate_limit_max_requests,
         window_seconds=settings.api_rate_limit_window_seconds,
     )
-    target = db.scalar(select(Target).where(Target.id == payload.target_id, Target.workspace_id == principal.workspace_id))
+    target = db.scalar(
+        select(Target)
+        .where(
+            Target.id == payload.target_id,
+            Target.workspace_id == principal.workspace_id,
+            Target.archived_at.is_(None),
+        )
+        .with_for_update()
+    )
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
     if not target.permission_confirmed:

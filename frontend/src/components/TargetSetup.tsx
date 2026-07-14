@@ -2,8 +2,10 @@
 
 /* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect -- Async loaders reject stale responses with selected-resource refs. */
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 
+import { AppIcon } from "@/components/AppIcon";
+import { ConfirmActionDialog } from "@/components/ConfirmActionDialog";
 import { AiExplanationsPanel } from "@/components/dashboard/AiExplanationsPanel";
 import { AuthProfilesPanel } from "@/components/dashboard/AuthProfilesPanel";
 import { FindingsDashboard, severityRank } from "@/components/dashboard/FindingsDashboard";
@@ -21,6 +23,8 @@ import {
 } from "@/components/dashboard/ScanControls";
 import { SCAN_PROFILES } from "@/lib/contracts";
 import { TargetForm } from "@/components/dashboard/TargetForm";
+import { TargetLibrary } from "@/components/dashboard/TargetLibrary";
+import { WorkspaceOverview } from "@/components/dashboard/WorkspaceOverview";
 import {
   AiExplanation,
   AuthProfile,
@@ -42,7 +46,19 @@ import {
   readPage
 } from "@/lib/securityAuditApi";
 
+const workspaceViews = [
+  { id: "overview", label: "Overview", description: "Workspace signal", icon: "overview" },
+  { id: "scanning", label: "Targets & scans", description: "Configure and launch", icon: "scan" },
+  { id: "findings", label: "Findings", description: "Triage evidence", icon: "finding" },
+  { id: "intelligence", label: "Intelligence", description: "Risk, reports & AI", icon: "intelligence" },
+  { id: "credentials", label: "Credentials", description: "Target auth profiles", icon: "credential" },
+  { id: "operations", label: "Operations", description: "Platform readiness", icon: "operations" }
+] as const;
+
+type WorkspaceView = (typeof workspaceViews)[number]["id"];
+
 export function TargetSetup() {
+  const [activeView, setActiveView] = useState<WorkspaceView>("overview");
   const [targetUrl, setTargetUrl] = useState("http://juice-shop:3000");
   const [permissionConfirmed, setPermissionConfirmed] = useState(false);
   const [repoPath, setRepoPath] = useState("/app/repositories/security-project");
@@ -83,6 +99,7 @@ export function TargetSetup() {
   const [dateBeforeFilter, setDateBeforeFilter] = useState("");
   const [riskMinFilter, setRiskMinFilter] = useState("");
   const [riskMaxFilter, setRiskMaxFilter] = useState("");
+  const [findingSearchQuery, setFindingSearchQuery] = useState("");
   const [findingScope, setFindingScope] = useState("scan");
   const [targetFilter, setTargetFilter] = useState("");
   const [profileFilter, setProfileFilter] = useState("");
@@ -96,7 +113,10 @@ export function TargetSetup() {
   const [riskMessage, setRiskMessage] = useState("Risk scores are generated for completed scans using risk-v1.");
   const [opsMessage, setOpsMessage] = useState("Platform health has not been loaded.");
   const [bootstrapError, setBootstrapError] = useState("");
+  const [archiveCandidate, setArchiveCandidate] = useState<Target | null>(null);
+  const [revokeCandidate, setRevokeCandidate] = useState<AuthProfile | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isGeneratingReports, setIsGeneratingReports] = useState(false);
   const [isCancellingScan, setIsCancellingScan] = useState(false);
   const selectedScanIdRef = useRef("");
@@ -117,8 +137,26 @@ export function TargetSetup() {
   const displayFindings = findings;
   const displayAiExplanation = useMemo(() => uniqueAiExplanation(aiExplanation, findings), [aiExplanation, findings]);
   const filteredFindings = useMemo(() => {
-    return [...displayFindings].sort((left, right) => (severityRank[right.severity] ?? 0) - (severityRank[left.severity] ?? 0));
-  }, [displayFindings]);
+    const query = findingSearchQuery.trim().toLowerCase();
+    return [...displayFindings]
+      .filter((finding) => {
+        if (!query) {
+          return true;
+        }
+        return [
+          finding.title,
+          finding.source_tool,
+          finding.affected_url,
+          finding.affected_file,
+          finding.owasp_category,
+          finding.cwe,
+          finding.severity,
+          finding.lifecycle_status,
+          ...finding.tags
+        ].some((value) => value?.toLowerCase().includes(query));
+      })
+      .sort((left, right) => (severityRank[right.severity] ?? 0) - (severityRank[left.severity] ?? 0));
+  }, [displayFindings, findingSearchQuery]);
   const selectedFinding = filteredFindings.find((finding) => finding.id === selectedFindingId) ?? filteredFindings[0] ?? null;
 
   useEffect(() => {
@@ -257,6 +295,85 @@ export function TargetSetup() {
     }
   }
 
+  async function archiveTarget() {
+    if (!archiveCandidate) {
+      return;
+    }
+
+    const target = archiveCandidate;
+    setIsBusy(true);
+    setMessage(`Removing ${target.name} from saved targets...`);
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/targets/${target.id}`, { method: "DELETE" });
+      if (!response.ok) {
+        await readJson<never>(response, "Target removal failed.");
+      }
+      setArchiveCandidate(null);
+      if (selectedTargetIdRef.current === target.id) {
+        setSelectedTargetId("");
+      }
+      await Promise.all([loadTargets(""), loadDashboardOverview()]);
+      setMessage(`${target.name} was removed from saved targets. Its scan, finding, report, and audit history remains available.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Target removal failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function refreshWorkspace() {
+    setIsRefreshing(true);
+    try {
+      await loadInitialData();
+      const scanId = selectedScanIdRef.current;
+      const targetId = selectedTargetIdRef.current;
+      await Promise.allSettled([
+        scanId ? refreshScan(scanId) : Promise.resolve(),
+        targetId ? loadTargetDashboard(targetId) : Promise.resolve(),
+        targetId ? loadLatestComparison(targetId) : Promise.resolve()
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
+
+  function resetFindingFilters() {
+    setFindingSearchQuery("");
+    setSeverityFilter("all");
+    setLifecycleFilter("all");
+    setSuppressionFilter("all");
+    setConfidenceFilter("all");
+    setScannerFilter("");
+    setOwaspFilter("");
+    setCweFilter("");
+    setTagFilter("");
+    setDateAfterFilter("");
+    setDateBeforeFilter("");
+    setRiskMinFilter("");
+    setRiskMaxFilter("");
+    setTargetFilter("");
+    setProfileFilter("");
+  }
+
+  function handleTabKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
+    let nextIndex = index;
+    if (event.key === "ArrowRight") {
+      nextIndex = (index + 1) % workspaceViews.length;
+    } else if (event.key === "ArrowLeft") {
+      nextIndex = (index - 1 + workspaceViews.length) % workspaceViews.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = workspaceViews.length - 1;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    setActiveView(workspaceViews[nextIndex].id);
+    const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[role='tab']");
+    tabs?.[nextIndex]?.focus();
+  }
+
   async function startScan() {
     if (!selectedTarget) {
       return;
@@ -379,18 +496,17 @@ export function TargetSetup() {
   }
 
   async function revokeSelectedAuthProfile() {
-    if (!selectedAuthProfileId) {
+    if (!revokeCandidate) {
       return;
     }
-    if (!window.confirm("Revoke this profile, erase its encrypted secret, and detach it from every target?")) {
-      return;
-    }
+    const profile = revokeCandidate;
     setIsBusy(true);
     setAuthProfileMessage("Revoking auth profile and detaching it from targets...");
     try {
-      const response = await apiFetch(`${apiBaseUrl}/auth-profiles/${selectedAuthProfileId}/revoke`, { method: "POST" });
-      const profile = await readJson<AuthProfile>(response, "Auth profile revocation failed.");
-      await Promise.all([loadAuthProfiles(profile.id), loadTargets(selectedTargetId)]);
+      const response = await apiFetch(`${apiBaseUrl}/auth-profiles/${profile.id}/revoke`, { method: "POST" });
+      const revokedProfile = await readJson<AuthProfile>(response, "Auth profile revocation failed.");
+      setRevokeCandidate(null);
+      await Promise.all([loadAuthProfiles(revokedProfile.id), loadTargets(selectedTargetId)]);
       setAuthProfileMessage("Auth profile revoked. Its encrypted secret was erased and attached targets were detached.");
     } catch (error) {
       setAuthProfileMessage(error instanceof Error ? error.message : "Auth profile revocation failed.");
@@ -477,7 +593,9 @@ export function TargetSetup() {
     const response = await apiFetch(`${apiBaseUrl}/targets?limit=200`);
     const page = await readPage<Target>(response, "Target list load failed.");
     setTargets(page.items);
-    setSelectedTargetId(preferredTargetId ?? selectedTargetId ?? page.items[0]?.id ?? "");
+    const requestedTargetId = preferredTargetId ?? selectedTargetId;
+    const nextTargetId = page.items.some((target) => target.id === requestedTargetId) ? requestedTargetId : page.items[0]?.id ?? "";
+    setSelectedTargetId(nextTargetId);
     setBootstrapError("");
   }
 
@@ -574,7 +692,9 @@ export function TargetSetup() {
     const response = await apiFetch(`${apiBaseUrl}/auth-profiles?limit=200`);
     const page = await readPage<AuthProfile>(response, "Auth profile list load failed.");
     setAuthProfiles(page.items);
-    setSelectedAuthProfileId(preferredAuthProfileId ?? selectedAuthProfileId ?? page.items[0]?.id ?? "");
+    const requestedProfileId = preferredAuthProfileId ?? selectedAuthProfileId;
+    const nextProfileId = page.items.some((profile) => profile.id === requestedProfileId) ? requestedProfileId : page.items[0]?.id ?? "";
+    setSelectedAuthProfileId(nextProfileId);
     setBootstrapError("");
   }
 
@@ -582,7 +702,9 @@ export function TargetSetup() {
     const response = await apiFetch(`${apiBaseUrl}/scans?limit=200`);
     const page = await readPage<Scan>(response, "Scan history load failed.");
     setScanHistory(page.items);
-    setSelectedScanId(preferredScanId ?? selectedScanId ?? page.items[0]?.id ?? "");
+    const requestedScanId = preferredScanId ?? selectedScanId;
+    const nextScanId = page.items.some((scan) => scan.id === requestedScanId) ? requestedScanId : page.items[0]?.id ?? "";
+    setSelectedScanId(nextScanId);
     setBootstrapError("");
   }
 
@@ -883,12 +1005,16 @@ export function TargetSetup() {
 
   return (
     <section className="dashboard" aria-labelledby="dashboard-heading">
-      <div className="sectionHeader">
+      <div className="workspaceHeader">
         <div>
-          <p className="eyebrow">Workspace Console</p>
-          <h2 id="dashboard-heading">Run authorized scans, review normalized findings, and manage reportable evidence</h2>
+          <p className="eyebrow">Workspace console</p>
+          <h2 id="dashboard-heading">Security operations, without the clutter.</h2>
+          <p>Everything in this workspace stays tied to an authorized target and a traceable scan.</p>
         </div>
-        <span className="contextBadge">Local workspace</span>
+        <button className="refreshButton" type="button" onClick={refreshWorkspace} disabled={isRefreshing}>
+          <AppIcon name="refresh" size={16} />
+          {isRefreshing ? "Refreshing…" : "Refresh workspace"}
+        </button>
       </div>
 
       {bootstrapError ? (
@@ -897,162 +1023,279 @@ export function TargetSetup() {
         </div>
       ) : null}
 
-      <div className="dashboardGrid" id="targets">
-        <div className="workflowPanel">
-          <TargetForm
-            targetUrl={targetUrl}
-            repoPath={repoPath}
-            permissionConfirmed={permissionConfirmed}
-            validation={validation}
-            message={message}
-            isBusy={isBusy}
-            canCreate={canCreate}
-            onTargetUrlChange={(value) => {
-              setTargetUrl(value);
-              setValidation(null);
-              setPermissionConfirmed(false);
-            }}
-            onRepoPathChange={setRepoPath}
-            onPermissionChange={setPermissionConfirmed}
-            onValidate={validateTarget}
-            onCreateTarget={createTarget}
-          />
-          <AuthProfilesPanel
-            authProfiles={authProfiles}
-            selectedTarget={selectedTarget}
-            selectedAuthProfileId={selectedAuthProfileId}
-            label={authProfileLabel}
-            profileType={authProfileType}
-            headerName={authProfileHeaderName}
-            secret={authProfileSecret}
-            message={authProfileMessage}
-            isBusy={isBusy}
-            onSelectAuthProfile={setSelectedAuthProfileId}
-            onLabelChange={setAuthProfileLabel}
-            onProfileTypeChange={setAuthProfileType}
-            onHeaderNameChange={setAuthProfileHeaderName}
-            onSecretChange={setAuthProfileSecret}
-            onCreateProfile={createAuthProfile}
-            onAttachProfile={updateSelectedTargetAuthProfile}
-            onRotateProfile={rotateSelectedAuthProfile}
-            onRevokeProfile={revokeSelectedAuthProfile}
-          />
-          <ScanLauncher
-            targets={targets}
-            selectedTargetId={selectedTargetId}
-            repoPath={repoPath}
-            scanProfileId={scanProfileId}
-            acknowledgements={acknowledgements}
-            canStartScan={canStartScan}
-            isBusy={isBusy}
-            onSelectTarget={(targetId) => {
-              setSelectedTargetId(targetId);
-              setAcknowledgements([]);
-            }}
-            onSelectScanProfile={(profileId) => {
-              setScanProfileId(profileId);
-              setAcknowledgements([]);
-            }}
-            onAttachRepoPath={updateSelectedTargetRepoPath}
-            onAcknowledgementChange={(code, acknowledged) => {
-              setAcknowledgements((current) =>
-                acknowledged ? [...new Set([...current, code])] : current.filter((value) => value !== code)
-              );
-            }}
-            onStartScan={startScan}
-          />
-        </div>
+      <nav className="workspaceTabs" role="tablist" aria-label="Workspace sections">
+        {workspaceViews.map((view, index) => (
+          <button
+            key={view.id}
+            type="button"
+            role="tab"
+            aria-selected={activeView === view.id}
+            aria-controls="workspace-panel"
+            className={activeView === view.id ? "workspaceTab workspaceTabActive" : "workspaceTab"}
+            onClick={() => setActiveView(view.id)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
+          >
+            <AppIcon name={view.icon} size={18} />
+            <span><strong>{view.label}</strong><small>{view.description}</small></span>
+          </button>
+        ))}
+      </nav>
 
-        <div id="scans">
-          <ScanHistory scans={scanHistory} selectedScanId={selectedScanId} onSelectScan={setSelectedScanId} />
-        </div>
+      <div id="workspace-panel" className="workspaceTabPanel" role="tabpanel" tabIndex={0}>
+        {activeView === "overview" ? (
+          <WorkspaceOverview
+            overview={dashboardOverview}
+            health={platformHealth}
+            selectedScan={selectedScan}
+            selectedTarget={selectedTarget}
+            onNavigate={(view) => setActiveView(view as WorkspaceView)}
+          />
+        ) : null}
+
+        {activeView === "scanning" ? (
+          <div className="scanningWorkspace">
+            <div className="viewIntro">
+              <div><p className="panelKicker">Authorized scope</p><h3>Targets & scans</h3><p>Save allowlisted applications, choose a guarded scan profile, and follow worker progress.</p></div>
+              <span className="safetyPill"><AppIcon name="shield" size={15} /> Public URLs remain blocked</span>
+            </div>
+
+            <div className="targetManagementGrid">
+              <TargetLibrary
+                targets={targets}
+                selectedTargetId={selectedTargetId}
+                isBusy={isBusy}
+                onSelectTarget={(targetId) => {
+                  setSelectedTargetId(targetId);
+                  setAcknowledgements([]);
+                }}
+                onRequestArchive={setArchiveCandidate}
+              />
+              <TargetForm
+                targetUrl={targetUrl}
+                repoPath={repoPath}
+                permissionConfirmed={permissionConfirmed}
+                validation={validation}
+                message={message}
+                isBusy={isBusy}
+                canCreate={canCreate}
+                onTargetUrlChange={(value) => {
+                  setTargetUrl(value);
+                  setValidation(null);
+                  setPermissionConfirmed(false);
+                }}
+                onRepoPathChange={setRepoPath}
+                onPermissionChange={setPermissionConfirmed}
+                onValidate={validateTarget}
+                onCreateTarget={createTarget}
+              />
+            </div>
+
+            <div className="scanWorkspaceGrid">
+              <ScanLauncher
+                targets={targets}
+                selectedTargetId={selectedTargetId}
+                repoPath={repoPath}
+                scanProfileId={scanProfileId}
+                acknowledgements={acknowledgements}
+                canStartScan={canStartScan}
+                isBusy={isBusy}
+                onSelectTarget={(targetId) => {
+                  setSelectedTargetId(targetId);
+                  setAcknowledgements([]);
+                }}
+                onSelectScanProfile={(profileId) => {
+                  setScanProfileId(profileId);
+                  setAcknowledgements([]);
+                }}
+                onAttachRepoPath={updateSelectedTargetRepoPath}
+                onAcknowledgementChange={(code, acknowledged) => {
+                  setAcknowledgements((current) =>
+                    acknowledged ? [...new Set([...current, code])] : current.filter((value) => value !== code)
+                  );
+                }}
+                onStartScan={startScan}
+              />
+              <ScanHistory scans={scanHistory} selectedScanId={selectedScanId} onSelectScan={setSelectedScanId} />
+            </div>
+
+            {selectedScan ? (
+              <ScanProgress scan={selectedScan} toolRuns={toolRuns} isCancelling={isCancellingScan} onCancel={cancelSelectedScan} />
+            ) : null}
+          </div>
+        ) : null}
+
+        {activeView === "findings" ? (
+          <div className="findingsWorkspace">
+            <div className="viewToolbar">
+              <div><p className="panelKicker">Normalized evidence</p><h3>Finding triage</h3></div>
+              <div className="viewToolbarActions">
+                <label className="searchField">
+                  <AppIcon name="search" size={17} />
+                  <span className="srOnly">Search loaded findings</span>
+                  <input value={findingSearchQuery} onChange={(event) => setFindingSearchQuery(event.target.value)} placeholder="Search finding, tool, URL, CWE…" />
+                </label>
+                <button type="button" className="secondaryButton" onClick={resetFindingFilters}>Reset filters</button>
+              </div>
+            </div>
+            <FindingsDashboard
+              findings={filteredFindings}
+              selectedFinding={selectedFinding}
+              severityFilter={severityFilter}
+              lifecycleFilter={lifecycleFilter}
+              suppressionFilter={suppressionFilter}
+              confidenceFilter={confidenceFilter}
+              scannerFilter={scannerFilter}
+              owaspFilter={owaspFilter}
+              cweFilter={cweFilter}
+              tagFilter={tagFilter}
+              dateAfterFilter={dateAfterFilter}
+              dateBeforeFilter={dateBeforeFilter}
+              riskMinFilter={riskMinFilter}
+              riskMaxFilter={riskMaxFilter}
+              findingScope={findingScope}
+              targetFilter={targetFilter}
+              profileFilter={profileFilter}
+              targets={targets}
+              scanProfiles={SCAN_PROFILES}
+              tags={tags}
+              tagLabel={tagLabel}
+              tagResourceType={tagResourceType}
+              suppressionReason={suppressionReason}
+              onSeverityFilter={setSeverityFilter}
+              onLifecycleFilter={setLifecycleFilter}
+              onSuppressionFilter={setSuppressionFilter}
+              onConfidenceFilter={setConfidenceFilter}
+              onScannerFilter={setScannerFilter}
+              onOwaspFilter={setOwaspFilter}
+              onCweFilter={setCweFilter}
+              onTagFilter={setTagFilter}
+              onDateAfterFilter={setDateAfterFilter}
+              onDateBeforeFilter={setDateBeforeFilter}
+              onRiskMinFilter={setRiskMinFilter}
+              onRiskMaxFilter={setRiskMaxFilter}
+              onFindingScope={setFindingScope}
+              onTargetFilter={setTargetFilter}
+              onProfileFilter={setProfileFilter}
+              onTagLabelChange={setTagLabel}
+              onTagResourceTypeChange={setTagResourceType}
+              onCreateTag={createTag}
+              onAssignTag={assignTag}
+              onSelectFinding={setSelectedFindingId}
+              onUpdateLifecycle={updateFindingLifecycle}
+              onSuppressionReasonChange={setSuppressionReason}
+              onSuppressFinding={suppressFinding}
+            />
+          </div>
+        ) : null}
+
+        {activeView === "intelligence" ? (
+          <div className="intelligenceWorkspace">
+            <div className="viewIntro"><div><p className="panelKicker">Decision support</p><h3>Risk intelligence</h3><p>Compare security posture, generate sanitized reports, and review bounded explanations.</p></div></div>
+            <RiskDashboardPanel
+              overview={dashboardOverview}
+              targetDashboard={targetDashboard}
+              targets={targets}
+              scans={scanHistory}
+              selectedTargetId={selectedTargetId}
+              baselineScanId={baselineScanId}
+              comparisonScanId={comparisonScanId}
+              comparison={scanComparison}
+              message={riskMessage}
+              onBaselineScanChange={setBaselineScanId}
+              onComparisonScanChange={setComparisonScanId}
+              onCompare={loadManualComparison}
+            />
+            <div className="intelligenceGrid">
+              <ReportsPanel
+                scan={selectedScan}
+                reports={reports}
+                message={reportMessage}
+                isGenerating={isGeneratingReports}
+                onGenerate={generateReports}
+                onViewReport={viewReport}
+                onDownloadReport={downloadReport}
+              />
+              <AiExplanationsPanel explanation={displayAiExplanation} message={aiMessage} />
+            </div>
+          </div>
+        ) : null}
+
+        {activeView === "credentials" ? (
+          <div className="credentialWorkspace">
+            <div className="viewIntro">
+              <div><p className="panelKicker">Encrypted target access</p><h3>Credential profiles</h3><p>Manage target-application secrets used only by guarded passive requests. Secret values never return through the API.</p></div>
+              <span className="safetyPill"><AppIcon name="credential" size={15} /> Fernet encrypted</span>
+            </div>
+            <AuthProfilesPanel
+              authProfiles={authProfiles}
+              selectedTarget={selectedTarget}
+              selectedAuthProfileId={selectedAuthProfileId}
+              label={authProfileLabel}
+              profileType={authProfileType}
+              headerName={authProfileHeaderName}
+              secret={authProfileSecret}
+              message={authProfileMessage}
+              isBusy={isBusy}
+              onSelectAuthProfile={setSelectedAuthProfileId}
+              onLabelChange={setAuthProfileLabel}
+              onProfileTypeChange={setAuthProfileType}
+              onHeaderNameChange={setAuthProfileHeaderName}
+              onSecretChange={setAuthProfileSecret}
+              onCreateProfile={createAuthProfile}
+              onAttachProfile={updateSelectedTargetAuthProfile}
+              onRotateProfile={rotateSelectedAuthProfile}
+              onRevokeProfile={() => {
+                const profile = authProfiles.find((item) => item.id === selectedAuthProfileId);
+                if (profile) {
+                  setRevokeCandidate(profile);
+                }
+              }}
+            />
+          </div>
+        ) : null}
+
+        {activeView === "operations" ? (
+          <div className="operationsWorkspace">
+            <div className="viewIntro"><div><p className="panelKicker">Local platform</p><h3>Operations & readiness</h3><p>Confirm the worker, database, artifacts, queue, and scanner dependencies before running an audit.</p></div></div>
+            <OpsHealthPanel health={platformHealth} message={opsMessage} onRefresh={loadPlatformHealth} />
+            <div className="boundaryGrid">
+              <article><AppIcon name="target" /><strong>Exact target scope</strong><p>Only explicitly configured Docker-service targets can be launched.</p></article>
+              <article><AppIcon name="shield" /><strong>Safe persistence</strong><p>URLs and evidence are sanitized before database, report, or AI boundaries.</p></article>
+              <article><AppIcon name="operations" /><strong>Local ownership</strong><p>Workspace records and generated artifacts stay isolated inside this deployment.</p></article>
+            </div>
+          </div>
+        ) : null}
       </div>
 
-      <OpsHealthPanel health={platformHealth} message={opsMessage} onRefresh={loadPlatformHealth} />
-
-      {selectedScan ? (
-        <ScanProgress scan={selectedScan} toolRuns={toolRuns} isCancelling={isCancellingScan} onCancel={cancelSelectedScan} />
+      {archiveCandidate ? (
+        <ConfirmActionDialog
+          eyebrow="Remove saved target"
+          title={`Remove ${archiveCandidate.name}?`}
+          description="The target will disappear from your active list and its attached credential and repository path will be cleared."
+          note="Scan, finding, report, and audit history will be preserved."
+          confirmLabel="Remove target"
+          busyLabel="Removing…"
+          icon="trash"
+          isBusy={isBusy}
+          onCancel={() => setArchiveCandidate(null)}
+          onConfirm={archiveTarget}
+        />
       ) : null}
 
-      <RiskDashboardPanel
-        overview={dashboardOverview}
-        targetDashboard={targetDashboard}
-        targets={targets}
-        scans={scanHistory}
-        selectedTargetId={selectedTargetId}
-        baselineScanId={baselineScanId}
-        comparisonScanId={comparisonScanId}
-        comparison={scanComparison}
-        message={riskMessage}
-        onBaselineScanChange={setBaselineScanId}
-        onComparisonScanChange={setComparisonScanId}
-        onCompare={loadManualComparison}
-      />
-
-      <div id="reports">
-        <ReportsPanel
-          scan={selectedScan}
-          reports={reports}
-          message={reportMessage}
-          isGenerating={isGeneratingReports}
-          onGenerate={generateReports}
-          onViewReport={viewReport}
-          onDownloadReport={downloadReport}
+      {revokeCandidate ? (
+        <ConfirmActionDialog
+          eyebrow="Revoke credential profile"
+          title={`Revoke ${revokeCandidate.label}?`}
+          description="The encrypted secret will be erased and this profile will be detached from every target."
+          note="Historical metadata and existing scan snapshots remain unchanged."
+          confirmLabel="Revoke profile"
+          busyLabel="Revoking…"
+          icon="credential"
+          isBusy={isBusy}
+          onCancel={() => setRevokeCandidate(null)}
+          onConfirm={revokeSelectedAuthProfile}
         />
-      </div>
-
-      <AiExplanationsPanel explanation={displayAiExplanation} message={aiMessage} />
-
-      <div id="findings">
-        <FindingsDashboard
-          findings={filteredFindings}
-          selectedFinding={selectedFinding}
-          severityFilter={severityFilter}
-          lifecycleFilter={lifecycleFilter}
-          suppressionFilter={suppressionFilter}
-          confidenceFilter={confidenceFilter}
-          scannerFilter={scannerFilter}
-          owaspFilter={owaspFilter}
-          cweFilter={cweFilter}
-          tagFilter={tagFilter}
-          dateAfterFilter={dateAfterFilter}
-          dateBeforeFilter={dateBeforeFilter}
-          riskMinFilter={riskMinFilter}
-          riskMaxFilter={riskMaxFilter}
-          findingScope={findingScope}
-          targetFilter={targetFilter}
-          profileFilter={profileFilter}
-          targets={targets}
-          scanProfiles={SCAN_PROFILES}
-          tags={tags}
-          tagLabel={tagLabel}
-          tagResourceType={tagResourceType}
-          suppressionReason={suppressionReason}
-          onSeverityFilter={setSeverityFilter}
-          onLifecycleFilter={setLifecycleFilter}
-          onSuppressionFilter={setSuppressionFilter}
-          onConfidenceFilter={setConfidenceFilter}
-          onScannerFilter={setScannerFilter}
-          onOwaspFilter={setOwaspFilter}
-          onCweFilter={setCweFilter}
-          onTagFilter={setTagFilter}
-          onDateAfterFilter={setDateAfterFilter}
-          onDateBeforeFilter={setDateBeforeFilter}
-          onRiskMinFilter={setRiskMinFilter}
-          onRiskMaxFilter={setRiskMaxFilter}
-          onFindingScope={setFindingScope}
-          onTargetFilter={setTargetFilter}
-          onProfileFilter={setProfileFilter}
-          onTagLabelChange={setTagLabel}
-          onTagResourceTypeChange={setTagResourceType}
-          onCreateTag={createTag}
-          onAssignTag={assignTag}
-          onSelectFinding={setSelectedFindingId}
-          onUpdateLifecycle={updateFindingLifecycle}
-          onSuppressionReasonChange={setSuppressionReason}
-          onSuppressFinding={suppressFinding}
-        />
-      </div>
+      ) : null}
     </section>
   );
 }

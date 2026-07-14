@@ -54,6 +54,22 @@ and marks affected scans for rerun.
 Current completion and verification status belongs in `HANDOFF.md`, not this
 historical summary.
 
+## Phase 21: operator workspace redesign
+
+Phase 21 is the approved post-1.0 frontend redesign. It replaced the single
+stacked console with a responsive six-tab workspace for overview, targets and
+scans, finding triage, risk/report/AI intelligence, target credentials, and
+platform operations. It added a persistent light/dark theme, a native WebGL
+scope visualization with reduced-motion and non-WebGL behavior, consistent
+design tokens, responsive layouts, and keyboard-aware confirmation UX.
+
+Daily workflow improvements include searchable saved targets, scan-history
+search/status/profile filters, finding free-text search and filter reset,
+workspace refresh, clearer readiness and activity states, and history-preserving
+target removal. Schema `0011_target_archiving` and the target API enforce that
+removal clears launch configuration without deleting scan, finding, report,
+risk, or audit history; nonterminal scans block the operation.
+
 ## Scope decisions retained through 1.0
 
 - The product remains defensive and local-first.
