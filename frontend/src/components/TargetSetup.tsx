@@ -2,9 +2,10 @@
 
 /* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect -- Async loaders reject stale responses with selected-resource refs. */
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppIcon } from "@/components/AppIcon";
+import { ConfirmActionDialog } from "@/components/ConfirmActionDialog";
 import { AiExplanationsPanel } from "@/components/dashboard/AiExplanationsPanel";
 import { AuthProfilesPanel } from "@/components/dashboard/AuthProfilesPanel";
 import { FindingsDashboard, severityRank } from "@/components/dashboard/FindingsDashboard";
@@ -113,14 +114,13 @@ export function TargetSetup() {
   const [opsMessage, setOpsMessage] = useState("Platform health has not been loaded.");
   const [bootstrapError, setBootstrapError] = useState("");
   const [archiveCandidate, setArchiveCandidate] = useState<Target | null>(null);
+  const [revokeCandidate, setRevokeCandidate] = useState<AuthProfile | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isGeneratingReports, setIsGeneratingReports] = useState(false);
   const [isCancellingScan, setIsCancellingScan] = useState(false);
   const selectedScanIdRef = useRef("");
   const selectedTargetIdRef = useRef("");
-  const isBusyRef = useRef(false);
-  const archiveDialogCancelRef = useRef<HTMLButtonElement>(null);
 
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
   const selectedScan = scanHistory.find((scan) => scan.id === selectedScanId) ?? null;
@@ -170,28 +170,6 @@ export function TargetSetup() {
   useEffect(() => {
     selectedTargetIdRef.current = selectedTargetId;
   }, [selectedTargetId]);
-
-  useEffect(() => {
-    isBusyRef.current = isBusy;
-  }, [isBusy]);
-
-  useEffect(() => {
-    if (!archiveCandidate) {
-      return;
-    }
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    archiveDialogCancelRef.current?.focus();
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !isBusyRef.current) {
-        setArchiveCandidate(null);
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      previousFocus?.focus();
-    };
-  }, [archiveCandidate]);
 
   useEffect(() => {
     setSuppressionReason("");
@@ -377,6 +355,25 @@ export function TargetSetup() {
     setProfileFilter("");
   }
 
+  function handleTabKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
+    let nextIndex = index;
+    if (event.key === "ArrowRight") {
+      nextIndex = (index + 1) % workspaceViews.length;
+    } else if (event.key === "ArrowLeft") {
+      nextIndex = (index - 1 + workspaceViews.length) % workspaceViews.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = workspaceViews.length - 1;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    setActiveView(workspaceViews[nextIndex].id);
+    const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[role='tab']");
+    tabs?.[nextIndex]?.focus();
+  }
+
   async function startScan() {
     if (!selectedTarget) {
       return;
@@ -499,18 +496,17 @@ export function TargetSetup() {
   }
 
   async function revokeSelectedAuthProfile() {
-    if (!selectedAuthProfileId) {
+    if (!revokeCandidate) {
       return;
     }
-    if (!window.confirm("Revoke this profile, erase its encrypted secret, and detach it from every target?")) {
-      return;
-    }
+    const profile = revokeCandidate;
     setIsBusy(true);
     setAuthProfileMessage("Revoking auth profile and detaching it from targets...");
     try {
-      const response = await apiFetch(`${apiBaseUrl}/auth-profiles/${selectedAuthProfileId}/revoke`, { method: "POST" });
-      const profile = await readJson<AuthProfile>(response, "Auth profile revocation failed.");
-      await Promise.all([loadAuthProfiles(profile.id), loadTargets(selectedTargetId)]);
+      const response = await apiFetch(`${apiBaseUrl}/auth-profiles/${profile.id}/revoke`, { method: "POST" });
+      const revokedProfile = await readJson<AuthProfile>(response, "Auth profile revocation failed.");
+      setRevokeCandidate(null);
+      await Promise.all([loadAuthProfiles(revokedProfile.id), loadTargets(selectedTargetId)]);
       setAuthProfileMessage("Auth profile revoked. Its encrypted secret was erased and attached targets were detached.");
     } catch (error) {
       setAuthProfileMessage(error instanceof Error ? error.message : "Auth profile revocation failed.");
@@ -1028,7 +1024,7 @@ export function TargetSetup() {
       ) : null}
 
       <nav className="workspaceTabs" role="tablist" aria-label="Workspace sections">
-        {workspaceViews.map((view) => (
+        {workspaceViews.map((view, index) => (
           <button
             key={view.id}
             type="button"
@@ -1037,6 +1033,7 @@ export function TargetSetup() {
             aria-controls="workspace-panel"
             className={activeView === view.id ? "workspaceTab workspaceTabActive" : "workspaceTab"}
             onClick={() => setActiveView(view.id)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
           >
             <AppIcon name={view.icon} size={18} />
             <span><strong>{view.label}</strong><small>{view.description}</small></span>
@@ -1247,7 +1244,12 @@ export function TargetSetup() {
               onCreateProfile={createAuthProfile}
               onAttachProfile={updateSelectedTargetAuthProfile}
               onRotateProfile={rotateSelectedAuthProfile}
-              onRevokeProfile={revokeSelectedAuthProfile}
+              onRevokeProfile={() => {
+                const profile = authProfiles.find((item) => item.id === selectedAuthProfileId);
+                if (profile) {
+                  setRevokeCandidate(profile);
+                }
+              }}
             />
           </div>
         ) : null}
@@ -1266,25 +1268,33 @@ export function TargetSetup() {
       </div>
 
       {archiveCandidate ? (
-        <div className="modalBackdrop" role="presentation" onMouseDown={(event) => {
-          if (event.currentTarget === event.target && !isBusy) {
-            setArchiveCandidate(null);
-          }
-        }}>
-          <div className="confirmDialog" role="dialog" aria-modal="true" aria-labelledby="archive-dialog-title">
-            <span className="dialogIcon"><AppIcon name="trash" size={22} /></span>
-            <div>
-              <p className="panelKicker">Remove saved target</p>
-              <h3 id="archive-dialog-title">Remove {archiveCandidate.name}?</h3>
-              <p>The target will disappear from your active list and its attached credential and repository path will be cleared.</p>
-              <div className="historyPreserved"><AppIcon name="shield" size={16} /><span>Scan, finding, report, and audit history will be preserved.</span></div>
-            </div>
-            <div className="dialogActions">
-              <button ref={archiveDialogCancelRef} type="button" className="secondaryButton" onClick={() => setArchiveCandidate(null)} disabled={isBusy}>Keep target</button>
-              <button type="button" className="dangerButton" onClick={archiveTarget} disabled={isBusy}>{isBusy ? "Removing…" : "Remove target"}</button>
-            </div>
-          </div>
-        </div>
+        <ConfirmActionDialog
+          eyebrow="Remove saved target"
+          title={`Remove ${archiveCandidate.name}?`}
+          description="The target will disappear from your active list and its attached credential and repository path will be cleared."
+          note="Scan, finding, report, and audit history will be preserved."
+          confirmLabel="Remove target"
+          busyLabel="Removing…"
+          icon="trash"
+          isBusy={isBusy}
+          onCancel={() => setArchiveCandidate(null)}
+          onConfirm={archiveTarget}
+        />
+      ) : null}
+
+      {revokeCandidate ? (
+        <ConfirmActionDialog
+          eyebrow="Revoke credential profile"
+          title={`Revoke ${revokeCandidate.label}?`}
+          description="The encrypted secret will be erased and this profile will be detached from every target."
+          note="Historical metadata and existing scan snapshots remain unchanged."
+          confirmLabel="Revoke profile"
+          busyLabel="Revoking…"
+          icon="credential"
+          isBusy={isBusy}
+          onCancel={() => setRevokeCandidate(null)}
+          onConfirm={revokeSelectedAuthProfile}
+        />
       ) : null}
     </section>
   );
