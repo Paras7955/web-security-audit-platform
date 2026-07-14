@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -504,6 +505,21 @@ class RepoScannerTests(unittest.TestCase):
             result = run_gitleaks(root)
             self.assertGreaterEqual(len(result.findings), 1)
             self.assertNotIn(canary, str(result))
+            self.assertFalse(marker.exists())
+
+    @unittest.skipUnless(os.environ.get("SCOPEHARBOR_REAL_SCANNER_TESTS") == "1", "real scanner binaries not requested")
+    def test_real_osv_binary_uses_offline_database_and_never_executes_package_scripts(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "osv-vulnerable"
+        with tempfile.TemporaryDirectory() as staged_dir:
+            root = Path(staged_dir)
+            shutil.copytree(fixture, root, dirs_exist_ok=True)
+            marker = root / "script-executed"
+            result = run_osv_scanner(root)
+
+            self.assertGreaterEqual(len(result.findings), 1)
+            self.assertTrue(all(finding.source_tool == "osv-scanner" for finding in result.findings))
+            self.assertTrue(all(finding.affected_file == "package-lock.json" for finding in result.findings))
+            self.assertNotIn(str(root), str(result))
             self.assertFalse(marker.exists())
 
 

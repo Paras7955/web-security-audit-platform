@@ -3,6 +3,7 @@
 alembic==1.18.5
 cryptography==49.0.0
 fastapi==0.139.0
+greenlet==3.5.3
 httpx==0.28.1
 PyJWT[crypto]==2.13.0
 psycopg[binary]==3.3.4

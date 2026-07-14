@@ -1,0 +1,11 @@
+{
+  "name": "scopeharbor-osv-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "touch script-executed"
+  },
+  "dependencies": {
+    "lodash": "4.17.20"
+  }
+}

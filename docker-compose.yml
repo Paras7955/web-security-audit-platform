@@ -174,14 +174,24 @@ services:
     read_only: true
     command:
       - osv-scanner
+      - scan
+      - source
       - --offline-vulnerabilities
       - --download-offline-databases
-      - /var/lib/osv-scanner
+      - --no-resolve
+      - --allow-no-lockfiles
+      - --lockfile
+      - /app/repositories/security-project/frontend/package-lock.json
+      - --lockfile
+      - /app/repositories/security-project/backend/requirements.txt
+      - --lockfile
+      - /app/repositories/security-project/backend/requirements-dev.txt
     environment:
       HOME: /tmp
       OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY: /var/lib/osv-scanner
     volumes:
       - osv-cache:/var/lib/osv-scanner
+      - ./:/app/repositories/security-project:ro
     tmpfs:
       - /tmp:size=64m,mode=0700,uid=10001,gid=10001
     networks:
