@@ -49,7 +49,7 @@ export function RiskDashboardPanel({
         <div className="panel">
           <div className="panelHeader">
             <h3>Workspace Dashboard</h3>
-            <span className="phaseBadge">{overview?.findings_count ?? 0} findings</span>
+            <span className="contextBadge">{overview?.findings_count ?? 0} findings</span>
           </div>
           <SeverityBars counts={overview?.severity_counts ?? {}} />
           <CompactScanTable scans={overview?.recent_scans ?? []} />
@@ -58,7 +58,7 @@ export function RiskDashboardPanel({
         <div className="panel">
           <div className="panelHeader">
             <h3>Target Dashboard</h3>
-            <span className="phaseBadge">{selectedTarget?.name ?? "No target"}</span>
+            <span className="contextBadge">{selectedTarget?.name ?? "No target"}</span>
           </div>
           {targetDashboard ? (
             <>
@@ -88,7 +88,7 @@ export function RiskDashboardPanel({
       <div className="panel comparisonPanel">
         <div className="panelHeader">
           <h3>Scan Comparison</h3>
-          <span className="phaseBadge">Same target only</span>
+          <span className="contextBadge">Same target only</span>
         </div>
         <div className="comparisonControls">
           <label className="selectLabel">
