@@ -1,22 +1,54 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.core.contracts import CONTRACTS
+from app.security.sanitization import sanitize_metadata
+
+
+def _known_acknowledgements() -> set[str]:
+    raw_codes = CONTRACTS.get("acknowledgement_codes")
+    if not isinstance(raw_codes, dict):
+        raise RuntimeError("Shared acknowledgement codes must be an object.")
+    known: set[str] = set()
+    for codes in raw_codes.values():
+        if not isinstance(codes, list):
+            raise RuntimeError("Shared acknowledgement code groups must be arrays.")
+        known.update(str(code) for code in codes)
+    return known
+
+
+KNOWN_ACKNOWLEDGEMENTS = _known_acknowledgements()
 
 
 class ScanCreate(BaseModel):
     target_id: str = Field(min_length=1, max_length=64)
-    scan_profile_id: str | None = Field(default=None, max_length=80)
-    mode: str | None = Field(default=None, max_length=40)
-    active_demo_acknowledged: bool = False
-    ajax_short_acknowledged: bool = False
+    scan_profile_id: str = Field(min_length=1, max_length=80)
+    acknowledgements: set[str] = Field(max_length=20)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("acknowledgements")
+    @classmethod
+    def validate_acknowledgements(cls, values: set[str]) -> set[str]:
+        normalized = {value.strip() for value in values}
+        if any(not value or len(value) > 80 for value in normalized):
+            raise ValueError("Acknowledgement codes must be non-empty and at most 80 characters.")
+        unknown = sorted(normalized - KNOWN_ACKNOWLEDGEMENTS)
+        if unknown:
+            raise ValueError("Unknown acknowledgement code.")
+        return normalized
+
+
+class ScanFailureRead(BaseModel):
+    code: str
+    message: str
 
 
 class ScanRead(BaseModel):
     id: str
     target_id: str
-    auth_profile_id: str | None
-    mode: str
     scan_profile_id: str
     status: str
     current_step: str | None
@@ -25,9 +57,7 @@ class ScanRead(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     cancellation_requested_at: datetime | None
-    cancellation_requested_by_user_id: str | None
-    error_code: str | None
-    error_detail: str | None
+    failure: ScanFailureRead | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -51,8 +81,6 @@ class FindingRead(BaseModel):
     reproduction_steps: str | None
     remediation: str | None
     false_positive_notes: str | None
-    redaction_applied: bool
-    raw_artifact_ref: str | None
     lifecycle_status: str = "open"
     suppressed: bool = False
     suppression_rule_id: str | None = None
@@ -146,7 +174,7 @@ class AiExplanationRead(BaseModel):
     scan_id: str
     provider: str
     fallback_used: bool
-    provider_error: str | None
+    provider_error_code: str | None
     summary: str
     executive_summary: str
     risk_score_explanation: str
@@ -166,6 +194,25 @@ class AuditLogRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("metadata_json", mode="before")
+    @classmethod
+    def safe_metadata(cls, value: object) -> dict[str, Any]:
+        sanitized = sanitize_metadata(value)
+        if not isinstance(sanitized, dict):
+            return {}
+        forbidden = {
+            "mode",
+            "cancelled_by_user_id",
+            "cancellation_requested_by_user_id",
+            "error_detail",
+            "failure_detail",
+            "raw_error",
+            "repo_path",
+            "artifact_path",
+            "traceback",
+        }
+        return {str(key): item for key, item in sanitized.items() if str(key).lower() not in forbidden}
 
 
 class HealthComponentRead(BaseModel):
@@ -203,9 +250,9 @@ class TargetRead(BaseModel):
     name: str
     base_url: str
     permission_confirmed: bool
-    repo_path: str | None
+    has_repo_path: bool
     auth_profile_id: str | None
-    allowed_modes: list[str]
+    available_scan_profile_ids: list[str]
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -215,7 +262,7 @@ class TargetValidationRead(BaseModel):
     allowlist_id: str
     name: str
     base_url: str
-    allowed_modes: list[str]
+    available_scan_profile_ids: list[str]
     max_redirects: int
     local_demo: bool
 
@@ -233,9 +280,36 @@ class AuthProfileRead(BaseModel):
     profile_type: str
     header_name: str | None
     secret_hint: str
+    status: str
+    rotated_at: datetime | None
+    revoked_at: datetime | None
+    rotation_count: int
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AuthProfileRotate(BaseModel):
+    secret: str = Field(min_length=1, max_length=4096)
+
+
+class ScannerToolRunRead(BaseModel):
+    id: str
+    scan_id: str
+    tool_name: str
+    tool_version: str | None
+    status: str
+    warning_code: str | None
+    finding_count: int
+    started_at: datetime | None
+    completed_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CursorPage[PageItem](BaseModel):
+    items: list[PageItem]
+    next_cursor: str | None
 
 
 class RiskScoreRead(BaseModel):
@@ -250,13 +324,20 @@ class RiskScoreRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @field_validator("input_summary", mode="before")
+    @classmethod
+    def safe_input_summary(cls, value: object) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return {}
+        allowed = {"finding_count", "severity_counts", "confidence_counts", "weighted_total", "scan_profile_id"}
+        return {str(key): item for key, item in value.items() if key in allowed}
+
 
 class DashboardScanSummaryRead(BaseModel):
     id: str
     target_id: str
     target_name: str
     scan_profile_id: str
-    mode: str
     status: str
     created_at: datetime
     completed_at: datetime | None

@@ -1,4 +1,11 @@
-export const SCAN_MODES = ["passive", "active_demo", "ajax_short", "repo"] as const;
+export const SCAN_MODES = ["passive", "active_demo", "modern_web_crawl", "repo"] as const;
+
+export const ACKNOWLEDGEMENT_LABELS: Record<string, string> = {
+  authorized_target: "I confirm I am authorized to assess this saved web target.",
+  active_testing_local_demo: "I understand Active Demo sends bounded active test traffic only to the configured local demo.",
+  browser_crawl_local_demo: "I understand Modern Web Crawl drives one bounded browser crawler only against the configured local demo.",
+  authorized_repository: "I confirm I am authorized to inspect this saved local repository."
+};
 
 export const SCAN_PROFILES = [
   {
@@ -6,8 +13,7 @@ export const SCAN_PROFILES = [
     label: "Passive Web",
     mode: "passive",
     description: "Custom crawl plus passive checks for allowlisted web targets.",
-    requires_active_demo_acknowledgement: false,
-    requires_ajax_short_acknowledgement: false,
+    required_acknowledgements: ["authorized_target"],
     requires_repo_path: false,
     local_demo_only: false,
     reports_enabled: true,
@@ -18,20 +24,18 @@ export const SCAN_PROFILES = [
     label: "Active Demo",
     mode: "active_demo",
     description: "Bounded ZAP active scan for configured local/demo targets.",
-    requires_active_demo_acknowledgement: true,
-    requires_ajax_short_acknowledgement: false,
+    required_acknowledgements: ["authorized_target", "active_testing_local_demo"],
     requires_repo_path: false,
     local_demo_only: true,
     reports_enabled: true,
     ai_enabled: true
   },
   {
-    id: "ajax-short",
-    label: "AJAX Short",
-    mode: "ajax_short",
-    description: "Bounded ZAP browser crawl for configured local/demo targets.",
-    requires_active_demo_acknowledgement: false,
-    requires_ajax_short_acknowledgement: true,
+    id: "modern-web-crawl",
+    label: "Modern Web Crawl",
+    mode: "modern_web_crawl",
+    description: "Bounded ZAP Client Spider crawl for configured local/demo targets.",
+    required_acknowledgements: ["authorized_target", "browser_crawl_local_demo"],
     requires_repo_path: false,
     local_demo_only: true,
     reports_enabled: false,
@@ -41,9 +45,8 @@ export const SCAN_PROFILES = [
     id: "repository",
     label: "Repository",
     mode: "repo",
-    description: "Deterministic local repository scanner adapters without executing repository code.",
-    requires_active_demo_acknowledgement: false,
-    requires_ajax_short_acknowledgement: false,
+    description: "Pinned Gitleaks and offline OSV scanning without executing repository code.",
+    required_acknowledgements: ["authorized_repository"],
     requires_repo_path: true,
     local_demo_only: false,
     reports_enabled: true,
@@ -69,7 +72,7 @@ export const SCAN_STEPS = [
   "zap_spider",
   "zap_passive",
   "zap_active",
-  "zap_ajax",
+  "zap_client_spider",
   "repo_secrets_scan",
   "repo_dependency_scan",
   "normalizing_findings",
@@ -83,7 +86,7 @@ export const DEFAULT_LIMITS = {
   request_timeout_seconds: 10,
   scan_timeout_seconds: 600,
   zap_active_timeout_seconds: 600,
-  zap_ajax_timeout_seconds: 120,
+  zap_client_spider_timeout_seconds: 120,
   evidence_snippet_bytes: 2048,
   redirect_cap: 5
 } as const;

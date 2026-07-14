@@ -1,13 +1,19 @@
 {
-  "scan_modes": ["passive", "active_demo", "ajax_short", "repo"],
+  "product": {"name": "ScopeHarbor", "version": "1.0.0", "subtitle": "Local AppSec Audit Platform"},
+  "scan_modes": ["passive", "active_demo", "modern_web_crawl", "repo"],
+  "acknowledgement_codes": {
+    "active-demo": ["authorized_target", "active_testing_local_demo"],
+    "modern-web-crawl": ["authorized_target", "browser_crawl_local_demo"],
+    "passive-web": ["authorized_target"],
+    "repository": ["authorized_repository"]
+  },
   "scan_profiles": [
     {
       "id": "passive-web",
       "label": "Passive Web",
       "mode": "passive",
       "description": "Custom crawl plus passive checks for allowlisted web targets.",
-      "requires_active_demo_acknowledgement": false,
-      "requires_ajax_short_acknowledgement": false,
+      "required_acknowledgements": ["authorized_target"],
       "requires_repo_path": false,
       "local_demo_only": false,
       "reports_enabled": true,
@@ -18,20 +24,18 @@
       "label": "Active Demo",
       "mode": "active_demo",
       "description": "Bounded ZAP active scan for configured local/demo targets.",
-      "requires_active_demo_acknowledgement": true,
-      "requires_ajax_short_acknowledgement": false,
+      "required_acknowledgements": ["authorized_target", "active_testing_local_demo"],
       "requires_repo_path": false,
       "local_demo_only": true,
       "reports_enabled": true,
       "ai_enabled": true
     },
     {
-      "id": "ajax-short",
-      "label": "AJAX Short",
-      "mode": "ajax_short",
-      "description": "Bounded ZAP browser crawl for configured local/demo targets.",
-      "requires_active_demo_acknowledgement": false,
-      "requires_ajax_short_acknowledgement": true,
+      "id": "modern-web-crawl",
+      "label": "Modern Web Crawl",
+      "mode": "modern_web_crawl",
+      "description": "Bounded ZAP Client Spider crawl for configured local/demo targets.",
+      "required_acknowledgements": ["authorized_target", "browser_crawl_local_demo"],
       "requires_repo_path": false,
       "local_demo_only": true,
       "reports_enabled": false,
@@ -42,8 +46,7 @@
       "label": "Repository",
       "mode": "repo",
       "description": "Deterministic local repository scanner adapters without executing repository code.",
-      "requires_active_demo_acknowledgement": false,
-      "requires_ajax_short_acknowledgement": false,
+      "required_acknowledgements": ["authorized_repository"],
       "requires_repo_path": true,
       "local_demo_only": false,
       "reports_enabled": true,
@@ -67,7 +70,7 @@
     "zap_spider",
     "zap_passive",
     "zap_active",
-    "zap_ajax",
+    "zap_client_spider",
     "repo_secrets_scan",
     "repo_dependency_scan",
     "normalizing_findings",
@@ -80,8 +83,10 @@
     "request_timeout_seconds": 10,
     "scan_timeout_seconds": 600,
     "zap_active_timeout_seconds": 600,
-    "zap_ajax_timeout_seconds": 120,
+    "zap_client_spider_timeout_seconds": 120,
     "evidence_snippet_bytes": 2048,
-    "redirect_cap": 5
+    "redirect_cap": 5,
+    "page_default_limit": 50,
+    "page_max_limit": 200
   }
 }

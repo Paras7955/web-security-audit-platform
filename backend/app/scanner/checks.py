@@ -7,7 +7,6 @@ from app.findings.schemas import NormalizedFindingInput
 from app.scanner.crawler import CrawledPage
 from app.scanner.http_client import GuardedHttpClient, ScannerHttpError
 
-
 SECURITY_HEADERS = {
     "content-security-policy": ("Missing Content Security Policy", "CWE-693"),
     "x-frame-options": ("Missing X-Frame-Options", "CWE-1021"),

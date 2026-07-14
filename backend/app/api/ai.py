@@ -51,7 +51,7 @@ def to_ai_read(result: AiExplanationResult) -> AiExplanationRead:
         scan_id=result.scan_id,
         provider=result.provider,
         fallback_used=result.fallback_used,
-        provider_error=result.provider_error,
+        provider_error_code=result.provider_error,
         summary=result.summary,
         executive_summary=result.executive_summary,
         risk_score_explanation=result.risk_score_explanation,

@@ -1,0 +1,2 @@
+# ScopeHarbor intentionally supplies an empty trusted override. Repository-local
+# OSV Scanner configuration is never used for audit scans.

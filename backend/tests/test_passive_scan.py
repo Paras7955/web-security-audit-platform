@@ -7,7 +7,6 @@ from app.scanner.passive import run_passive_scan
 from app.security.allowlist import AllowlistTarget
 from app.security.target_url import normalize_target_url
 
-
 ALLOWLIST_TARGET = AllowlistTarget.model_validate(
     {
         "id": "juice-shop",

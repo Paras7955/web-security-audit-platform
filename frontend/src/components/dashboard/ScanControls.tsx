@@ -1,42 +1,26 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect -- Displayed progress intentionally synchronizes with worker state and animation timers. */
+
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { Scan, Target } from "@/lib/securityAuditApi";
-import { SCAN_PROFILES } from "@/lib/contracts";
+import type { Scan, ScannerToolRun, Target } from "@/lib/securityAuditApi";
+import { ACKNOWLEDGEMENT_LABELS, SCAN_PROFILES } from "@/lib/contracts";
 
 export const terminalStatuses = new Set(["completed", "completed_with_warnings", "failed", "cancelled"]);
 export const reportableStatuses = new Set(["completed", "completed_with_warnings"]);
 type ScanProfileMetadata = (typeof SCAN_PROFILES)[number];
 const profilesById: Map<string, ScanProfileMetadata> = new Map(SCAN_PROFILES.map((profile) => [profile.id, profile]));
-const profilesByMode: Map<string, ScanProfileMetadata> = new Map(SCAN_PROFILES.map((profile) => [profile.mode, profile]));
 
 export function scanProfileForScan(scan: Scan) {
-  if (!scan.scan_profile_id) {
-    return profilesByMode.get(scan.mode) ?? null;
-  }
-  const profile = profilesById.get(scan.scan_profile_id);
-  if (profile && profile.mode === scan.mode) {
-    return profile;
-  }
-  return null;
+  return profilesById.get(scan.scan_profile_id) ?? null;
 }
 
-export function formatScanModeLabel(mode: string): string {
-  if (mode === "active_demo") {
-    return "Active Demo";
+export function formatScanProfileLabel(profileId: string): string {
+  if (profileId === "ajax-short") {
+    return "Retired AJAX Short";
   }
-  if (mode === "ajax_short") {
-    return "AJAX Short";
-  }
-  if (mode === "repo") {
-    return "Repo";
-  }
-  return "Passive";
-}
-
-export function formatScanProfileLabel(profileId: string, mode: string): string {
-  return profilesById.get(profileId)?.label ?? formatScanModeLabel(mode);
+  return profilesById.get(profileId)?.label ?? "Historical profile";
 }
 
 export function canUseReports(scan: Scan): boolean {
@@ -60,36 +44,32 @@ export function ScanLauncher({
   selectedTargetId,
   repoPath,
   scanProfileId,
-  activeDemoAcknowledged,
-  ajaxShortAcknowledged,
+  acknowledgements,
   canStartScan,
   isBusy,
   onSelectTarget,
   onSelectScanProfile,
   onAttachRepoPath,
-  onActiveDemoAcknowledged,
-  onAjaxShortAcknowledged,
+  onAcknowledgementChange,
   onStartScan
 }: {
   targets: Target[];
   selectedTargetId: string;
   repoPath: string;
   scanProfileId: string;
-  activeDemoAcknowledged: boolean;
-  ajaxShortAcknowledged: boolean;
+  acknowledgements: string[];
   canStartScan: boolean;
   isBusy: boolean;
   onSelectTarget: (targetId: string) => void;
   onSelectScanProfile: (profileId: string) => void;
   onAttachRepoPath: () => void;
-  onActiveDemoAcknowledged: (acknowledged: boolean) => void;
-  onAjaxShortAcknowledged: (acknowledged: boolean) => void;
+  onAcknowledgementChange: (code: string, acknowledged: boolean) => void;
   onStartScan: () => void;
 }) {
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
   const selectedProfile = profilesById.get(scanProfileId) ?? SCAN_PROFILES[0];
-  const selectedTargetSupportsProfile = selectedTarget?.allowed_modes.includes(selectedProfile.mode) ?? false;
-  const repoPathMissing = selectedProfile.requires_repo_path && Boolean(selectedTarget) && !selectedTarget?.repo_path;
+  const selectedTargetSupportsProfile = selectedTarget?.available_scan_profile_ids.includes(selectedProfile.id) ?? false;
+  const repoPathMissing = selectedProfile.requires_repo_path && Boolean(selectedTarget) && !selectedTarget?.has_repo_path;
   const authProfileUnsupported = Boolean(selectedTarget?.auth_profile_id && selectedProfile.mode !== "passive");
   const canAttachRepoPath = Boolean(selectedTarget && repoPath.trim() && !isBusy);
 
@@ -97,7 +77,7 @@ export function ScanLauncher({
     <div className="panel">
       <div className="panelHeader">
         <h3>Scan Profile</h3>
-        <span className="phaseBadge">Profiled</span>
+        <span className="contextBadge">Exact allowlist</span>
       </div>
 
       <label className="selectLabel">
@@ -130,27 +110,16 @@ export function ScanLauncher({
         ))}
       </div>
 
-      {selectedProfile.requires_active_demo_acknowledgement ? (
-        <label className="checkboxRow scanModeAck">
+      {selectedProfile.required_acknowledgements.map((code) => (
+        <label className="checkboxRow scanModeAck" key={code}>
           <input
             type="checkbox"
-            checked={activeDemoAcknowledged}
-            onChange={(event) => onActiveDemoAcknowledged(event.target.checked)}
+            checked={acknowledgements.includes(code)}
+            onChange={(event) => onAcknowledgementChange(code, event.target.checked)}
           />
-          <span>I understand Active Demo sends bounded active test traffic only to the configured local/demo target.</span>
+          <span>{ACKNOWLEDGEMENT_LABELS[code] ?? code}</span>
         </label>
-      ) : null}
-
-      {selectedProfile.requires_ajax_short_acknowledgement ? (
-        <label className="checkboxRow scanModeAck">
-          <input
-            type="checkbox"
-            checked={ajaxShortAcknowledged}
-            onChange={(event) => onAjaxShortAcknowledged(event.target.checked)}
-          />
-          <span>I understand AJAX Short drives a bounded browser crawl only against the configured local/demo target.</span>
-        </label>
-      ) : null}
+      ))}
 
       {selectedProfile.requires_repo_path ? (
         <div className="repoPathNotice">
@@ -160,8 +129,8 @@ export function ScanLauncher({
           {selectedTarget ? (
             <dl>
               <div>
-                <dt>Saved repo path</dt>
-                <dd>{selectedTarget.repo_path ?? "None attached"}</dd>
+                <dt>Repository access</dt>
+                <dd>{selectedTarget.has_repo_path ? "Configured" : "Not configured"}</dd>
               </div>
             </dl>
           ) : null}
@@ -204,7 +173,7 @@ export function ScanHistory({
     <div className="panel historyPanel">
       <div className="panelHeader">
         <h3>Scan History</h3>
-        <span className="phaseBadge">{scans.length}</span>
+        <span className="contextBadge">{scans.length}</span>
       </div>
 
       {scans.length > 0 ? (
@@ -233,7 +202,17 @@ export function ScanHistory({
   );
 }
 
-export function ScanProgress({ scan, isCancelling, onCancel }: { scan: Scan; isCancelling: boolean; onCancel: () => void }) {
+export function ScanProgress({
+  scan,
+  toolRuns,
+  isCancelling,
+  onCancel
+}: {
+  scan: Scan;
+  toolRuns: ScannerToolRun[];
+  isCancelling: boolean;
+  onCancel: () => void;
+}) {
   const displayedProgress = useSmoothedProgress(scan);
   const canCancel = !terminalStatuses.has(scan.status) && !scan.cancellation_requested_at;
 
@@ -256,16 +235,8 @@ export function ScanProgress({ scan, isCancelling, onCancel }: { scan: Scan; isC
       </div>
       <dl className="scanMeta">
         <div>
-          <dt>Mode</dt>
-          <dd>{scan.mode}</dd>
-        </div>
-        <div>
           <dt>Profile</dt>
-          <dd>{formatScanProfileLabel(scan.scan_profile_id, scan.mode)}</dd>
-        </div>
-        <div>
-          <dt>Auth</dt>
-          <dd>{scan.auth_profile_id ? "Configured" : "None"}</dd>
+          <dd>{formatScanProfileLabel(scan.scan_profile_id)}</dd>
         </div>
         <div>
           <dt>Current Step</dt>
@@ -278,7 +249,25 @@ export function ScanProgress({ scan, isCancelling, onCancel }: { scan: Scan; isC
       </dl>
       <p>{scan.status_message}</p>
       {scan.cancellation_requested_at ? <p className="formMessage">Cancellation requested. Worker will stop at a safe checkpoint.</p> : null}
-      {scan.error_detail ? <p className="errorText">{scan.error_detail}</p> : null}
+      {scan.failure ? <p className="errorText">{scan.failure.message} ({scan.failure.code})</p> : null}
+      {toolRuns.length > 0 ? (
+        <div className="toolRunPanel">
+          <h4>Scanner receipts</h4>
+          <ul className="opsList">
+            {toolRuns.map((toolRun) => (
+              <li key={toolRun.id}>
+                <span className={`statusDot status-${toolRun.status}`} />
+                <strong>{toolRun.tool_name}</strong>
+                <em>{toolRun.status}</em>
+                <small>
+                  {toolRun.tool_version ?? "version unavailable"} · {toolRun.finding_count} finding(s)
+                  {toolRun.warning_code ? ` · ${toolRun.warning_code}` : ""}
+                </small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -286,7 +275,7 @@ export function ScanProgress({ scan, isCancelling, onCancel }: { scan: Scan; isC
 function useSmoothedProgress(scan: Scan): number {
   const isTerminal = terminalStatuses.has(scan.status);
   const serverProgress = clampProgress(scan.progress_percent);
-  const ceiling = useMemo(() => progressCeiling(scan), [scan.status, scan.progress_percent]);
+  const ceiling = useMemo(() => progressCeiling(scan), [scan]);
   const [displayedProgress, setDisplayedProgress] = useState(() => (isTerminal ? serverProgress : Math.min(serverProgress, ceiling)));
   const scanIdRef = useRef(scan.id);
 

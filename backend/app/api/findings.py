@@ -3,11 +3,13 @@ from datetime import datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_principal, get_db
+from app.api.pagination import PageRequest, page_items, page_request
 from app.api.schemas import (
+    CursorPage,
     FindingLifecycleUpdate,
     FindingRead,
     SuppressionRuleCreate,
@@ -19,22 +21,34 @@ from app.api.schemas import (
 )
 from app.finding_management import (
     normalize_resource_type,
+    normalize_status,
     normalize_suppression_severity,
     normalize_suppression_source_tool,
-    normalize_status,
     occurrence_state_for_read,
     suppression_rule_is_active,
     sync_occurrence_state,
     tags_for_resource,
 )
-from app.models import Finding, FindingOccurrenceState, FindingState, ReportArtifact, RiskScore, Scan, SuppressionRule, Tag, TagAssignment, Target
+from app.models import (
+    Finding,
+    FindingOccurrenceState,
+    FindingState,
+    ReportArtifact,
+    RiskScore,
+    Scan,
+    SuppressionRule,
+    Tag,
+    TagAssignment,
+    Target,
+)
 from app.ops.audit import record_audit_event
 from app.security.auth import AuthenticatedPrincipal
+from app.security.sanitization import sanitize_text
 
 router = APIRouter(tags=["findings"])
 
 
-@router.get("/scans/{scan_id}/findings", response_model=list[FindingRead])
+@router.get("/scans/{scan_id}/findings", response_model=CursorPage[FindingRead])
 def list_scan_findings(
     scan_id: str,
     severity: str | None = None,
@@ -50,9 +64,10 @@ def list_scan_findings(
     tag_id: str | None = None,
     risk_min: int | None = None,
     risk_max: int | None = None,
+    page: PageRequest = Depends(page_request),
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
-) -> list[FindingRead]:
+) -> CursorPage[FindingRead]:
     scan = db.scalar(select(Scan).where(Scan.id == scan_id, Scan.workspace_id == principal.workspace_id))
     if scan is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
@@ -73,10 +88,11 @@ def list_scan_findings(
         tag_id=tag_id,
         risk_min=risk_min,
         risk_max=risk_max,
+        page=page,
     )
 
 
-@router.get("/findings", response_model=list[FindingRead])
+@router.get("/findings", response_model=CursorPage[FindingRead])
 def list_findings(
     target_id: str | None = None,
     scan_profile_id: str | None = None,
@@ -93,9 +109,10 @@ def list_findings(
     tag_id: str | None = None,
     risk_min: int | None = None,
     risk_max: int | None = None,
+    page: PageRequest = Depends(page_request),
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
-) -> list[FindingRead]:
+) -> CursorPage[FindingRead]:
     if target_id is not None and db.scalar(select(Target.id).where(Target.id == target_id, Target.workspace_id == principal.workspace_id)) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
 
@@ -116,6 +133,7 @@ def list_findings(
         tag_id=tag_id,
         risk_min=risk_min,
         risk_max=risk_max,
+        page=page,
     )
 
 
@@ -144,7 +162,7 @@ def update_finding_lifecycle(
     try:
         lifecycle_status = normalize_status(payload.lifecycle_status)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 
     finding = db.scalar(select(Finding).where(Finding.id == finding_id, Finding.workspace_id == principal.workspace_id))
     if finding is None:
@@ -214,16 +232,16 @@ def create_suppression_rule(
         severity = normalize_suppression_severity(payload.severity)
         source_tool = normalize_suppression_source_tool(payload.source_tool)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 
     rule = SuppressionRule(
         id=str(uuid4()),
         workspace_id=principal.workspace_id,
         target_id=payload.target_id,
-        dedupe_key=payload.dedupe_key.strip() if payload.dedupe_key else None,
+        dedupe_key=sanitize_text(payload.dedupe_key, maximum=500),
         severity=severity,
         source_tool=source_tool,
-        reason=payload.reason.strip(),
+        reason=(sanitize_text(payload.reason, maximum=2000) or "").strip() or "Suppression reason redacted.",
         created_by_user_id=principal.user_id,
         expires_at=payload.expires_at,
     )
@@ -254,16 +272,20 @@ def create_suppression_rule(
     return rule
 
 
-@router.get("/suppressions", response_model=list[SuppressionRuleRead])
+@router.get("/suppressions", response_model=CursorPage[SuppressionRuleRead])
 def list_suppression_rules(
     target_id: str | None = None,
+    page: PageRequest = Depends(page_request),
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
-) -> list[SuppressionRule]:
+) -> CursorPage[SuppressionRuleRead]:
     statement = select(SuppressionRule).where(SuppressionRule.workspace_id == principal.workspace_id)
     if target_id is not None:
         statement = statement.where(SuppressionRule.target_id == target_id)
-    return list(db.scalars(statement.order_by(SuppressionRule.created_at.desc())).all())
+    statement = apply_cursor(statement, SuppressionRule, page)
+    rows = list(db.scalars(statement.order_by(SuppressionRule.created_at.desc(), SuppressionRule.id.desc()).limit(page.limit + 1)).all())
+    visible, next_cursor = page_items(rows, page.limit)
+    return CursorPage(items=[SuppressionRuleRead.model_validate(rule) for rule in visible], next_cursor=next_cursor)
 
 
 @router.post("/tags", response_model=TagRead, status_code=status.HTTP_201_CREATED)
@@ -272,7 +294,7 @@ def create_tag(
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> Tag:
-    label = payload.label.strip()
+    label = (sanitize_text(payload.label, maximum=80) or "").strip() or "redacted-tag"
     existing = db.scalar(select(Tag).where(Tag.workspace_id == principal.workspace_id, Tag.label == label))
     if existing is not None:
         return existing
@@ -291,12 +313,16 @@ def create_tag(
     return tag
 
 
-@router.get("/tags", response_model=list[TagRead])
+@router.get("/tags", response_model=CursorPage[TagRead])
 def list_tags(
+    page: PageRequest = Depends(page_request),
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
-) -> list[Tag]:
-    return list(db.scalars(select(Tag).where(Tag.workspace_id == principal.workspace_id).order_by(Tag.label.asc())).all())
+) -> CursorPage[TagRead]:
+    statement = apply_cursor(select(Tag).where(Tag.workspace_id == principal.workspace_id), Tag, page)
+    rows = list(db.scalars(statement.order_by(Tag.created_at.desc(), Tag.id.desc()).limit(page.limit + 1)).all())
+    visible, next_cursor = page_items(rows, page.limit)
+    return CursorPage(items=[TagRead.model_validate(tag) for tag in visible], next_cursor=next_cursor)
 
 
 @router.post("/tags/assignments", response_model=TagAssignmentRead, status_code=status.HTTP_201_CREATED)
@@ -311,7 +337,7 @@ def create_tag_assignment(
     try:
         resource_type = normalize_resource_type(payload.resource_type)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     ensure_resource_access(db, principal.workspace_id, resource_type, payload.resource_id)
 
     existing = db.scalar(
@@ -346,22 +372,26 @@ def create_tag_assignment(
     return assignment
 
 
-@router.get("/tags/assignments", response_model=list[TagAssignmentRead])
+@router.get("/tags/assignments", response_model=CursorPage[TagAssignmentRead])
 def list_tag_assignments(
     resource_type: str | None = None,
     resource_id: str | None = None,
+    page: PageRequest = Depends(page_request),
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
-) -> list[TagAssignment]:
+) -> CursorPage[TagAssignmentRead]:
     statement = select(TagAssignment).where(TagAssignment.workspace_id == principal.workspace_id)
     if resource_type is not None:
         try:
             statement = statement.where(TagAssignment.resource_type == normalize_resource_type(resource_type))
         except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     if resource_id is not None:
         statement = statement.where(TagAssignment.resource_id == resource_id)
-    return list(db.scalars(statement.order_by(TagAssignment.created_at.desc())).all())
+    statement = apply_cursor(statement, TagAssignment, page)
+    rows = list(db.scalars(statement.order_by(TagAssignment.created_at.desc(), TagAssignment.id.desc()).limit(page.limit + 1)).all())
+    visible, next_cursor = page_items(rows, page.limit)
+    return CursorPage(items=[TagAssignmentRead.model_validate(assignment) for assignment in visible], next_cursor=next_cursor)
 
 
 def query_findings(
@@ -383,12 +413,12 @@ def query_findings(
     tag_id: str | None = None,
     risk_min: int | None = None,
     risk_max: int | None = None,
-) -> list[FindingRead]:
+    page: PageRequest,
+) -> CursorPage[FindingRead]:
     statement = (
         select(Finding)
         .join(Scan, Scan.id == Finding.scan_id)
         .where(Finding.scan_id == scan_id, Finding.workspace_id == principal.workspace_id)
-        .order_by(Finding.severity.asc(), Finding.created_at.asc())
     )
     if scan_id is None:
         statement = select(Finding).join(Scan, Scan.id == Finding.scan_id).where(Finding.workspace_id == principal.workspace_id)
@@ -411,7 +441,12 @@ def query_findings(
     if cwe is not None:
         statement = statement.where(func.lower(Finding.cwe) == cwe.strip().lower())
 
-    findings = list(db.scalars(statement.order_by(Finding.severity.asc(), Finding.created_at.asc())).all())
+    statement = apply_cursor(statement, Finding, page)
+    findings_with_lookahead = list(
+        db.scalars(statement.order_by(Finding.created_at.desc(), Finding.id.desc()).limit(page.limit + 1)).all()
+    )
+    findings_raw, next_cursor = page_items(findings_with_lookahead, page.limit)
+    findings = list(findings_raw)
     scan_ids = {finding.scan_id for finding in findings}
     finding_ids = {finding.id for finding in findings}
     scans_by_id = {
@@ -450,7 +485,7 @@ def query_findings(
         if not scan_risk_in_range(risk_scores, scan.id, risk_min, risk_max):
             continue
         rows.append(row)
-    return rows
+    return CursorPage(items=rows, next_cursor=next_cursor)
 
 
 def serialize_finding(
@@ -491,13 +526,22 @@ def serialize_finding(
         reproduction_steps=finding.reproduction_steps,
         remediation=finding.remediation,
         false_positive_notes=finding.false_positive_notes,
-        redaction_applied=finding.redaction_applied,
-        raw_artifact_ref=finding.raw_artifact_ref,
         lifecycle_status=occurrence.lifecycle_status if occurrence is not None else "open",
         suppressed=occurrence.suppressed if occurrence is not None else False,
         suppression_rule_id=occurrence.suppression_rule_id if occurrence is not None else None,
         tags=labels,
         created_at=finding.created_at,
+    )
+
+
+def apply_cursor(statement, model, page: PageRequest):
+    if page.cursor_created_at is None or page.cursor_id is None:
+        return statement
+    return statement.where(
+        or_(
+            model.created_at < page.cursor_created_at,
+            and_(model.created_at == page.cursor_created_at, model.id < page.cursor_id),
+        )
     )
 
 

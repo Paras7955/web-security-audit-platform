@@ -3,15 +3,15 @@ import unittest
 from pathlib import Path
 from uuid import uuid4
 
-from pydantic import ValidationError
-from sqlalchemy import delete
-
 from app.core.contracts import Confidence, Severity
 from app.db.session import SessionLocal
 from app.findings.redaction import EVIDENCE_SNIPPET_CAP, prepare_evidence_snippet, redact_text
 from app.findings.schemas import EvidenceArtifactInput, NormalizedFindingInput
 from app.findings.service import FindingPersistenceError, build_dedupe_key, persist_normalized_findings
 from app.models import EvidenceArtifact, Finding, FindingOccurrenceState, FindingState, Scan, Target
+from pydantic import ValidationError
+from sqlalchemy import delete
+
 from tests.fixtures.normalized_findings import GITLEAKS_FIXTURE, ZAP_FIXTURE
 
 

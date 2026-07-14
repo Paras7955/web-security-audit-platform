@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect -- Async loaders reject stale responses with selected-resource refs. */
+
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { AiExplanationsPanel } from "@/components/dashboard/AiExplanationsPanel";
@@ -28,13 +30,16 @@ import {
   ReportArtifact,
   ScanComparison,
   Scan,
+  ScannerToolRun,
   Tag,
   Target,
   TargetDashboard,
   ValidationResult,
   apiBaseUrl,
+  apiOrigin,
   apiFetch,
-  readJson
+  readJson,
+  readPage
 } from "@/lib/securityAuditApi";
 
 export function TargetSetup() {
@@ -51,10 +56,10 @@ export function TargetSetup() {
   const [authProfileSecret, setAuthProfileSecret] = useState("");
   const [selectedTargetId, setSelectedTargetId] = useState("");
   const [scanProfileId, setScanProfileId] = useState("passive-web");
-  const [activeDemoAcknowledged, setActiveDemoAcknowledged] = useState(false);
-  const [ajaxShortAcknowledged, setAjaxShortAcknowledged] = useState(false);
+  const [acknowledgements, setAcknowledgements] = useState<string[]>([]);
   const [selectedScanId, setSelectedScanId] = useState("");
   const [scanHistory, setScanHistory] = useState<Scan[]>([]);
+  const [toolRuns, setToolRuns] = useState<ScannerToolRun[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [reports, setReports] = useState<ReportArtifact[]>([]);
@@ -103,12 +108,11 @@ export function TargetSetup() {
   const canCreate = useMemo(() => Boolean(validation && permissionConfirmed && !isBusy), [validation, permissionConfirmed, isBusy]);
   const canStartScan = Boolean(
     selectedTarget &&
-      selectedTarget.allowed_modes.includes(selectedProfile.mode) &&
+      selectedTarget.available_scan_profile_ids.includes(selectedProfile.id) &&
       !isBusy &&
-      (!selectedProfile.requires_repo_path || Boolean(selectedTarget.repo_path)) &&
+      (!selectedProfile.requires_repo_path || selectedTarget.has_repo_path) &&
       (!selectedTarget.auth_profile_id || selectedProfile.mode === "passive") &&
-      (!selectedProfile.requires_active_demo_acknowledgement || activeDemoAcknowledged) &&
-      (!selectedProfile.requires_ajax_short_acknowledgement || ajaxShortAcknowledged)
+      selectedProfile.required_acknowledgements.every((code) => acknowledgements.includes(code))
   );
   const displayFindings = findings;
   const displayAiExplanation = useMemo(() => uniqueAiExplanation(aiExplanation, findings), [aiExplanation, findings]);
@@ -148,11 +152,13 @@ export function TargetSetup() {
     if (!selectedScanId) {
       setFindings([]);
       setReports([]);
+      setToolRuns([]);
       setAiExplanation(null);
       setSelectedFindingId("");
       return;
     }
     void loadFindings(selectedScanId, { onlyIfSelected: true });
+    void loadToolRuns(selectedScanId, { onlyIfSelected: true });
     if (selectedScan && canUseReports(selectedScan)) {
       void loadReports(selectedScanId, { onlyIfSelected: true });
     } else {
@@ -167,7 +173,7 @@ export function TargetSetup() {
     setAiMessage("AI explanations remain available for passive and Active Demo scans.");
   }, [
     selectedScanId,
-    selectedScan?.mode,
+    selectedScan?.scan_profile_id,
     severityFilter,
     lifecycleFilter,
     suppressionFilter,
@@ -270,16 +276,17 @@ export function TargetSetup() {
         body: JSON.stringify({
           target_id: selectedTarget.id,
           scan_profile_id: selectedProfile.id,
-          active_demo_acknowledged: activeDemoAcknowledged,
-          ajax_short_acknowledged: ajaxShortAcknowledged
+          acknowledgements
         })
       });
       const scan = await readJson<Scan>(response, "Scan creation failed.");
       setSelectedScanId(scan.id);
       setFindings([]);
+      setToolRuns([]);
       setReports([]);
       setAiExplanation(null);
       setSelectedFindingId("");
+      setAcknowledgements([]);
       setReportMessage("Reports are available after this passive, Active Demo, or Repo scan completes.");
       setAiMessage("AI explanations are available after this passive or Active Demo scan completes.");
       setMessage("Scan queued. Worker status will update below.");
@@ -348,6 +355,50 @@ export function TargetSetup() {
     }
   }
 
+  async function rotateSelectedAuthProfile() {
+    if (!selectedAuthProfileId || !authProfileSecret.trim()) {
+      return;
+    }
+    setIsBusy(true);
+    setAuthProfileMessage("Rotating auth profile secret for future scans...");
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/auth-profiles/${selectedAuthProfileId}/rotate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: authProfileSecret })
+      });
+      const profile = await readJson<AuthProfile>(response, "Auth profile rotation failed.");
+      setAuthProfileSecret("");
+      await loadAuthProfiles(profile.id);
+      setAuthProfileMessage("Auth profile rotated. Existing scan snapshots were not changed.");
+    } catch (error) {
+      setAuthProfileMessage(error instanceof Error ? error.message : "Auth profile rotation failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function revokeSelectedAuthProfile() {
+    if (!selectedAuthProfileId) {
+      return;
+    }
+    if (!window.confirm("Revoke this profile, erase its encrypted secret, and detach it from every target?")) {
+      return;
+    }
+    setIsBusy(true);
+    setAuthProfileMessage("Revoking auth profile and detaching it from targets...");
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/auth-profiles/${selectedAuthProfileId}/revoke`, { method: "POST" });
+      const profile = await readJson<AuthProfile>(response, "Auth profile revocation failed.");
+      await Promise.all([loadAuthProfiles(profile.id), loadTargets(selectedTargetId)]);
+      setAuthProfileMessage("Auth profile revoked. Its encrypted secret was erased and attached targets were detached.");
+    } catch (error) {
+      setAuthProfileMessage(error instanceof Error ? error.message : "Auth profile revocation failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function updateSelectedTargetAuthProfile() {
     if (!selectedTarget) {
       return;
@@ -379,6 +430,7 @@ export function TargetSetup() {
       const scan = await readJson<Scan>(response, "Scan status refresh failed.");
       setScanHistory((current) => mergeScan(current, scan));
       if (terminalStatuses.has(scan.status)) {
+        await loadToolRuns(scan.id, { onlyIfSelected: true });
         await loadFindings(scan.id, { onlyIfSelected: true });
         if (canUseReports(scan)) {
           await loadReports(scan.id, { onlyIfSelected: true });
@@ -422,10 +474,10 @@ export function TargetSetup() {
   }
 
   async function loadTargets(preferredTargetId?: string) {
-    const response = await apiFetch(`${apiBaseUrl}/targets`);
-    const body = await readJson<Target[]>(response, "Target list load failed.");
-    setTargets(body);
-    setSelectedTargetId(preferredTargetId ?? selectedTargetId ?? body[0]?.id ?? "");
+    const response = await apiFetch(`${apiBaseUrl}/targets?limit=200`);
+    const page = await readPage<Target>(response, "Target list load failed.");
+    setTargets(page.items);
+    setSelectedTargetId(preferredTargetId ?? selectedTargetId ?? page.items[0]?.id ?? "");
     setBootstrapError("");
   }
 
@@ -519,25 +571,25 @@ export function TargetSetup() {
   }
 
   async function loadAuthProfiles(preferredAuthProfileId?: string) {
-    const response = await apiFetch(`${apiBaseUrl}/auth-profiles`);
-    const body = await readJson<AuthProfile[]>(response, "Auth profile list load failed.");
-    setAuthProfiles(body);
-    setSelectedAuthProfileId(preferredAuthProfileId ?? selectedAuthProfileId ?? body[0]?.id ?? "");
+    const response = await apiFetch(`${apiBaseUrl}/auth-profiles?limit=200`);
+    const page = await readPage<AuthProfile>(response, "Auth profile list load failed.");
+    setAuthProfiles(page.items);
+    setSelectedAuthProfileId(preferredAuthProfileId ?? selectedAuthProfileId ?? page.items[0]?.id ?? "");
     setBootstrapError("");
   }
 
   async function loadScanHistory(preferredScanId?: string) {
-    const response = await apiFetch(`${apiBaseUrl}/scans`);
-    const body = await readJson<Scan[]>(response, "Scan history load failed.");
-    setScanHistory(body);
-    setSelectedScanId(preferredScanId ?? selectedScanId ?? body[0]?.id ?? "");
+    const response = await apiFetch(`${apiBaseUrl}/scans?limit=200`);
+    const page = await readPage<Scan>(response, "Scan history load failed.");
+    setScanHistory(page.items);
+    setSelectedScanId(preferredScanId ?? selectedScanId ?? page.items[0]?.id ?? "");
     setBootstrapError("");
   }
 
   async function loadTags(preferredTagId?: string) {
-    const response = await apiFetch(`${apiBaseUrl}/tags`);
-    const body = await readJson<Tag[]>(response, "Tag list load failed.");
-    setTags(body);
+    const response = await apiFetch(`${apiBaseUrl}/tags?limit=200`);
+    const page = await readPage<Tag>(response, "Tag list load failed.");
+    setTags(page.items);
     setTagFilter(preferredTagId ?? tagFilter);
     setBootstrapError("");
   }
@@ -555,7 +607,7 @@ export function TargetSetup() {
         setFindings([]);
         return;
       }
-      const body = (await response.json()) as Finding[];
+      const body = ((await response.json()) as { items: Finding[] }).items;
       if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
         return;
       }
@@ -573,6 +625,7 @@ export function TargetSetup() {
 
   function findingFilterParams() {
     const params = new URLSearchParams();
+    params.set("limit", "200");
     if (findingScope === "workspace") {
       if (targetFilter) {
         params.set("target_id", targetFilter);
@@ -712,7 +765,7 @@ export function TargetSetup() {
 
   async function loadReports(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
     try {
-      const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}/reports`);
+      const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}/reports?limit=200`);
       if (!response.ok) {
         if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
           return;
@@ -720,7 +773,7 @@ export function TargetSetup() {
         setReports([]);
         return;
       }
-      const body = (await response.json()) as ReportArtifact[];
+      const body = ((await response.json()) as { items: ReportArtifact[] }).items;
       if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
         return;
       }
@@ -731,6 +784,21 @@ export function TargetSetup() {
         return;
       }
       setReports([]);
+    }
+  }
+
+  async function loadToolRuns(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
+    try {
+      const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}/tool-runs?limit=200`);
+      const page = await readPage<ScannerToolRun>(response, "Scanner receipts could not be loaded.");
+      if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
+        return;
+      }
+      setToolRuns(page.items);
+    } catch {
+      if (!options.onlyIfSelected || selectedScanIdRef.current === scanId) {
+        setToolRuns([]);
+      }
     }
   }
 
@@ -769,7 +837,8 @@ export function TargetSetup() {
 
     try {
       const response = await apiFetch(`${apiBaseUrl}/scans/${selectedScan.id}/reports`, { method: "POST" });
-      setReports(await readJson<ReportArtifact[]>(response, "Report generation failed."));
+      const page = await readPage<ReportArtifact>(response, "Report generation failed.");
+      setReports(page.items);
       setReportMessage("Reports are ready.");
     } catch (error) {
       setReportMessage(error instanceof Error ? error.message : "Report generation failed.");
@@ -780,7 +849,7 @@ export function TargetSetup() {
 
   async function viewReport(report: ReportArtifact) {
     try {
-      const response = await apiFetch(`${apiBaseUrl}${report.view_url}`);
+      const response = await apiFetch(`${apiOrigin}${report.view_url}`);
       if (!response.ok) {
         await readJson<never>(response, "Report view failed.");
       }
@@ -795,7 +864,7 @@ export function TargetSetup() {
 
   async function downloadReport(report: ReportArtifact) {
     try {
-      const response = await apiFetch(`${apiBaseUrl}${report.download_url}`);
+      const response = await apiFetch(`${apiOrigin}${report.download_url}`);
       if (!response.ok) {
         await readJson<never>(response, "Report download failed.");
       }
@@ -819,7 +888,7 @@ export function TargetSetup() {
           <p className="eyebrow">Workspace Console</p>
           <h2 id="dashboard-heading">Run authorized scans, review normalized findings, and manage reportable evidence</h2>
         </div>
-        <span className="phaseBadge">Profiles + auth</span>
+        <span className="contextBadge">Local workspace</span>
       </div>
 
       {bootstrapError ? (
@@ -838,7 +907,11 @@ export function TargetSetup() {
             message={message}
             isBusy={isBusy}
             canCreate={canCreate}
-            onTargetUrlChange={setTargetUrl}
+            onTargetUrlChange={(value) => {
+              setTargetUrl(value);
+              setValidation(null);
+              setPermissionConfirmed(false);
+            }}
             onRepoPathChange={setRepoPath}
             onPermissionChange={setPermissionConfirmed}
             onValidate={validateTarget}
@@ -861,21 +934,31 @@ export function TargetSetup() {
             onSecretChange={setAuthProfileSecret}
             onCreateProfile={createAuthProfile}
             onAttachProfile={updateSelectedTargetAuthProfile}
+            onRotateProfile={rotateSelectedAuthProfile}
+            onRevokeProfile={revokeSelectedAuthProfile}
           />
           <ScanLauncher
             targets={targets}
             selectedTargetId={selectedTargetId}
             repoPath={repoPath}
             scanProfileId={scanProfileId}
-            activeDemoAcknowledged={activeDemoAcknowledged}
-            ajaxShortAcknowledged={ajaxShortAcknowledged}
+            acknowledgements={acknowledgements}
             canStartScan={canStartScan}
             isBusy={isBusy}
-            onSelectTarget={setSelectedTargetId}
-            onSelectScanProfile={setScanProfileId}
+            onSelectTarget={(targetId) => {
+              setSelectedTargetId(targetId);
+              setAcknowledgements([]);
+            }}
+            onSelectScanProfile={(profileId) => {
+              setScanProfileId(profileId);
+              setAcknowledgements([]);
+            }}
             onAttachRepoPath={updateSelectedTargetRepoPath}
-            onActiveDemoAcknowledged={setActiveDemoAcknowledged}
-            onAjaxShortAcknowledged={setAjaxShortAcknowledged}
+            onAcknowledgementChange={(code, acknowledged) => {
+              setAcknowledgements((current) =>
+                acknowledged ? [...new Set([...current, code])] : current.filter((value) => value !== code)
+              );
+            }}
             onStartScan={startScan}
           />
         </div>
@@ -887,7 +970,9 @@ export function TargetSetup() {
 
       <OpsHealthPanel health={platformHealth} message={opsMessage} onRefresh={loadPlatformHealth} />
 
-      {selectedScan ? <ScanProgress scan={selectedScan} isCancelling={isCancellingScan} onCancel={cancelSelectedScan} /> : null}
+      {selectedScan ? (
+        <ScanProgress scan={selectedScan} toolRuns={toolRuns} isCancelling={isCancellingScan} onCancel={cancelSelectedScan} />
+      ) : null}
 
       <RiskDashboardPanel
         overview={dashboardOverview}

@@ -1,4 +1,5 @@
 from collections import Counter
+from typing import overload
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -14,7 +15,7 @@ from app.api.schemas import (
     TargetDashboardRead,
 )
 from app.models import Finding, RiskScore, Scan, Target
-from app.risk import COMPLETED_SCAN_STATUSES, SCORING_MODEL_VERSION, dedupe_findings, dedupe_findings_by_target, persist_scan_risk_score
+from app.risk import COMPLETED_SCAN_STATUSES, SCORING_MODEL_VERSION, dedupe_findings, dedupe_findings_by_target, read_scan_risk_score
 from app.security.auth import AuthenticatedPrincipal
 
 router = APIRouter(tags=["dashboard"])
@@ -30,7 +31,7 @@ def dashboard_overview(
     completed_scans = sort_completed_scans([scan for scan in scans if scan.status in COMPLETED_SCAN_STATUSES])
     findings = list(db.scalars(select(Finding).where(Finding.workspace_id == principal.workspace_id)).all())
     target_id_by_scan_id = {scan.id: scan.target_id for scan in scans}
-    latest_score = persist_scan_risk_score(db, completed_scans[0], findings_for_scan(findings, completed_scans[0].id)) if completed_scans else None
+    latest_score = read_scan_risk_score(db, completed_scans[0], findings_for_scan(findings, completed_scans[0].id)) if completed_scans else None
 
     return DashboardOverviewRead(
         targets_count=len(targets),
@@ -38,7 +39,7 @@ def dashboard_overview(
         completed_scans_count=len(completed_scans),
         findings_count=len(findings),
         severity_counts=workspace_severity_counts(findings, target_id_by_scan_id),
-        latest_risk_score=latest_score,
+        latest_risk_score=risk_score_to_read(latest_score),
         recent_scans=scan_summaries(db, scans[:8], targets_by_id(targets)),
     )
 
@@ -65,7 +66,7 @@ def target_dashboard(
             .where(Finding.workspace_id == principal.workspace_id, Scan.target_id == target.id)
         ).all()
     )
-    latest_score = persist_scan_risk_score(db, completed_scans[0], findings_for_scan(findings, completed_scans[0].id)) if completed_scans else None
+    latest_score = read_scan_risk_score(db, completed_scans[0], findings_for_scan(findings, completed_scans[0].id)) if completed_scans else None
 
     return TargetDashboardRead(
         target_id=target.id,
@@ -75,7 +76,7 @@ def target_dashboard(
         completed_scan_count=len(completed_scans),
         findings_count=len(findings),
         severity_counts=severity_counts(findings),
-        latest_risk_score=latest_score,
+        latest_risk_score=risk_score_to_read(latest_score),
         recent_scans=scan_summaries(db, scans[:8], {target.id: target}),
     )
 
@@ -88,7 +89,7 @@ def scan_risk_score(
 ) -> RiskScore:
     scan = get_completed_scan_or_404(db, scan_id, principal.workspace_id)
     findings = list(db.scalars(select(Finding).where(Finding.workspace_id == principal.workspace_id, Finding.scan_id == scan.id)).all())
-    return persist_scan_risk_score(db, scan, findings)
+    return read_scan_risk_score(db, scan, findings)
 
 
 @router.get("/scans/{scan_id}/comparison", response_model=ScanComparisonRead)
@@ -135,8 +136,8 @@ def build_comparison(db: Session, baseline_scan: Scan, comparison_scan: Scan) ->
     comparison_findings = list(
         db.scalars(select(Finding).where(Finding.workspace_id == comparison_scan.workspace_id, Finding.scan_id == comparison_scan.id)).all()
     )
-    baseline_score = persist_scan_risk_score(db, baseline_scan, baseline_findings)
-    comparison_score = persist_scan_risk_score(db, comparison_scan, comparison_findings)
+    baseline_score = read_scan_risk_score(db, baseline_scan, baseline_findings)
+    comparison_score = read_scan_risk_score(db, comparison_scan, comparison_findings)
     baseline_by_key = finding_map(baseline_findings)
     comparison_by_key = finding_map(comparison_findings)
 
@@ -165,8 +166,8 @@ def build_comparison(db: Session, baseline_scan: Scan, comparison_scan: Scan) ->
         baseline_scan_id=baseline_scan.id,
         comparison_scan_id=comparison_scan.id,
         scoring_model_version=SCORING_MODEL_VERSION,
-        baseline_score=baseline_score,
-        comparison_score=comparison_score,
+        baseline_score=risk_score_to_read(baseline_score),
+        comparison_score=risk_score_to_read(comparison_score),
         score_delta=comparison_score.score - baseline_score.score,
         new_findings=new_findings,
         resolved_findings=resolved_findings,
@@ -200,18 +201,17 @@ def scan_summaries(db: Session, scans: list[Scan], target_lookup: dict[str, Targ
         risk_score: RiskScore | None = None
         if scan.status in COMPLETED_SCAN_STATUSES:
             findings = list(db.scalars(select(Finding).where(Finding.workspace_id == scan.workspace_id, Finding.scan_id == scan.id)).all())
-            risk_score = persist_scan_risk_score(db, scan, findings)
+            risk_score = read_scan_risk_score(db, scan, findings)
         summaries.append(
             DashboardScanSummaryRead(
                 id=scan.id,
                 target_id=scan.target_id,
                 target_name=target.name,
                 scan_profile_id=scan.scan_profile_id,
-                mode=scan.mode,
                 status=scan.status,
                 created_at=scan.created_at,
                 completed_at=scan.completed_at,
-                risk_score=risk_score,
+                risk_score=risk_score_to_read(risk_score),
             )
         )
     return summaries
@@ -219,6 +219,18 @@ def scan_summaries(db: Session, scans: list[Scan], target_lookup: dict[str, Targ
 
 def targets_by_id(targets: list[Target]) -> dict[str, Target]:
     return {target.id: target for target in targets}
+
+
+@overload
+def risk_score_to_read(score: RiskScore) -> RiskScoreRead: ...
+
+
+@overload
+def risk_score_to_read(score: None) -> None: ...
+
+
+def risk_score_to_read(score: RiskScore | None) -> RiskScoreRead | None:
+    return RiskScoreRead.model_validate(score) if score is not None else None
 
 
 def sort_completed_scans(scans: list[Scan]) -> list[Scan]:

@@ -2,7 +2,7 @@ export type ValidationResult = {
   allowlist_id: string;
   name: string;
   base_url: string;
-  allowed_modes: string[];
+  available_scan_profile_ids: string[];
   max_redirects: number;
   local_demo: boolean;
 };
@@ -12,9 +12,10 @@ export type Target = {
   allowlist_id: string;
   name: string;
   base_url: string;
-  allowed_modes: string[];
-  repo_path: string | null;
+  permission_confirmed: boolean;
+  has_repo_path: boolean;
   auth_profile_id: string | null;
+  available_scan_profile_ids: string[];
   created_at: string;
 };
 
@@ -24,14 +25,21 @@ export type AuthProfile = {
   profile_type: "bearer_token" | "custom_header" | string;
   header_name: string | null;
   secret_hint: string;
+  status: "active" | "revoked" | string;
+  rotated_at: string | null;
+  revoked_at: string | null;
+  rotation_count: number;
   created_at: string;
+};
+
+export type ScanFailure = {
+  code: string;
+  message: string;
 };
 
 export type Scan = {
   id: string;
   target_id: string;
-  auth_profile_id: string | null;
-  mode: string;
   scan_profile_id: string;
   status: string;
   current_step: string | null;
@@ -40,10 +48,20 @@ export type Scan = {
   started_at: string | null;
   completed_at: string | null;
   cancellation_requested_at: string | null;
-  cancellation_requested_by_user_id: string | null;
-  error_code: string | null;
-  error_detail: string | null;
+  failure: ScanFailure | null;
   created_at: string;
+};
+
+export type ScannerToolRun = {
+  id: string;
+  scan_id: string;
+  tool_name: string;
+  tool_version: string | null;
+  status: string;
+  warning_code: string | null;
+  finding_count: number;
+  started_at: string | null;
+  completed_at: string | null;
 };
 
 export type Finding = {
@@ -64,8 +82,6 @@ export type Finding = {
   reproduction_steps: string | null;
   remediation: string | null;
   false_positive_notes: string | null;
-  redaction_applied: boolean;
-  raw_artifact_ref: string | null;
   lifecycle_status: string;
   suppressed: boolean;
   suppression_rule_id: string | null;
@@ -108,7 +124,7 @@ export type AiExplanation = {
   scan_id: string;
   provider: string;
   fallback_used: boolean;
-  provider_error: string | null;
+  provider_error_code: string | null;
   summary: string;
   executive_summary: string;
   risk_score_explanation: string;
@@ -146,7 +162,6 @@ export type RiskScore = {
     confidence_counts?: Record<string, number>;
     weighted_total?: number;
     scan_profile_id?: string;
-    mode?: string;
     [key: string]: unknown;
   };
   created_at: string;
@@ -157,7 +172,6 @@ export type DashboardScanSummary = {
   target_id: string;
   target_name: string;
   scan_profile_id: string;
-  mode: string;
   status: string;
   created_at: string;
   completed_at: string | null;
@@ -209,7 +223,19 @@ export type ScanComparison = {
   severity_changed_findings: FindingChange[];
 };
 
-export const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+export type CursorPage<Item> = {
+  items: Item[];
+  next_cursor: string | null;
+};
+
+export type ApiProblem = {
+  detail?: string;
+  code?: string;
+  request_id?: string;
+};
+
+export const apiOrigin = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
+export const apiBaseUrl = `${apiOrigin}/api/v1`;
 const devAuthToken = process.env.NEXT_PUBLIC_DEV_AUTH_TOKEN ?? "";
 
 export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
@@ -221,9 +247,14 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
 }
 
 export async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
-  const body = await response.json();
+  const body = (await response.json()) as T & ApiProblem;
   if (!response.ok) {
-    throw new Error(body.detail ?? fallbackMessage);
+    const requestSuffix = body.request_id ? ` Request ID: ${body.request_id}.` : "";
+    throw new Error(`${body.detail ?? fallbackMessage}${requestSuffix}`);
   }
   return body as T;
+}
+
+export async function readPage<Item>(response: Response, fallbackMessage: string): Promise<CursorPage<Item>> {
+  return readJson<CursorPage<Item>>(response, fallbackMessage);
 }

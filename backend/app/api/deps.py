@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.security.auth import AuthError, AuthenticatedPrincipal, authenticate_bearer_token
 from app.security.allowlist import ScanAllowlist, load_allowlist
+from app.security.auth import AuthenticatedPrincipal, AuthError, authenticate_bearer_token
 
 
 def get_db() -> Generator[Session, None, None]:

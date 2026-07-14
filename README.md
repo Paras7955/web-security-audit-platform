@@ -1,539 +1,222 @@
-# Defensive Web App Security Audit Platform
+# ScopeHarbor
 
-Local-first defensive AppSec audit platform for intentionally vulnerable or explicitly authorized web applications.
+**Local AppSec Audit Platform · 1.0.0**
 
-The project is designed as a cybersecurity resume project. Tools collect evidence; the platform normalizes findings; reports and AI-assisted explanations help developers understand and fix issues. The scanner is not intended for unauthorized testing.
+ScopeHarbor is a defensive, local-first application security audit platform for
+targets and repositories you are authorized to test. It combines guarded web
+scanning, isolated repository analysis, normalized findings, risk tracking,
+reports, and optional AI-assisted explanations in one workspace-aware system.
 
-## V1 Architecture
+ScopeHarbor is source-visible, not currently open source: no license is granted
+and all reuse rights are reserved. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-- Frontend: Next.js.
-- Backend: FastAPI.
-- Worker: Python worker for Postgres-backed scan jobs and bounded passive scanning.
-- Database: Postgres.
-- Security tooling: conservative custom passive scanning, scoped ZAP integration, and deterministic repo scanner adapters.
-- Demo target: OWASP Juice Shop.
-- Deployment: local Docker Compose.
+## What it does
 
-Inside Docker, scanner targets use service names. The canonical Juice Shop scanner URL is:
+- Runs a bounded passive crawl against an exact allowlisted HTTP service.
+- Runs ZAP passive and active-demo scans against configured local demo targets.
+- Uses ZAP Client Spider for a bounded modern web crawl.
+- Stages local repository files into an isolated workspace and runs pinned
+  Gitleaks and OSV-Scanner binaries without executing repository code.
+- Normalizes and redacts findings before they cross persistence, API, report,
+  audit, cache, log, or AI boundaries.
+- Tracks finding lifecycle, suppressions, tags, scan comparisons, and `risk-v1`
+  scores by workspace.
+- Produces restrictive Markdown and HTML reports from safe projections.
+- Supports encrypted bearer-token and static-header target auth profiles for the
+  guarded passive scanner only.
 
-```text
-http://juice-shop:3000
-```
+It does **not** scan arbitrary public URLs. Public cloud scanning, authenticated
+browser workflows, business-logic testing, RBAC/team administration, full SAST,
+and PDF export are outside the 1.0 scope.
 
-From the host browser, Juice Shop is exposed as:
+## Safety model
 
-```text
-http://localhost:3000
-```
+The scanner is deny-by-default. A web target must exactly match
+[`config/scan-allowlist.yml`](config/scan-allowlist.yml), the user must confirm
+authorization, and each scan must supply the acknowledgements published by
+`GET /api/v1/contracts`. Outbound web requests are revalidated for SSRF and
+bound to the validated destination IP; redirects are handled manually. The
+guarded scanner currently supports exact HTTP Docker-service targets only.
 
-## Phase 1 Status
+Repository scans accept only existing directories below `REPO_SCAN_ROOT`. They
+stage regular files while excluding symlinks, special files, `.git`, dependency
+trees, caches, and build output. Scans never clone repositories, run package
+managers, execute builds/scripts, or use repository-supplied scanner config.
 
-Phase 1 scaffolds the application contracts and safety docs. Target creation, scanning, findings, reports, AI, and ZAP workflows are implemented in later phases and must not be implied as production-ready by Phase 1 UI.
+Read [SECURITY.md](SECURITY.md) before changing scanner, auth, report, AI,
+repository, seed, or ZAP behavior. The full trust analysis is in
+[`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md).
 
-## Phase 2 Status
-
-Phase 2 adds target validation and target creation. The backend validates submitted URLs against `config/scan-allowlist.yml`, applies deny-by-default destination checks, and stores authorized targets only after permission confirmation.
-
-Implemented target APIs:
-
-- `GET /targets/validate?target_url=...`
-- `POST /targets`
-- `GET /targets`
-- `GET /targets/{target_id}`
-
-Phase 2 does not run scans. The UI may save an allowlisted target, but scan execution starts in Phase 3.
-
-## Phase 3 Status
-
-Phase 3 adds database-backed scan jobs and a worker lifecycle. The backend can create passive scan jobs, the worker claims queued jobs, updates `status` and `current_step`, creates a bounded scan artifact directory, and completes an internal lifecycle task.
-
-Implemented scan APIs:
-
-- `POST /scans`
-- `GET /scans`
-- `GET /scans/{scan_id}`
-
-Phase 3 lifecycle jobs do not crawl targets, run passive checks, call ZAP, or generate findings. They exist to prove queueing, worker status transitions, artifact path handling, and dashboard polling before real scanner execution is added in later phases.
-
-## Phase 4 Status
-
-Phase 4 adds normalized finding persistence primitives. The backend now has validated normalized finding inputs, evidence redaction and snippet capping, dedupe key generation, evidence artifact reference persistence, and fixture-backed tests for storing findings against a scan.
-
-Phase 4 does not yet add scanner-produced findings to the UI. Findings storage is ready for later scanner integrations and the dashboard phase.
-
-## Phase 5 Status
-
-Phase 5 adds the conservative custom passive scanner. The worker now runs queued passive scans against allowlisted targets, routes each outbound request through the guarded scanner HTTP client, follows redirects only after manual validation, writes a bounded crawl summary artifact, and persists normalized findings.
-
-Implemented passive scanner capabilities:
-
-- Guarded HTTP requests with automatic redirects disabled.
-- Custom scanner HTTP requests connect to the SSRF-validated destination IP to avoid DNS drift between validation and connection.
-- Bounded same-target crawl using the configured crawl depth and page cap.
-- Link, form, input, header, cookie, status, and redirect metadata collection.
-- Missing security header checks.
-- Cookie attribute checks.
-- Password-form GET-method checks.
-- Conservative exposed-file probes.
-- Login/admin route hints.
-
-Phase 5 does not call ZAP, run active scans, run AJAX crawling, generate reports, or expose a finished findings dashboard. Those are implemented in later phases.
-
-## Phase 6 Status
-
-Phase 6 adds the findings dashboard. The UI can create allowlisted targets, start passive scans, poll worker progress, show scan history, filter normalized findings by severity, and display finding evidence/details.
-
-Implemented dashboard capabilities:
-
-- Saved target selection for passive scans.
-- Scan history and selected-scan progress.
-- Current step and status message display.
-- Findings table with severity filters.
-- Finding detail panel with evidence, rule metadata, CWE/OWASP fields, and redaction status.
-- Scan mode safety copy showing Active Demo and AJAX Short as later gated phases.
-
-Phase 6 does not call ZAP. ZAP integration remains planned for later phases.
-
-## Phase 7 Status
-
-Phase 7 adds Markdown and HTML report generation for completed passive scans. Reports are generated from normalized findings that have already passed through the persistence redaction path.
-
-Implemented report capabilities:
-
-- `POST /scans/{scan_id}/reports`
-- `GET /scans/{scan_id}/reports`
-- `GET /reports/{report_id}`
-- `GET /reports/{report_id}/download`
-- Deterministic Markdown and escaped HTML report rendering.
-- Report artifact persistence under each scan artifact directory.
-- Dashboard report generation, view, and download links.
-- Responsible-use, limitations, scan mode, ZAP/AJAX/repo-scan, AI, and redaction disclosures.
-
-Phase 7 does not call ZAP, run repo scanning, test authenticated workflows, or perform business logic checks.
-
-## Phase 8 Status
-
-Phase 8 adds AI-assisted explanations for completed passive scan findings. The default provider is deterministic `template`; optional `openai` mode is available through the backend provider interface.
-
-Implemented AI explanation capabilities:
-
-- `GET /scans/{scan_id}/ai-explanations`
-- Provider-agnostic explanation service with template and optional OpenAI providers.
-- Severity/confidence prioritization and severity grouping.
-- OWASP/CWE/remediation explanation helpers.
-- Provider fallback to template explanations when optional OpenAI mode is unavailable or fails.
-- AI generation is limited to completed passive scans.
-- Provider URLs are stripped of query strings and fragments before leaving the backend.
-- Dashboard AI explanations panel with provider and fallback disclosure.
-- Markdown and HTML reports include generated AI explanation summaries and per-finding notes.
-
-AI provider inputs are restricted to normalized finding fields and redacted evidence snippets. If redaction has not been confirmed for a finding, evidence, reproduction, and remediation text are omitted from provider payloads. Raw response bodies, raw artifacts, raw ZAP output, secret scanner output, and unredacted evidence must not be sent to AI providers.
-
-Relevant environment settings:
+## Architecture
 
 ```text
-AI_PROVIDER=template
-AI_RATE_LIMIT_WINDOW_SECONDS=3600
-AI_RATE_LIMIT_MAX_REQUESTS=20
-AI_CACHE_ENABLED=true
-OPENAI_MODEL=
-OPENAI_API_KEY=
-REPO_SCAN_ROOT=/app/repositories
+Browser -> Next.js UI -> FastAPI /api/v1 -> PostgreSQL
+                            |                  ^
+                            v                  |
+                         scan queue -> isolated worker
+                                        |       |
+                                        ZAP     Gitleaks + offline OSV
 ```
 
-Set `AI_PROVIDER=openai` only when an OpenAI API key and model are configured. If OpenAI configuration is missing or the provider request fails, the backend returns template explanations and discloses the fallback.
+The API owns authentication, authorization, validation, pagination, and safe
+public projections. PostgreSQL holds workspace-scoped application state. A
+separate worker leases queued scans and writes only normalized findings and
+safe tool receipts. ZAP and the local demo target remain on an internal Compose
+network. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-Phase 8 does not call ZAP, run repo scanning, test authenticated workflows, or perform business logic checks.
+## Quick start
 
-## Phase 9A Status
+Requirements: Docker with Compose v2 and Python 3 for the environment bootstrap.
 
-Phase 9A adds scoped ZAP passive analysis to the passive scan worker. The custom guarded crawler still controls target discovery; ZAP receives only allowlisted URLs that were validated against the configured target scope.
-
-Implemented ZAP passive capabilities:
-
-- Creates an isolated ZAP session/context per scan.
-- Includes only the exact allowlisted target origin in the ZAP context.
-- Serializes access to the shared ZAP daemon with a database advisory lock.
-- Submits bounded allowlisted URLs to ZAP as SSRF-validated destination-IP-pinned URLs with automatic redirect following disabled.
-- Polls ZAP passive records and normalizes ZAP alerts into persisted findings.
-- Paginates ZAP alerts up to the configured cap and reports truncation as a scan warning.
-- Stores normalized/redacted ZAP alert metadata only, not raw ZAP output or response bodies.
-- Treats ZAP API failures or passive-scan timeouts as scan warnings instead of failing the custom passive scan.
-- Dashboard and reports disclose that ZAP passive analysis is used.
-
-Phase 9A does not run ZAP active scans, AJAX crawling, repo scanning, authenticated workflows, or business logic checks.
-
-## Phase 9B Status
-
-Phase 9B adds a bounded Active Demo scan mode for the local OWASP Juice Shop demo target. Active Demo is deliberately narrower than general active scanning and remains unavailable for arbitrary public URLs.
-
-Implemented Active Demo capabilities:
-
-- `POST /scans` accepts `mode: "active_demo"` only for allowlisted `local_demo` targets.
-- Active Demo requests require `active_demo_acknowledged: true`.
-- The dashboard exposes a mode selector and acknowledgement checkbox before queuing Active Demo scans.
-- The worker runs the existing custom passive and ZAP passive checks before the bounded ZAP active step.
-- ZAP active traffic is scoped to the exact allowlisted context and submitted through SSRF-validated destination-IP-pinned URLs.
-- Shared ZAP daemon access remains serialized with the advisory lock.
-- ZAP active alerts are normalized as `zap-active` findings and pass through the same redaction/persistence path.
-
-Phase 9B does not enable arbitrary active scans, AJAX crawling, repo scanning, authenticated workflows, or business logic checks.
-
-## Phase 9C Status
-
-Phase 9C adds a bounded AJAX Short scan mode for the local OWASP Juice Shop demo target. AJAX Short uses ZAP's browser-driven AJAX spider as a short passive crawling aid; it is not an authenticated workflow, business-logic test, or arbitrary public web crawler.
-
-Implemented AJAX Short capabilities:
-
-- `POST /scans` accepts `mode: "ajax_short"` only for allowlisted `local_demo` targets.
-- AJAX Short requests require `ajax_short_acknowledged: true`.
-- The dashboard exposes AJAX Short selection and acknowledgement before queuing AJAX Short scans.
-- The worker runs the existing custom passive and ZAP passive checks before the bounded ZAP AJAX crawl.
-- ZAP AJAX traffic is scoped to the exact allowlisted context and submitted through SSRF-validated destination-IP-pinned URLs.
-- Shared ZAP daemon access remains serialized with the advisory lock.
-- ZAP AJAX alerts are normalized as `zap-ajax` findings and pass through the same redaction/persistence path.
-
-Phase 9C does not enable arbitrary AJAX crawling, authenticated browser sessions, login workflows, repo scanning, public URL scanning, or business logic checks.
-
-## Phase 9D Status
-
-Phase 9D expands reports and AI explanations to normalized Active Demo findings while keeping repo-scan findings out of scope until Phase 10 normalization and redaction exists.
-
-Implemented Phase 9D capabilities:
-
-- Reports support completed `passive` and `active_demo` scans.
-- AI explanations support completed `passive` and `active_demo` scans.
-- OpenAI remains optional; the default provider remains deterministic `template`.
-- Provider payload tests prove AI receives only normalized/redacted fields from Active Demo findings.
-- Reports and AI do not receive raw ZAP alerts, raw HTTP bodies, raw artifacts, unredacted evidence, or secrets.
-- AJAX Short remains dashboard/findings-only for reports and AI in Phase 9D.
-- Repo-scan findings remain out of Phase 9D and should be handled only after Phase 10 normalization/redaction exists.
-
-## Phase 10 Status
-
-Phase 10 adds repo scanning for existing allowlisted targets with a configured local repo path. Repo scanning uses deterministic Docker-contained scanner adapter stubs in this phase; later work can replace the stub internals with real tools behind the same adapter interface.
-
-Implemented Phase 10 capabilities:
-
-- `POST /scans` accepts `mode: "repo"` only for saved allowlisted targets with a valid local repo path.
-- Repo paths must be absolute, exist as directories, stay under `REPO_SCAN_ROOT`, and must not be symlinks.
-- Docker Compose mounts this project read-only at `/app/repositories/security-project` for local demo repo scans.
-- Repo scans do not clone remote code, install dependencies, fetch remote repositories, run package scripts, run builds, or execute repository code.
-- Deterministic Gitleaks-style and dependency scanner adapter stubs emit normalized findings.
-- Repo findings pass through the same persistence redaction path as web findings.
-- Reports support completed `passive`, `active_demo`, and `repo` scans.
-- AI explanations remain limited to completed `passive` and `active_demo` scans; repo findings are not sent to AI providers in Phase 10.
-
-## Phase 11 Status
-
-Phase 11 adds provider-agnostic platform authentication foundations, workspace isolation, and persisted worker job context.
-
-Implemented Phase 11 capabilities:
-
-- Platform users and provider-agnostic auth identities using `provider` plus `provider_subject`.
-- Auth0 remains the preferred production identity provider, but backend OIDC/JWT validation is provider-agnostic.
-- Explicit local dev auth for Docker and tests using `AUTH_MODE=dev`.
-- Startup validation fails closed when auth configuration is invalid.
-- Dev auth cannot run with `APP_ENV=production`, and dev auth cannot coexist with production OIDC settings.
-- Existing target, scan, finding, report, and AI APIs require bearer authentication.
-- Backend API access is scoped to the authenticated workspace, including report-by-ID and finding-by-ID routes.
-- Scans, findings, evidence artifacts, and report artifacts carry persisted workspace context.
-- Scans, targets, evidence artifacts, and report artifacts carry persisted user context where applicable.
-- Worker lifecycle validation rejects scan jobs whose persisted workspace does not match the target workspace.
-- Frontend local dev API calls attach the configured dev bearer token.
-
-Important local dev auth settings:
-
-```text
-APP_ENV=local
-AUTH_MODE=dev
-AUTH_PROVIDER=dev
-DEV_AUTH_TOKEN=dev-token
-DEV_AUTH_USER_ID=dev-user
-DEV_AUTH_WORKSPACE_ID=dev-workspace
-DEV_AUTH_SUBJECT=dev-user
-NEXT_PUBLIC_DEV_AUTH_TOKEN=dev-token
+```bash
+python3 scripts/bootstrap_env.py
+docker compose --profile maintenance run --rm osv-db-update
+docker compose up --build
 ```
 
-Production-like auth uses:
+The bootstrap creates or completes `.env` and does not overwrite an existing
+Fernet key. `AUTH_PROFILE_SECRET_KEY` is user-managed, must never be committed,
+and may end in `=`. Do not quote it in `.env` unless your environment format
+requires quoting.
 
-```text
-AUTH_MODE=required
-AUTH_PROVIDER=auth0
-AUTH_OIDC_ISSUER=
-AUTH_OIDC_AUDIENCE=
-AUTH_OIDC_JWKS_URL=
+Open the UI at <http://localhost:3001>. The bundled target is available at
+<http://localhost:3000>. API documentation is at <http://localhost:8000/docs>.
+
+To stop the stack:
+
+```bash
+docker compose down
 ```
 
-Target-application authentication profiles are implemented in Phase 14.
+Volumes retain PostgreSQL data, reports, and the OSV database. Add `--volumes`
+only when you intentionally want to delete local state.
 
-## Phase 12 Status
+### Optional demo data
 
-Phase 12 decomposes the frontend dashboard and replaces the old phase-oriented landing page with an authenticated workspace console.
-
-Implemented Phase 12 capabilities:
-
-- Split the large `TargetSetup.tsx` dashboard into focused frontend modules for API types/client helpers, target setup, scan launch/history/progress, reports, AI explanations, and findings.
-- Preserved existing target creation, repo path attachment, scan launch, scan polling, findings, reports, and AI explanation behavior.
-- Added an authenticated workspace app shell with top navigation, workspace indicator, overview metrics, and safety status chips.
-- Replaced the landing/contract overview page with the operational workspace console as the first screen.
-
-Phase 12 does not add finding management, risk scoring, or target-application authentication profiles. Those remain planned for later phases.
-
-## Phase 13 Status
-
-Phase 13 adds code-defined scan profiles while preserving existing scan modes as internal worker execution primitives.
-
-Implemented Phase 13 capabilities:
-
-- Added scan profiles: `passive-web`, `active-demo`, `ajax-short`, and `repository`.
-- Added `scan_profile_id` persistence on scans with migration/backfill from existing `mode` values.
-- Updated scan creation to accept `scan_profile_id` while temporarily preserving deprecated `mode` input for compatibility.
-- Rejects mismatched `scan_profile_id` and `mode` input.
-- Routes acknowledgement, local-demo, repo-path, report eligibility, and AI eligibility decisions through scan profile metadata.
-- Keeps active/AJAX/repo safety gates enforced in backend code.
-- Updated the frontend scan launcher to select profiles and send `scan_profile_id`.
-
-Phase 13 does not add user-editable scan profiles, finding lifecycle management, risk scoring, or dashboards. Those remain planned for later phases.
-
-## Phase 14 Status
-
-Phase 14 adds target-application auth profiles for conservative authenticated passive scans. These profiles are separate from platform user authentication.
-
-Implemented Phase 14 capabilities:
-
-- Added workspace-owned auth profiles for bearer tokens and custom static headers/API keys.
-- Stores auth profile secrets encrypted with `AUTH_PROFILE_SECRET_KEY`; API responses return only metadata and a short secret hint.
-- Targets can optionally reference an auth profile after workspace ownership checks.
-- New scans snapshot the selected target auth profile into persisted scan context.
-- The worker decrypts auth material only for persisted passive-web scan jobs and injects it into guarded custom scanner HTTP requests after allowlist/SSRF validation.
-- Active Demo, AJAX Short, browser/ZAP authenticated workflows, repo scans, login automation, password form flows, and business-logic auth testing remain out of scope.
-- Reports, AI explanations, findings, artifacts, status messages, and API reads must not receive auth profile secrets.
-
-`AUTH_PROFILE_SECRET_KEY` is required for backend and worker startup. Use a generated Fernet key and do not reuse the placeholder in `.env.example`:
-
-```text
-AUTH_PROFILE_SECRET_KEY=<generated-fernet-key>
-```
-
-For local Docker Compose, place this value in a local `.env` file or export it before running Compose commands. Production-like environments fail startup if the key is missing, invalid, or still using the local development example value.
-
-## Phase 15 Status
-
-Phase 15 adds workspace and target dashboards, deterministic versioned risk scoring, and same-target scan comparison.
-
-Implemented Phase 15 capabilities:
-
-- Persists generated scan risk scores with `scoring_model_version`.
-- Uses deterministic `risk-v1` scoring from normalized findings, severity counts, confidence weighting, and scan metadata.
-- Displays risk as a `0-100` score plus labels: Low, Moderate, High, and Critical.
-- Adds workspace-scoped dashboard overview and target dashboard APIs.
-- Adds scan risk-score APIs for completed scans.
-- Adds latest-vs-previous and manual scan comparison for compatible scans from the same workspace and target.
-- Compares findings using stable normalized identity from target plus `dedupe_key`.
-- Classifies comparison findings as new, resolved, unchanged, or severity changed.
-- Adds dense operational dashboard UI with compact risk cards, severity mix, recent scans, and comparison detail.
-
-Risk scoring uses normalized/redacted persisted finding fields only. AI may explain deterministic score inputs in a later phase, but AI must not compute risk scores.
-
-## Phase 16 Status
-
-Phase 16 adds finding lifecycle management, suppression rules, tags, and expanded finding filters while preserving immutable normalized scan history.
-
-Implemented Phase 16 capabilities:
-
-- Persists workspace-owned lifecycle state keyed by target plus finding `dedupe_key`.
-- Tracks occurrence-level lifecycle and suppression state for each persisted finding occurrence.
-- Supports lifecycle statuses: Open, Confirmed, In Progress, Resolved, Suppressed, and False Positive.
-- Adds suppression rules with creator, reason, timestamp, optional expiration, and normalized match fields.
-- Applies suppression only after normalized findings are persisted; scanners continue detecting and storing matching findings.
-- Re-evaluates suppression expiration when findings are read so expired suppressions stop applying without rewriting scanner evidence.
-- Adds workspace-owned tags and tag assignments for targets, scans, and reports.
-- Adds finding filters for current scan or workspace scope, target, scan profile, date, tags, lifecycle, suppression, risk score, severity, confidence, scanner, OWASP, and CWE.
-- Adds dense finding-management UI controls for lifecycle updates, suppression, tag creation/assignment, and expanded filters.
-
-Finding management state uses normalized persisted finding fields only. It must not use raw scanner output, raw artifacts, auth profile secrets, or unredacted evidence.
-
-## Phase 17 Status
-
-Phase 17 adds DB-backed AI request accounting, rate limits, explanation caching, and deterministic risk-score explanation context.
-
-Implemented Phase 17 capabilities:
-
-- Persists AI request accounting by workspace, user, action, provider, model, config hash, input fingerprint, cache hit, allow/deny outcome, and timestamp.
-- Applies configurable rate limits to uncached interactive AI explanations and report-triggered AI generation.
-- Caches scan-level summaries and finding-level explanations using only normalized/redacted fields.
-- Uses deterministic cache fingerprints that include safe finding projections, lifecycle state, suppression state and expiration, report context, AI provider/model/config, and `risk-v1` score inputs.
-- Adds executive summary and risk-score explanation text to AI responses and reports.
-- Keeps AI as an explanation layer only; deterministic backend code computes risk scores.
-- Keeps repo findings excluded from external AI providers.
-- Displays cache status and risk model metadata in the dashboard AI panel.
-
-Default local settings keep the deterministic template provider enabled. `AI_CACHE_ENABLED=true`, `AI_RATE_LIMIT_WINDOW_SECONDS=3600`, and `AI_RATE_LIMIT_MAX_REQUESTS=20` can be adjusted per environment. OpenAI remains optional and should only be enabled with a configured API key and model.
-
-## Phase 18 Status
-
-Phase 18 adds platform operations controls: general API rate limits, append-only audit records, scan cancellation, worker heartbeat, and a health dashboard.
-
-Implemented Phase 18 capabilities:
-
-- Adds database-backed rate-limit logs for scan creation and report generation.
-- Adds append-only workspace audit records for target changes, scan creation/cancellation, report generation, AI explanation requests, finding lifecycle changes, suppression, tags, and auth profile creation.
-- Adds `POST /scans/{scan_id}/cancel`; queued scans become `cancelled`, while running scans record a cancellation request for the worker to honor at safe checkpoints.
-- Adds worker heartbeat records with queue depth and current scan context.
-- Adds `GET /ops/health` for database, worker heartbeat freshness, queue depth, ZAP availability, and artifact-root checks.
-- Adds `GET /audit-logs` for workspace-scoped audit review.
-- Adds dashboard controls for platform health and scan cancellation.
-
-Relevant environment settings:
-
-```text
-API_RATE_LIMIT_WINDOW_SECONDS=3600
-SCAN_CREATE_RATE_LIMIT_MAX_REQUESTS=1000
-REPORT_GENERATION_RATE_LIMIT_MAX_REQUESTS=200
-HEALTH_ZAP_TIMEOUT_SECONDS=1.5
-WORKER_ID=default-worker
-WORKER_STALE_AFTER_SECONDS=30
-```
-
-Phase 18 cancellation is cooperative. Long-running scanner adapters stop at explicit worker checkpoints and must not broaden scan scope while cancelling.
-
-## Phase 19 Status
-
-Phase 19 adds an explicit deterministic demo seed workflow for local portfolio/demo use. It is a one-off command, not a public API endpoint or always-on startup behavior.
-
-Implemented Phase 19 capabilities:
-
-- Seeds the configured local dev-auth user/workspace so the default UI token can see the demo data.
-- Seeds OWASP Juice Shop and local repository demo targets using the existing `juice-shop` allowlist entry.
-- Seeds completed passive-web and repository scans with normalized/redacted findings.
-- Seeds finding lifecycle examples, a suppression rule, tags, tag assignments, versioned `risk-v1` scores, and Markdown/HTML report artifacts.
-- Uses fixed seed IDs and upserts records so the command is idempotent.
-- Keeps repo seed paths under `REPO_SCAN_ROOT` and writes report files only under `ARTIFACT_ROOT`.
-- Does not create auth profiles, store target-app credentials, send AI provider requests, clone repositories, run package scripts, execute repository code, or weaken scan allowlist checks.
-
-Run the seed after migrations with an explicit environment gate:
+Demo seeding is explicit, gated, fixed-ID, and idempotent:
 
 ```bash
 docker compose run --rm -e DEMO_SEED_ENABLED=true backend python -m app.demo_seed
 ```
 
-The command requires the normal local Docker settings, including `AUTH_MODE=dev`, `AUTH_PROVIDER=dev`, and a generated `AUTH_PROFILE_SECRET_KEY` in `.env` or the shell environment.
+The seed contains illustrative normalized findings, not real secrets or raw
+scanner output.
 
-## Responsible Use
+## Local services
 
-Only scan apps you own, run locally, or are explicitly authorized to test. Active scanning is restricted to local/demo allowlisted targets. See [SECURITY.md](./SECURITY.md) before running or extending scan features.
+| Service | Host address | Purpose |
+| --- | --- | --- |
+| Frontend | `127.0.0.1:3001` | ScopeHarbor UI |
+| Backend | `127.0.0.1:8000` | API and documentation |
+| Juice Shop | `127.0.0.1:3000` | Authorized local demo target |
+| PostgreSQL | `127.0.0.1:5432` | Local persistence |
+| ZAP | not published | Worker-only scanner service |
 
-## Local Services
+Published ports bind to loopback by default and can be changed in `.env`.
 
-Planned Docker Compose services:
+## Authentication
 
-- `frontend`: Next.js UI on host port `3001`.
-- `backend`: FastAPI API on host port `8000`.
-- `worker`: background scan worker.
-- `postgres`: database on host port `5432`.
-- `zap`: OWASP ZAP daemon/API reachable inside Compose only, not published to the host.
-- `juice-shop`: OWASP Juice Shop on host port `3000`.
+The generated local environment uses a high-entropy development bearer token.
+It is compiled into the local frontend image and accepted only when
+`APP_ENV=local`, `AUTH_MODE=dev`, and `AUTH_PROVIDER=dev`. Rebuild the frontend
+after changing it.
 
-## Shared Contracts
+For OIDC, set `AUTH_MODE=required`, use a non-`dev` provider name, and configure
+`AUTH_OIDC_ISSUER`, `AUTH_OIDC_AUDIENCE`, and `AUTH_OIDC_JWKS_URL`. Tokens must be
+RS256-signed and contain `sub`, `exp`, and `iat`. Development and OIDC settings
+cannot coexist. Every protected lookup is scoped to the authenticated workspace.
 
-Scan modes:
+Target auth profiles are different from platform login. Their secrets are
+Fernet-encrypted, never returned by the API, and available only to future
+passive scans. Rotation changes the future secret. Revocation wipes ciphertext,
+detaches targets, and preserves a metadata tombstone. Either action is rejected
+while a nonterminal scan references the profile.
 
-- `passive`
-- `active_demo`
-- `ajax_short`
-- `repo`
+## Scan profiles
 
-Scan statuses:
+| Profile | Engine | Constraints | Reports | AI |
+| --- | --- | --- | --- | --- |
+| `passive-web` | guarded crawler + passive checks | exact allowlist; optional static auth profile | yes | yes |
+| `active-demo` | ZAP spider/passive/active | local-demo only; explicit active acknowledgement | yes | yes |
+| `modern-web-crawl` | ZAP Client Spider | local-demo only; depth/time/scope caps | no | no |
+| `repository` | Gitleaks + offline OSV | local path below root; repository code never runs | yes | no |
 
-- `queued`
-- `validating`
-- `running`
-- `normalizing`
-- `completed`
-- `completed_with_warnings`
-- `failed`
-- `cancelled`
+Historical completed AJAX scans remain readable. The old profile is not
+launchable, and any legacy nonterminal AJAX job fails with a safe retired-profile
+code.
 
-Detailed scan steps:
+## Repository tools and OSV data
 
-- `target_validation`
-- `custom_crawl`
-- `custom_checks`
-- `zap_spider`
-- `zap_passive`
-- `zap_active`
-- `zap_ajax`
-- `repo_secrets_scan`
-- `repo_dependency_scan`
-- `normalizing_findings`
-- `generating_reports`
-- `generating_ai_explanations`
+The worker image pins Gitleaks `8.30.1` and OSV-Scanner `2.3.8`. Gitleaks runs in
+directory mode with full redaction. OSV-Scanner runs in source mode with
+`--offline-vulnerabilities` and `--no-resolve`. Scanner JSON exists only in
+bounded ephemeral storage and is discarded after normalization.
 
-## Roadmap Scope Control
+Update the named OSV cache deliberately before dependency scanning and at least
+weekly while in use:
 
-Post-v1 unless explicitly approved:
-
-- Playwright login/session workflows.
-- User A/User B IDOR checks.
-- Business-logic rule testing.
-- MockBank custom demo app.
-- Nuclei templates.
-- Semgrep/full SAST.
-- PDF export.
-- RBAC, team administration, and production user-management hardening beyond Phase 11 workspace isolation.
-- Public cloud scanning.
-
-## Phase Approval Gate
-
-Implementation stops after each phase. The next phase starts only after explicit user approval.
-
-Within an approved phase, work is split into commit-sized subdivisions. The agent may commit each subdivision, continue through the phase, and then stop at the phase boundary for review and user approval. Subdivisions are the minimum planning unit, not a hard one-commit limit: the agent may use one commit, multiple focused commits, or follow-up fix commits when that makes the history clearer or safer.
-
-Each future phase is developed on its own branch using the `phase-*` naming pattern. The user merges the completed phase branch back into the base branch after phase review. Historical branches may still use the older `codex/phase-*` prefix, but new branches follow the `phase-*` convention.
-
-Planned phase branches:
-
-- Phase 4: `phase-4-findings`
-- Phase 5: `phase-5-passive-scanner`
-- Phase 6: `phase-6-dashboard`
-- Phase 7: `phase-7-reports`
-- Phase 8: `phase-8-ai-explanations`
-- Phase 9A: `phase-9a-zap-passive`
-- Phase 9B: `phase-9b-active-demo`
-- Phase 9C: `phase-9c-ajax-short`
-- Phase 9D: `phase-9d-multimode-reports-ai`
-- Phase 10: `phase-10-repo-scanning`
-
-Before a phase starts, the agent verifies a clean worktree, creates or switches to the phase branch from the current base branch, and confirms the active branch. Do not begin the next phase until the user confirms the previous phase branch has been merged back into the base branch.
-
-Review-agent policy for future phases:
-
-- The review sub-agent is pinned to `gpt-5.4` with `medium` reasoning.
-- This pin applies only to the review sub-agent, not to the main implementation chat model or to other spawned agents.
-- The main implementation agent manages any follow-up review passes after review-fix commits.
-- Review orchestration stays in the main implementation context; reviewer prompts should remain ordinary code-review prompts.
-- If the review sub-agent is unavailable, the fallback remains a separate self-review pass using the same checklist.
-- If `gpt-5.4` is removed or renamed later, replace this note with the closest supported review-grade successor and keep it aligned with `AGENTS.md`.
-
-## Database Migrations
-
-Docker Compose includes a one-shot `migrate` service that runs:
-
-```text
-alembic upgrade head
+```bash
+docker compose --profile maintenance run --rm osv-db-update
 ```
 
-The backend readiness endpoint verifies that the initial schema exists before reporting ready.
+This one-shot command is the only repository-scanner network operation. A
+missing or stale database skips the dependency adapter and completes the scan
+with a warning receipt; Gitleaks unavailability is fatal.
 
-## Verification Notes
+## Reports and AI
 
-The full verification path is Docker Compose based because backend tests expect the Compose database and service hostnames by default:
+Reports contain normalized, escaped findings and are written atomically with
+restrictive permissions and no-follow path checks. HTML report responses carry
+a strict content security policy. PDF is not supported.
 
-```text
-AUTH_PROFILE_SECRET_KEY=<generated-fernet-key> docker compose build backend migrate
-AUTH_PROFILE_SECRET_KEY=<generated-fernet-key> docker compose run --rm backend python -m unittest discover tests
-AUTH_PROFILE_SECRET_KEY=<generated-fernet-key> docker compose run --rm frontend npm run build
+AI defaults to the deterministic `template` provider. An external provider is
+optional and receives a bounded safe projection, never raw bodies, scanner
+artifacts, cookies, credentials, or unredacted evidence. Provider errors are
+reduced to stable fallback codes. Repository and modern-crawl findings are not
+sent to AI.
+
+## Operations
+
+Root `GET /health` is a minimal liveness response. Protected
+`GET /api/v1/ops/health` reports safe component status. `GET /ready` validates
+configuration and the database migration head. API and worker startup fail
+closed on invalid auth, encryption, ZAP, limits, paths, allowlist, migration, or
+required-tool configuration.
+
+The maintenance CLI is dry-run-first:
+
+```bash
+docker compose run --rm backend python -m app.maintenance verify
+docker compose run --rm backend python -m app.maintenance orphan-artifacts
+docker compose run --rm backend python -m app.maintenance prune-operational --older-than-days 30
+docker compose run --rm backend python -m app.maintenance backfill-risk
 ```
 
-Host-side backend tests require an explicit `DATABASE_URL` that points at a reachable Postgres instance with the migrated schema. Host-side frontend builds require local `node_modules`.
+Add `--apply` only after reviewing the JSON plan. Maintenance never prunes audit
+logs, findings, reports, or scan history automatically. Fernet key rotation is
+documented in [`docs/OPERATOR_GUIDE.md`](docs/OPERATOR_GUIDE.md).
+
+## API and verification
+
+All product endpoints live below `/api/v1`; there are no compatibility
+redirects. List endpoints return `{"items": [...], "next_cursor": "..."}` with
+a default limit of 50 and maximum of 200. Errors use
+`application/problem+json` and include a safe code and request ID. See
+[`docs/API.md`](docs/API.md).
+
+Local verification commands and expected environment setup are in
+[`docs/OPERATOR_GUIDE.md`](docs/OPERATOR_GUIDE.md). Upgrade instructions are in
+[`docs/UPGRADING.md`](docs/UPGRADING.md). The V1/phase record has moved to
+[`docs/DEVELOPMENT_HISTORY.md`](docs/DEVELOPMENT_HISTORY.md).
+
+## Limitations
+
+- ScopeHarbor is a local operator tool, not a multi-tenant SaaS control plane.
+- Only exact configured HTTP Docker-service targets are launchable in 1.0.
+- ZAP active and Client Spider profiles are restricted to marked local demos.
+- Static target credentials work only with the guarded passive HTTP client.
+- Findings require human validation; absence of findings is not proof of safety.
+- No license or support commitment is currently granted.
+
+Use ScopeHarbor only on systems and repositories you own or are explicitly
+authorized to assess.

@@ -1,10 +1,11 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Finding, FindingOccurrenceState, FindingState, Scan, SuppressionRule, Tag, TagAssignment
+from app.security.sanitization import sanitize_text
 
 LIFECYCLE_STATUSES = {"open", "confirmed", "in_progress", "resolved", "suppressed", "false_positive"}
 SEVERITIES = {"critical", "high", "medium", "low", "info"}
@@ -37,7 +38,7 @@ def normalize_suppression_severity(value: str | None) -> str | None:
 def normalize_suppression_source_tool(value: str | None) -> str | None:
     if value is None:
         return None
-    source_tool = value.strip().lower()
+    source_tool = (sanitize_text(value, maximum=100) or "").strip().lower()
     if not source_tool:
         raise ValueError("Suppression source tool must not be blank.")
     return source_tool
@@ -176,8 +177,8 @@ def suppression_rule_is_active(rule: SuppressionRule) -> bool:
     if expires_at is None:
         return True
     if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    return expires_at > datetime.now(timezone.utc)
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return expires_at > datetime.now(UTC)
 
 
 def tags_for_resource(db: Session, workspace_id: str, resource_type: str, resource_id: str) -> list[Tag]:

@@ -1,13 +1,17 @@
+import secrets
 from dataclasses import dataclass
+from functools import lru_cache
 from uuid import uuid4
 
 import jwt
 from jwt import PyJWKClient, PyJWTError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, settings
 from app.models import AuthIdentity, PlatformUser, Workspace
+from app.security.sanitization import sanitize_text
 
 
 class AuthConfigurationError(ValueError):
@@ -42,8 +46,8 @@ def validate_auth_settings(config: Settings = settings) -> None:
     if auth_mode not in {"dev", "required"}:
         raise AuthConfigurationError("AUTH_MODE must be dev or required.")
     if auth_mode == "dev":
-        if app_env in {"production", "prod"}:
-            raise AuthConfigurationError("AUTH_MODE=dev cannot run when APP_ENV is production.")
+        if app_env != "local":
+            raise AuthConfigurationError("AUTH_MODE=dev is allowed only when APP_ENV=local.")
         if provider != "dev":
             raise AuthConfigurationError("AUTH_PROVIDER must be dev when AUTH_MODE=dev.")
         if has_oidc_config:
@@ -68,7 +72,7 @@ def authenticate_bearer_token(token: str, db: Session, config: Settings = settin
 
 
 def authenticate_dev_token(token: str, db: Session, config: Settings) -> AuthenticatedPrincipal:
-    if token != config.dev_auth_token:
+    if not secrets.compare_digest(token.encode("utf-8"), config.dev_auth_token.encode("utf-8")):
         raise AuthError("Invalid bearer token.")
     provider = "dev"
     subject = config.dev_auth_subject
@@ -96,7 +100,7 @@ def authenticate_oidc_token(token: str, db: Session, config: Settings) -> Authen
         raise AuthConfigurationError("OIDC auth is not fully configured.")
 
     try:
-        jwk_client = PyJWKClient(config.auth_oidc_jwks_url)
+        jwk_client = oidc_jwk_client(config.auth_oidc_jwks_url)
         signing_key = jwk_client.get_signing_key_from_jwt(token)
         claims = jwt.decode(
             token,
@@ -104,13 +108,15 @@ def authenticate_oidc_token(token: str, db: Session, config: Settings) -> Authen
             algorithms=["RS256"],
             audience=config.auth_oidc_audience,
             issuer=config.auth_oidc_issuer,
+            options={"require": ["sub", "exp", "iat"]},
+            leeway=30,
         )
     except PyJWTError as exc:
         raise AuthError("Invalid bearer token.") from exc
     except Exception as exc:
         raise AuthError("OIDC token validation failed.") from exc
     subject = claims.get("sub")
-    if not isinstance(subject, str) or not subject:
+    if not isinstance(subject, str) or not subject or len(subject) > 300:
         raise AuthError("OIDC token is missing a subject.")
 
     provider = normalize(config.auth_provider)
@@ -134,18 +140,61 @@ def authenticate_oidc_token(token: str, db: Session, config: Settings) -> Authen
             provider_subject=subject,
         )
 
+    display_name = sanitize_text(
+        claims.get("name") or claims.get("email") or "Authenticated User",
+        maximum=200,
+    ) or "Authenticated User"
+    return provision_oidc_principal(db, provider=provider, subject=subject, display_name=display_name)
+
+
+@lru_cache(maxsize=8)
+def oidc_jwk_client(jwks_url: str) -> PyJWKClient:
+    return PyJWKClient(jwks_url, cache_keys=True, max_cached_keys=16, lifespan=300)
+
+
+def provision_oidc_principal(
+    db: Session,
+    *,
+    provider: str,
+    subject: str,
+    display_name: str,
+) -> AuthenticatedPrincipal:
+    display_name = sanitize_text(display_name, maximum=200) or "Authenticated User"
     user_id = str(uuid4())
     workspace_id = str(uuid4())
-    display_name = str(claims.get("name") or claims.get("email") or "Authenticated User")
-    ensure_user_workspace_identity(
-        db,
-        user_id=user_id,
-        workspace_id=workspace_id,
-        provider=provider,
-        provider_subject=subject,
-        display_name=display_name,
-        workspace_name="Default Workspace",
-    )
+    try:
+        with db.begin_nested():
+            db.add(PlatformUser(id=user_id, display_name=display_name))
+            db.flush()
+            db.add(Workspace(id=workspace_id, owner_user_id=user_id, name="Default Workspace"))
+            db.flush()
+            db.add(
+                AuthIdentity(
+                    id=str(uuid4()),
+                    user_id=user_id,
+                    provider=provider,
+                    provider_subject=subject,
+                )
+            )
+            db.flush()
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        identity = db.scalar(
+            select(AuthIdentity).where(
+                AuthIdentity.provider == provider,
+                AuthIdentity.provider_subject == subject,
+            )
+        )
+        if identity is None:
+            raise AuthError("Identity provisioning could not be completed safely.") from None
+        workspace = db.scalar(
+            select(Workspace).where(Workspace.owner_user_id == identity.user_id).order_by(Workspace.created_at.asc())
+        )
+        if workspace is None:
+            raise AuthError("Identity provisioning could not be completed safely.") from None
+        user_id = identity.user_id
+        workspace_id = workspace.id
     return AuthenticatedPrincipal(
         user_id=user_id,
         workspace_id=workspace_id,
@@ -166,12 +215,12 @@ def ensure_user_workspace_identity(
 ) -> None:
     user = db.get(PlatformUser, user_id)
     if user is None:
-        db.add(PlatformUser(id=user_id, display_name=display_name))
+        db.add(PlatformUser(id=user_id, display_name=sanitize_text(display_name, maximum=200) or "User"))
         db.flush()
 
     workspace = db.get(Workspace, workspace_id)
     if workspace is None:
-        db.add(Workspace(id=workspace_id, owner_user_id=user_id, name=workspace_name))
+        db.add(Workspace(id=workspace_id, owner_user_id=user_id, name=sanitize_text(workspace_name, maximum=200) or "Workspace"))
         db.flush()
 
     identity = db.scalar(

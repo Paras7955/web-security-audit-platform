@@ -1,18 +1,29 @@
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
-
-from app.auth_profiles import AuthProfileError, LOCAL_DEV_EXAMPLE_SECRET_KEY, validate_auth_profile_secret_settings
+from app.auth_profiles import LOCAL_DEV_EXAMPLE_SECRET_KEY, AuthProfileError, validate_auth_profile_secret_settings
 from app.core.config import Settings
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import AuthIdentity, Finding, PlatformUser, ReportArtifact, Scan, Target, Workspace
-from app.security.auth import AuthConfigurationError, authenticate_oidc_token, ensure_user_workspace_identity, validate_auth_settings
+from app.security.auth import (
+    AuthConfigurationError,
+    AuthError,
+    authenticate_oidc_token,
+    ensure_user_workspace_identity,
+    provision_oidc_principal,
+    validate_auth_settings,
+)
+from fastapi.testclient import TestClient
+from jwt import MissingRequiredClaimError
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
+
 from tests.helpers import DEV_AUTH_HEADERS, ensure_dev_principal
 
 
@@ -104,47 +115,54 @@ class AuthWorkspaceTests(unittest.TestCase):
             db.commit()
 
     def test_protected_routes_reject_missing_bearer_token(self) -> None:
-        response = self.client.get("/targets")
+        response = self.client.get("/api/v1/targets")
 
         self.assertEqual(response.status_code, 401)
         self.assertIn("Bearer", response.json()["detail"])
 
     def test_workspace_scoped_routes_hide_other_workspace_records(self) -> None:
         routes = [
-            ("get", f"/targets/{self.target_id}"),
-            ("patch", f"/targets/{self.target_id}/repo-path"),
-            ("post", "/scans"),
-            ("get", f"/scans/{self.scan_id}"),
-            ("get", f"/scans/{self.scan_id}/findings"),
-            ("get", f"/findings/{self.finding_id}"),
-            ("post", f"/scans/{self.scan_id}/reports"),
-            ("get", f"/scans/{self.scan_id}/reports"),
-            ("get", f"/reports/{self.report_id}"),
-            ("get", f"/reports/{self.report_id}/download"),
-            ("get", f"/scans/{self.scan_id}/ai-explanations"),
+            ("get", f"/api/v1/targets/{self.target_id}"),
+            ("patch", f"/api/v1/targets/{self.target_id}/repo-path"),
+            ("post", "/api/v1/scans"),
+            ("get", f"/api/v1/scans/{self.scan_id}"),
+            ("get", f"/api/v1/scans/{self.scan_id}/findings"),
+            ("get", f"/api/v1/findings/{self.finding_id}"),
+            ("post", f"/api/v1/scans/{self.scan_id}/reports"),
+            ("get", f"/api/v1/scans/{self.scan_id}/reports"),
+            ("get", f"/api/v1/reports/{self.report_id}"),
+            ("get", f"/api/v1/reports/{self.report_id}/download"),
+            ("get", f"/api/v1/scans/{self.scan_id}/ai-explanations"),
         ]
 
         for method, path in routes:
             if method == "patch":
                 response = self.client.patch(path, json={"repo_path": None}, headers=DEV_AUTH_HEADERS)
-            elif method == "post" and path == "/scans":
-                response = self.client.post(path, json={"target_id": self.target_id, "mode": "passive"}, headers=DEV_AUTH_HEADERS)
+            elif method == "post" and path == "/api/v1/scans":
+                response = self.client.post(
+                    path,
+                    json={"target_id": self.target_id, "scan_profile_id": "passive-web", "acknowledgements": ["authorized_target"]},
+                    headers=DEV_AUTH_HEADERS,
+                )
             elif method == "post":
                 response = self.client.post(path, headers=DEV_AUTH_HEADERS)
             else:
                 response = self.client.get(path, headers=DEV_AUTH_HEADERS)
             self.assertEqual(response.status_code, 404, path)
 
-        targets = self.client.get("/targets", headers=DEV_AUTH_HEADERS)
-        scans = self.client.get("/scans", headers=DEV_AUTH_HEADERS)
+        targets = self.client.get("/api/v1/targets", headers=DEV_AUTH_HEADERS)
+        scans = self.client.get("/api/v1/scans", headers=DEV_AUTH_HEADERS)
         self.assertEqual(targets.status_code, 200)
-        self.assertFalse(any(item["id"] == self.target_id for item in targets.json()))
+        self.assertFalse(any(item["id"] == self.target_id for item in targets.json()["items"]))
         self.assertEqual(scans.status_code, 200)
-        self.assertFalse(any(item["id"] == self.scan_id for item in scans.json()))
+        self.assertFalse(any(item["id"] == self.scan_id for item in scans.json()["items"]))
 
     def test_invalid_auth_configuration_fails_closed(self) -> None:
         invalid_configs = [
+            Settings(app_env="local", auth_mode="optional", auth_provider="dev"),
             Settings(app_env="production", auth_mode="dev", auth_provider="dev"),
+            Settings(app_env="local", auth_mode="dev", auth_provider="auth0"),
+            Settings(app_env="local", auth_mode="dev", auth_provider="dev", dev_auth_token=" "),
             Settings(app_env="local", auth_mode="dev", auth_provider="dev", auth_oidc_issuer="https://issuer.example/"),
             Settings(app_env="local", auth_mode="required", auth_provider="dev"),
             Settings(app_env="local", auth_mode="required", auth_provider=" "),
@@ -198,13 +216,13 @@ class AuthWorkspaceTests(unittest.TestCase):
             patch("app.api.deps.settings.auth_oidc_audience", required_settings.auth_oidc_audience),
             patch("app.api.deps.settings.auth_oidc_jwks_url", required_settings.auth_oidc_jwks_url),
         ):
-            response = self.client.get("/targets", headers={"Authorization": "Bearer malformed-token"})
+            response = self.client.get("/api/v1/targets", headers={"Authorization": "Bearer malformed-token"})
 
         self.assertEqual(response.status_code, 401)
         self.assertIn("token", response.json()["detail"].lower())
 
     def test_oidc_identity_reuses_existing_user_workspace(self) -> None:
-        claims = {"sub": "auth0|stable-user", "name": "Stable User"}
+        claims = {"sub": "auth0|stable-user", "name": "Stable User", "exp": 4_102_444_800, "iat": 1_700_000_000}
         oidc_settings = Settings(
             app_env="production",
             auth_mode="required",
@@ -218,7 +236,7 @@ class AuthWorkspaceTests(unittest.TestCase):
             key = "unused"
 
         try:
-            with SessionLocal() as db, patch("app.security.auth.PyJWKClient") as jwk_client, patch(
+            with SessionLocal() as db, patch("app.security.auth.oidc_jwk_client") as jwk_client, patch(
                 "app.security.auth.jwt.decode", return_value=claims
             ):
                 jwk_client.return_value.get_signing_key_from_jwt.return_value = SigningKey()
@@ -249,6 +267,125 @@ class AuthWorkspaceTests(unittest.TestCase):
                     db.execute(delete(Workspace).where(Workspace.owner_user_id == user_id))
                     db.execute(delete(PlatformUser).where(PlatformUser.id == user_id))
                     db.commit()
+
+    def test_oidc_existing_identity_recreates_only_its_missing_workspace(self) -> None:
+        subject = f"auth0|workspace-recovery-{uuid4()}"
+        user_id = str(uuid4())
+        claims = {"sub": subject, "name": "Recovered User", "exp": 4_102_444_800, "iat": 1_700_000_000}
+        oidc_settings = Settings(
+            _env_file=None,
+            app_env="production",
+            auth_mode="required",
+            auth_provider="auth0",
+            auth_oidc_issuer="https://tenant.example/",
+            auth_oidc_audience="scopeharbor-api",
+            auth_oidc_jwks_url="https://tenant.example/.well-known/jwks.json",
+        )
+        signing_key = SimpleNamespace(key="unused")
+
+        try:
+            with SessionLocal() as db:
+                db.add(PlatformUser(id=user_id, display_name="Recovered User"))
+                db.flush()
+                db.add(AuthIdentity(id=str(uuid4()), user_id=user_id, provider="auth0", provider_subject=subject))
+                db.commit()
+            with (
+                SessionLocal() as db,
+                patch("app.security.auth.oidc_jwk_client") as jwk_client,
+                patch("app.security.auth.jwt.decode", return_value=claims),
+            ):
+                jwk_client.return_value.get_signing_key_from_jwt.return_value = signing_key
+                principal = authenticate_oidc_token("token", db, oidc_settings)
+                workspace = db.scalar(select(Workspace).where(Workspace.id == principal.workspace_id))
+
+            self.assertEqual(principal.user_id, user_id)
+            self.assertIsNotNone(workspace)
+            self.assertEqual(workspace.owner_user_id, user_id)
+        finally:
+            with SessionLocal() as db:
+                db.execute(delete(AuthIdentity).where(AuthIdentity.user_id == user_id))
+                db.execute(delete(Workspace).where(Workspace.owner_user_id == user_id))
+                db.execute(delete(PlatformUser).where(PlatformUser.id == user_id))
+                db.commit()
+
+    def test_oidc_validation_requires_subject_expiry_and_issued_at_claims(self) -> None:
+        oidc_settings = Settings(
+            app_env="production",
+            auth_mode="required",
+            auth_provider="auth0",
+            auth_oidc_issuer="https://tenant.example/",
+            auth_oidc_audience="scopeharbor-api",
+            auth_oidc_jwks_url="https://tenant.example/.well-known/jwks.json",
+        )
+
+        class SigningKey:
+            key = "unused"
+
+        for missing_claim in ("sub", "exp", "iat"):
+            with (
+                SessionLocal() as db,
+                patch("app.security.auth.oidc_jwk_client") as jwk_client,
+                patch("app.security.auth.jwt.decode", side_effect=MissingRequiredClaimError(missing_claim)) as decode,
+                self.assertRaises(AuthError),
+            ):
+                jwk_client.return_value.get_signing_key_from_jwt.return_value = SigningKey()
+                authenticate_oidc_token("token", db, oidc_settings)
+            self.assertEqual(decode.call_args.kwargs["algorithms"], ["RS256"])
+            self.assertEqual(set(decode.call_args.kwargs["options"]["require"]), {"sub", "exp", "iat"})
+
+    def test_concurrent_first_login_provisions_one_identity_and_workspace(self) -> None:
+        subject = f"auth0|race-{uuid4()}"
+
+        def provision():
+            with SessionLocal() as db:
+                return provision_oidc_principal(db, provider="auth0", subject=subject, display_name="Race User")
+
+        try:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                principals = list(executor.map(lambda _item: provision(), range(2)))
+            self.assertEqual({principal.user_id for principal in principals}, {principals[0].user_id})
+            self.assertEqual({principal.workspace_id for principal in principals}, {principals[0].workspace_id})
+            with SessionLocal() as db:
+                identities = list(
+                    db.scalars(
+                        select(AuthIdentity).where(
+                            AuthIdentity.provider == "auth0",
+                            AuthIdentity.provider_subject == subject,
+                        )
+                    ).all()
+                )
+                self.assertEqual(len(identities), 1)
+        finally:
+            with SessionLocal() as db:
+                identity = db.scalar(
+                    select(AuthIdentity).where(
+                        AuthIdentity.provider == "auth0",
+                        AuthIdentity.provider_subject == subject,
+                    )
+                )
+                if identity is not None:
+                    user_id = identity.user_id
+                    db.execute(delete(AuthIdentity).where(AuthIdentity.user_id == user_id))
+                    db.execute(delete(Workspace).where(Workspace.owner_user_id == user_id))
+                    db.execute(delete(PlatformUser).where(PlatformUser.id == user_id))
+                    db.commit()
+
+    def test_oidc_provisioning_race_fails_closed_when_winner_is_incomplete(self) -> None:
+        duplicate = IntegrityError("insert identity", {}, Exception("duplicate"))
+
+        missing_identity = MagicMock()
+        missing_identity.begin_nested.side_effect = duplicate
+        missing_identity.scalar.return_value = None
+        with self.assertRaisesRegex(AuthError, "could not be completed safely"):
+            provision_oidc_principal(missing_identity, provider="auth0", subject="missing", display_name="User")
+        missing_identity.rollback.assert_called_once()
+
+        missing_workspace = MagicMock()
+        missing_workspace.begin_nested.side_effect = duplicate
+        missing_workspace.scalar.side_effect = [SimpleNamespace(user_id="existing-user"), None]
+        with self.assertRaisesRegex(AuthError, "could not be completed safely"):
+            provision_oidc_principal(missing_workspace, provider="auth0", subject="incomplete", display_name="User")
+        missing_workspace.rollback.assert_called_once()
 
 
 if __name__ == "__main__":

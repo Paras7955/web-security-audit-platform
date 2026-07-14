@@ -16,7 +16,9 @@ export function AuthProfilesPanel({
   onHeaderNameChange,
   onSecretChange,
   onCreateProfile,
-  onAttachProfile
+  onAttachProfile,
+  onRotateProfile,
+  onRevokeProfile
 }: {
   authProfiles: AuthProfile[];
   selectedTarget: Target | null;
@@ -34,16 +36,20 @@ export function AuthProfilesPanel({
   onSecretChange: (value: string) => void;
   onCreateProfile: () => void;
   onAttachProfile: () => void;
+  onRotateProfile: () => void;
+  onRevokeProfile: () => void;
 }) {
   const selectedProfile = authProfiles.find((profile) => profile.id === selectedAuthProfileId) ?? null;
   const canCreate = Boolean(label.trim() && secret.trim() && (profileType === "bearer_token" || headerName.trim()) && !isBusy);
-  const canAttach = Boolean(selectedTarget && !isBusy);
+  const canAttach = Boolean(selectedTarget && !isBusy && (!selectedProfile || selectedProfile.status === "active"));
+  const canRotate = Boolean(selectedProfile?.status === "active" && secret.trim() && !isBusy);
+  const canRevoke = Boolean(selectedProfile?.status === "active" && !isBusy);
 
   return (
     <div className="panel">
       <div className="panelHeader">
         <h3>Target Auth</h3>
-        <span className="phaseBadge">Phase 14</span>
+        <span className="contextBadge">Encrypted secrets</span>
       </div>
 
       <div className="targetForm">
@@ -68,7 +74,7 @@ export function AuthProfilesPanel({
         ) : null}
 
         <label>
-          <span>Secret</span>
+          <span>New or replacement secret</span>
           <input type="password" value={secret} onChange={(event) => onSecretChange(event.target.value)} placeholder="Stored encrypted; never returned" />
         </label>
 
@@ -86,7 +92,7 @@ export function AuthProfilesPanel({
             <option value="">None</option>
             {authProfiles.map((profile) => (
               <option key={profile.id} value={profile.id}>
-                {profile.label} - {profile.profile_type}
+                {profile.label} - {profile.profile_type} ({profile.status})
               </option>
             ))}
           </select>
@@ -105,11 +111,25 @@ export function AuthProfilesPanel({
             <dt>Selected secret hint</dt>
             <dd>{selectedProfile?.secret_hint ?? "None"}</dd>
           </div>
+          <div>
+            <dt>Profile status</dt>
+            <dd>{selectedProfile?.status ?? "None"}</dd>
+          </div>
+          <div>
+            <dt>Rotations</dt>
+            <dd>{selectedProfile?.rotation_count ?? 0}</dd>
+          </div>
         </dl>
 
         <div className="actions">
           <button type="button" onClick={onAttachProfile} disabled={!canAttach}>
             {selectedAuthProfileId ? "Attach To Target" : "Detach From Target"}
+          </button>
+          <button type="button" className="secondaryButton" onClick={onRotateProfile} disabled={!canRotate}>
+            Rotate Secret
+          </button>
+          <button type="button" className="secondaryButton" onClick={onRevokeProfile} disabled={!canRevoke}>
+            Revoke Profile
           </button>
         </div>
       </div>

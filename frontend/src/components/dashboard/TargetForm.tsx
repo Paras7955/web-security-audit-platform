@@ -33,7 +33,7 @@ export function TargetForm({
     <div className="panel">
       <div className="panelHeader">
         <h3>Target</h3>
-        <span className="phaseBadge">Allowlisted</span>
+        <span className="contextBadge">Allowlisted</span>
       </div>
 
       <form onSubmit={onValidate} className="targetForm">
@@ -83,8 +83,8 @@ export function TargetForm({
               <dd>{validation.base_url}</dd>
             </div>
             <div>
-              <dt>Allowed Modes</dt>
-              <dd>{validation.allowed_modes.join(", ")}</dd>
+              <dt>Available Profiles</dt>
+              <dd>{validation.available_scan_profile_ids.join(", ")}</dd>
             </div>
             <div>
               <dt>Redirect Cap</dt>

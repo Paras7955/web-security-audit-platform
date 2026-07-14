@@ -4,6 +4,8 @@
 .venv/
 __pycache__/
 .pytest_cache/
+.coverage
+coverage.json
 .mypy_cache/
 node_modules/
 .next/
@@ -13,4 +15,3 @@ coverage/
 artifacts/
 reports/
 *.pyc
-

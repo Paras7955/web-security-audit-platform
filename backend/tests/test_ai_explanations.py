@@ -3,13 +3,13 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-from sqlalchemy import delete
-
 from app.ai.service import AiExplanationResult, AiRateLimitExceeded, TemplateAiProvider, generate_ai_explanations
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import AiExplanationCache, AiRequestLog, EvidenceArtifact, Finding, FindingState, Scan, SuppressionRule, Target
+from fastapi.testclient import TestClient
+from sqlalchemy import delete
+
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
@@ -117,7 +117,7 @@ class AiExplanationTests(unittest.TestCase):
         self.assertIn("Content-Security-Policy", first.explanations[0].recommended_action)
 
     def test_ai_api_returns_explanations(self) -> None:
-        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -129,8 +129,8 @@ class AiExplanationTests(unittest.TestCase):
         self.assertIn("Risk is", body["executive_summary"])
 
     def test_ai_api_reuses_cached_explanation_and_logs_requests(self) -> None:
-        first = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
-        second = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        first = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        second = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
@@ -257,13 +257,13 @@ class AiExplanationTests(unittest.TestCase):
 
     def test_ai_api_returns_429_when_rate_limited(self) -> None:
         with patch("app.ai.service.settings.ai_rate_limit_max_requests", 0):
-            response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+            response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 429)
         self.assertIn("rate limit", response.json()["detail"].lower())
 
     def test_cache_payload_contains_only_safe_result_data(self) -> None:
-        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
         self.assertEqual(response.status_code, 200)
 
         with SessionLocal() as db:
@@ -275,7 +275,7 @@ class AiExplanationTests(unittest.TestCase):
         self.assertNotIn("bearer raw-secret", payload_text)
 
     def test_missing_scan_returns_404(self) -> None:
-        response = self.client.get(f"/scans/{uuid4()}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/scans/{uuid4()}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 404)
 
@@ -287,7 +287,7 @@ class AiExplanationTests(unittest.TestCase):
             db.add(scan)
             db.commit()
 
-        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("completed scans", response.json()["detail"])
@@ -301,7 +301,7 @@ class AiExplanationTests(unittest.TestCase):
             db.add(scan)
             db.commit()
 
-        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["provider"], "template")
@@ -315,7 +315,7 @@ class AiExplanationTests(unittest.TestCase):
             db.add(scan)
             db.commit()
 
-        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("passive and Active Demo scans", response.json()["detail"])
@@ -329,7 +329,7 @@ class AiExplanationTests(unittest.TestCase):
             db.add(scan)
             db.commit()
 
-        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("passive and Active Demo scans", response.json()["detail"])
@@ -346,7 +346,7 @@ class AiExplanationTests(unittest.TestCase):
 
         self.assertEqual(result.provider, "template")
         self.assertTrue(result.fallback_used)
-        self.assertIn("OPENAI_API_KEY", result.provider_error or "")
+        self.assertEqual(result.provider_error, "provider_unavailable")
 
     def test_provider_fallback_results_are_not_cached(self) -> None:
         provider = FailingProvider()
@@ -374,11 +374,11 @@ class AiExplanationTests(unittest.TestCase):
         self.assertEqual(cache_rows, [])
 
     def test_unknown_provider_is_rejected(self) -> None:
-        response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
         self.assertEqual(response.status_code, 200)
 
         with patch("app.api.ai.settings.ai_provider", "unexpected"):
-            response = self.client.get(f"/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+            response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("AI_PROVIDER", response.json()["detail"])
@@ -452,9 +452,9 @@ class AiExplanationTests(unittest.TestCase):
             self.assertIsNotNone(provider.payload)
             unsafe_payload = next(item.to_provider_dict() for item in provider.payload if item.id == unsafe_id)
             self.assertEqual(unsafe_payload["location"], "http://juice-shop:3000/callback")
-            self.assertIsNone(unsafe_payload["evidence"])
-            self.assertIsNone(unsafe_payload["reproduction_steps"])
-            self.assertIsNone(unsafe_payload["remediation"])
+            self.assertEqual(unsafe_payload["evidence"], "authorization: bearer [REDACTED]")
+            self.assertEqual(unsafe_payload["reproduction_steps"], "Visit /callback")
+            self.assertIn("[REDACTED]", str(unsafe_payload["remediation"]))
             self.assertNotIn("secret-code", str(unsafe_payload))
             self.assertNotIn("secret-token", str(unsafe_payload))
             self.assertNotIn("raw-secret", str(unsafe_payload))

@@ -3,16 +3,16 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, text
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_principal, get_db
-from app.api.schemas import AuditLogRead, HealthComponentRead, PlatformHealthRead
+from app.api.pagination import PageRequest, page_items, page_request
+from app.api.schemas import AuditLogRead, CursorPage, HealthComponentRead, PlatformHealthRead
 from app.core.config import settings
 from app.models import AuditLog, WorkerHeartbeat
 from app.ops.heartbeat import queue_depth
 from app.security.auth import AuthenticatedPrincipal
-
 
 router = APIRouter(tags=["ops"])
 
@@ -38,29 +38,31 @@ def platform_health(
     )
 
 
-@router.get("/audit-logs", response_model=list[AuditLogRead])
+@router.get("/audit-logs", response_model=CursorPage[AuditLogRead])
 def list_audit_logs(
-    limit: int = 100,
+    page: PageRequest = Depends(page_request),
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
-) -> list[AuditLog]:
-    bounded_limit = max(1, min(limit, 200))
-    return list(
-        db.scalars(
-            select(AuditLog)
-            .where(AuditLog.workspace_id == principal.workspace_id)
-            .order_by(AuditLog.created_at.desc())
-            .limit(bounded_limit)
-        ).all()
-    )
+) -> CursorPage[AuditLogRead]:
+    statement = select(AuditLog).where(AuditLog.workspace_id == principal.workspace_id)
+    if page.cursor_created_at is not None and page.cursor_id is not None:
+        statement = statement.where(
+            or_(
+                AuditLog.created_at < page.cursor_created_at,
+                and_(AuditLog.created_at == page.cursor_created_at, AuditLog.id < page.cursor_id),
+            )
+        )
+    rows = list(db.scalars(statement.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(page.limit + 1)).all())
+    visible, next_cursor = page_items(rows, page.limit)
+    return CursorPage(items=[AuditLogRead.model_validate(entry) for entry in visible], next_cursor=next_cursor)
 
 
 def database_status(db: Session) -> HealthComponentRead:
     try:
         db.execute(text("SELECT 1"))
         return HealthComponentRead(status="ok", detail="database reachable")
-    except Exception as exc:
-        return HealthComponentRead(status="degraded", detail=str(exc))
+    except Exception:
+        return HealthComponentRead(status="degraded", detail="database unavailable")
 
 
 def worker_status(db: Session) -> HealthComponentRead:
@@ -75,16 +77,20 @@ def worker_status(db: Session) -> HealthComponentRead:
     age_seconds = (datetime.now(UTC) - last_seen).total_seconds()
     if age_seconds > settings.worker_stale_after_seconds:
         return HealthComponentRead(status="degraded", detail=f"worker heartbeat stale after {int(age_seconds)} seconds")
-    return HealthComponentRead(status="ok", detail=f"{heartbeat.worker_id} {heartbeat.status}")
+    return HealthComponentRead(status="ok", detail="worker responding")
 
 
 def zap_status() -> HealthComponentRead:
     try:
-        response = httpx.get(f"{settings.zap_base_url}/JSON/core/view/version/", timeout=settings.health_zap_timeout_seconds)
+        response = httpx.get(
+            f"{settings.zap_base_url}/JSON/core/view/version/",
+            headers={"X-ZAP-API-Key": settings.zap_api_key},
+            timeout=settings.health_zap_timeout_seconds,
+        )
         response.raise_for_status()
         return HealthComponentRead(status="ok", detail="zap reachable")
-    except Exception as exc:
-        return HealthComponentRead(status="degraded", detail=str(exc))
+    except Exception:
+        return HealthComponentRead(status="degraded", detail="zap unavailable")
 
 
 def artifact_root_status() -> HealthComponentRead:

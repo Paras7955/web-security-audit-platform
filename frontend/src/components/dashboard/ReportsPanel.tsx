@@ -25,7 +25,7 @@ export function ReportsPanel({
     <div className="reportPanel">
       <div className="panelHeader">
         <h3>Reports</h3>
-        <span className="phaseBadge">Passive + Active Demo + Repo</span>
+        <span className="contextBadge">Normalized findings only</span>
       </div>
 
       <div className="reportActions">

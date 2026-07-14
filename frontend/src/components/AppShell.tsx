@@ -13,8 +13,8 @@ export function AppShell() {
     <main className="appShell">
       <header className="appTopbar">
         <div>
-          <p className="eyebrow">Defensive Web App Security Audit</p>
-          <h1>Workspace Security Console</h1>
+          <p className="eyebrow">ScopeHarbor — Local AppSec Audit Platform</p>
+          <h1>Authorized security reviews, kept inside your environment</h1>
         </div>
         <div className="workspaceBadge" aria-label="Workspace data model">
           <span>Data model</span>
@@ -34,7 +34,7 @@ export function AppShell() {
           </div>
           <div>
             <span>API surface</span>
-            <strong>Protected endpoints</strong>
+            <strong>/api/v1</strong>
           </div>
           <div>
             <span>Target scope</span>

@@ -1,0 +1,96 @@
+name: Backend quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16.14-alpine3.24@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+        env:
+          POSTGRES_DB: scopeharbor_ci
+          POSTGRES_USER: scopeharbor_ci
+          POSTGRES_PASSWORD: scopeharbor-ci-database
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scopeharbor_ci -d scopeharbor_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PYTHONPATH: backend
+      DATABASE_URL: postgresql+psycopg://scopeharbor_ci:scopeharbor-ci-database@127.0.0.1:5432/scopeharbor_ci
+      APP_ENV: local
+      AUTH_MODE: dev
+      AUTH_PROVIDER: dev
+      DEV_AUTH_TOKEN: scopeharbor-ci-development-token
+      DEV_AUTH_USER_ID: scopeharbor-ci-user
+      DEV_AUTH_WORKSPACE_ID: scopeharbor-ci-workspace
+      DEV_AUTH_SUBJECT: scopeharbor-ci-user
+      AUTH_PROFILE_SECRET_KEY: QyZiRES0KAYWYtkLanwPjjEbVZiKA8tLRoNxxgxqG5M=
+      ZAP_BASE_URL: http://zap:8080
+      ZAP_API_KEY: 0123456789abcdef0123456789abcdef
+      ARTIFACT_ROOT: ${{ runner.temp }}/scopeharbor-artifacts
+      REPO_SCAN_ROOT: ${{ github.workspace }}
+      REPO_STAGING_ROOT: ${{ runner.temp }}/scopeharbor-repo-staging
+      ALLOWLIST_PATH: ${{ github.workspace }}/config/scan-allowlist.yml
+      GITLEAKS_CONFIG_PATH: ${{ github.workspace }}/config/gitleaks.toml
+      OSV_CONFIG_PATH: ${{ github.workspace }}/config/osv-scanner.toml
+      OSV_DATABASE_PATH: ${{ runner.temp }}/scopeharbor-osv-db
+      TRUSTED_HOSTS: '["localhost","127.0.0.1","testserver"]'
+      CORS_ORIGINS: '["http://localhost:3001"]'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12.13"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install hash-locked dependencies
+        run: python -m pip install --require-hashes --requirement backend/requirements-dev.txt
+
+      - name: Prepare bounded test paths
+        run: mkdir -p "$ARTIFACT_ROOT" "$REPO_STAGING_ROOT" "$OSV_DATABASE_PATH"
+
+      - name: Check formatting and security lint
+        run: ruff check backend
+
+      - name: Check types
+        run: pyright
+
+      - name: Upgrade schema and check Alembic drift
+        working-directory: backend
+        run: |
+          alembic upgrade head
+          alembic check
+
+      - name: Run backend branch coverage
+        run: |
+          coverage erase
+          coverage run --branch -m unittest discover -s backend/tests
+          coverage report --fail-under=85
+          coverage json -o coverage.json
+          python scripts/check_security_coverage.py coverage.json
+
+      - name: Audit Python runtime dependencies
+        run: pip-audit --require-hashes --disable-pip --requirement backend/requirements.txt

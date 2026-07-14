@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 from urllib.parse import urlparse
 
 import yaml
@@ -34,9 +35,12 @@ class AllowlistTarget(BaseModel):
         normalized = [scheme.lower() for scheme in schemes]
         if len(normalized) != 1:
             raise ValueError("each allowlist target must define exactly one scheme")
-        invalid = [scheme for scheme in normalized if scheme not in {"http", "https"}]
+        # The guarded client pins the validated destination IP. Safe TLS support
+        # additionally requires correct SNI and certificate verification, which
+        # is intentionally not declared until that transport exists.
+        invalid = [scheme for scheme in normalized if scheme != "http"]
         if invalid:
-            raise ValueError(f"unsupported schemes: {invalid}")
+            raise ValueError("ScopeHarbor 1.0 allowlist targets must use exact HTTP Docker service URLs")
         return normalized
 
     @field_validator("hosts")
@@ -62,7 +66,7 @@ class AllowlistTarget(BaseModel):
         return ports
 
     @model_validator(mode="after")
-    def validate_base_url(self) -> "AllowlistTarget":
+    def validate_base_url(self) -> AllowlistTarget:
         parsed = urlparse(self.base_url)
         if parsed.scheme not in self.schemes:
             raise ValueError("base_url scheme must be listed in schemes")
@@ -75,6 +79,8 @@ class AllowlistTarget(BaseModel):
 
         if parsed.username or parsed.password:
             raise ValueError("base_url must not contain credentials")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", self.hosts[0]):
+            raise ValueError("ScopeHarbor 1.0 target hosts must be exact Docker service names")
         return self
 
 
@@ -84,7 +90,7 @@ class ScanAllowlist(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     @model_validator(mode="after")
-    def validate_unique_entries(self) -> "ScanAllowlist":
+    def validate_unique_entries(self) -> ScanAllowlist:
         ids = [target.id for target in self.targets]
         duplicates = sorted({target_id for target_id in ids if ids.count(target_id) > 1})
         if duplicates:

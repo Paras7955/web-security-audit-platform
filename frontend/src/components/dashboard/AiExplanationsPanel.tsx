@@ -5,7 +5,7 @@ export function AiExplanationsPanel({ explanation, message }: { explanation: AiE
     <div className="aiPanel">
       <div className="panelHeader">
         <h3>AI Explanations</h3>
-        <span className="phaseBadge">{explanation?.provider ?? "Template default"}</span>
+        <span className="contextBadge">{explanation?.provider ?? "Template default"}</span>
       </div>
 
       {explanation ? (
@@ -35,7 +35,9 @@ export function AiExplanationsPanel({ explanation, message }: { explanation: AiE
           <p>{explanation.executive_summary}</p>
           <p>{explanation.risk_score_explanation}</p>
           <p>{explanation.summary}</p>
-          {explanation.provider_error ? <p className="errorText">{explanation.provider_error}</p> : null}
+          {explanation.provider_error_code ? (
+            <p className="errorText">Provider fallback code: {explanation.provider_error_code}</p>
+          ) : null}
 
           {explanation.groups.length > 0 ? (
             <ul className="aiGroupList">

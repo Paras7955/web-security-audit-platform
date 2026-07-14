@@ -1,4 +1,5 @@
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -8,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from app.core.contracts import ScanStatus
 from app.models import Finding, RiskScore, Scan
-
 
 SCORING_MODEL_VERSION = "risk-v1"
 COMPLETED_SCAN_STATUSES = {ScanStatus.COMPLETED.value, ScanStatus.COMPLETED_WITH_WARNINGS.value}
@@ -127,6 +127,31 @@ def persist_scan_risk_score(db: Session, scan: Scan, findings: list[Finding]) ->
         return concurrent
 
 
+def read_scan_risk_score(db: Session, scan: Scan, findings: list[Finding]) -> RiskScore:
+    existing = db.scalar(
+        select(RiskScore).where(
+            RiskScore.workspace_id == scan.workspace_id,
+            RiskScore.target_id == scan.target_id,
+            RiskScore.scan_id == scan.id,
+            RiskScore.scoring_model_version == SCORING_MODEL_VERSION,
+        )
+    )
+    if existing is not None:
+        return existing
+    calculated = calculate_scan_risk_score(scan, findings)
+    return RiskScore(
+        id=f"calculated-{scan.id}"[:64],
+        workspace_id=scan.workspace_id,
+        target_id=scan.target_id,
+        scan_id=scan.id,
+        scoring_model_version=calculated.scoring_model_version,
+        score=calculated.score,
+        label=calculated.label,
+        input_summary=calculated.input_summary,
+        created_at=scan.completed_at or scan.created_at,
+    )
+
+
 def dedupe_findings(findings: list[Finding]) -> list[Finding]:
     best_by_key: dict[str, Finding] = {}
     for finding in sorted(findings, key=finding_sort_key):
@@ -177,7 +202,7 @@ def normalize_bucket(value: str | None, fallback: str) -> str:
     return value.strip().lower() or fallback
 
 
-def ordered_counts(counts: Counter[str], keys: object) -> dict[str, int]:
+def ordered_counts(counts: Counter[str], keys: Iterable[str]) -> dict[str, int]:
     ordered = {str(key): counts.get(str(key), 0) for key in keys}
     extras = sorted(key for key in counts if key not in ordered)
     for key in extras:

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models import AuditLog
 from app.security.auth import AuthenticatedPrincipal
+from app.security.sanitization import sanitize_metadata
 
 
 def record_audit_event(
@@ -31,18 +32,5 @@ def record_audit_event(
 
 
 def safe_metadata(metadata: dict[str, object]) -> dict[str, object]:
-    safe: dict[str, object] = {}
-    for key, value in metadata.items():
-        normalized_key = str(key)
-        if "secret" in normalized_key.lower() or "token" in normalized_key.lower() or "key" in normalized_key.lower():
-            safe[normalized_key] = "[REDACTED]"
-            continue
-        if isinstance(value, str):
-            safe[normalized_key] = value[:500]
-        elif isinstance(value, (int, float, bool)) or value is None:
-            safe[normalized_key] = value
-        elif isinstance(value, list):
-            safe[normalized_key] = [str(item)[:200] for item in value[:20]]
-        else:
-            safe[normalized_key] = str(value)[:500]
-    return safe
+    result = sanitize_metadata(metadata)
+    return result if isinstance(result, dict) else {}

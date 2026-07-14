@@ -2,17 +2,19 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_principal, get_db, get_scan_allowlist
-from app.api.schemas import ScanCreate, ScanRead
-from app.core.contracts import ScanMode, ScanProfile, ScanStatus, ScanStep, default_scan_profile_for_mode, scan_profile_for_id
+from app.api.pagination import PageRequest, page_items, page_request
+from app.api.schemas import CursorPage, ScanCreate, ScannerToolRunRead, ScanRead
 from app.core.config import settings
-from app.models import Scan, Target
+from app.core.contracts import ScanMode, ScanProfile, ScanStatus, ScanStep, scan_profile_for_id
+from app.models import Scan, ScannerToolRun, Target
 from app.ops.audit import record_audit_event
 from app.ops.rate_limits import enforce_api_rate_limit
-from app.repo_scanner.paths import RepoPathError, validate_repo_path
+from app.repo_scanner.paths import RepoPathError, resolve_stored_repo_path
+from app.scans.failures import safe_scan_failure
 from app.security.allowlist import ScanAllowlist
 from app.security.auth import AuthenticatedPrincipal
 from app.security.ssrf import SsrfGuardError, validate_destination
@@ -46,8 +48,7 @@ def create_scan(
         profile,
         target,
         allowlist,
-        active_demo_acknowledged=payload.active_demo_acknowledged,
-        ajax_short_acknowledged=payload.ajax_short_acknowledged,
+        acknowledgements=payload.acknowledgements,
     )
     scan = Scan(
         id=str(uuid4()),
@@ -59,7 +60,7 @@ def create_scan(
         mode=mode.value,
         status=ScanStatus.QUEUED.value,
         current_step=ScanStep.TARGET_VALIDATION.value,
-        status_message=f"Queued for {mode.value} scanner worker using {profile.label} profile.",
+        status_message=f"Queued for scanner worker using the {profile.label} profile.",
         progress_percent=0,
     )
     db.add(scan)
@@ -69,11 +70,11 @@ def create_scan(
         event_type="scan.created",
         resource_type="scan",
         resource_id=scan.id,
-        metadata={"target_id": target.id, "scan_profile_id": profile.id, "mode": mode.value},
+        metadata={"target_id": target.id, "scan_profile_id": profile.id},
     )
     db.commit()
     db.refresh(scan)
-    return scan
+    return scan_to_read(scan)
 
 
 @router.post("/{scan_id}/cancel", response_model=ScanRead)
@@ -100,7 +101,7 @@ def cancel_scan(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Terminal scans cannot be cancelled.")
 
     if scan.cancellation_requested_at is not None:
-        return scan
+        return scan_to_read(scan)
 
     previous_status = scan.status
     now = datetime.now(UTC)
@@ -124,21 +125,26 @@ def cancel_scan(
     )
     db.commit()
     db.refresh(scan)
-    return scan
+    return scan_to_read(scan)
 
 
-@router.get("", response_model=list[ScanRead])
+@router.get("", response_model=CursorPage[ScanRead])
 def list_scans(
+    page: PageRequest = Depends(page_request),
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
-) -> list[ScanRead]:
-    return list(
-        db.scalars(
-            select(Scan)
-            .where(Scan.workspace_id == principal.workspace_id)
-            .order_by(Scan.created_at.desc())
-        ).all()
-    )
+) -> CursorPage[ScanRead]:
+    statement = select(Scan).where(Scan.workspace_id == principal.workspace_id)
+    if page.cursor_created_at is not None and page.cursor_id is not None:
+        statement = statement.where(
+            or_(
+                Scan.created_at < page.cursor_created_at,
+                and_(Scan.created_at == page.cursor_created_at, Scan.id < page.cursor_id),
+            )
+        )
+    rows = list(db.scalars(statement.order_by(Scan.created_at.desc(), Scan.id.desc()).limit(page.limit + 1)).all())
+    visible, next_cursor = page_items(rows, page.limit)
+    return CursorPage(items=[scan_to_read(scan) for scan in visible], next_cursor=next_cursor)
 
 
 @router.get("/{scan_id}", response_model=ScanRead)
@@ -150,32 +156,40 @@ def get_scan(
     scan = db.scalar(select(Scan).where(Scan.id == scan_id, Scan.workspace_id == principal.workspace_id))
     if scan is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
-    return scan
+    return scan_to_read(scan)
+
+
+@router.get("/{scan_id}/tool-runs", response_model=CursorPage[ScannerToolRunRead])
+def list_scan_tool_runs(
+    scan_id: str,
+    page: PageRequest = Depends(page_request),
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> CursorPage[ScannerToolRunRead]:
+    if db.scalar(select(Scan.id).where(Scan.id == scan_id, Scan.workspace_id == principal.workspace_id)) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
+    statement = select(ScannerToolRun).where(
+        ScannerToolRun.scan_id == scan_id,
+        ScannerToolRun.workspace_id == principal.workspace_id,
+    )
+    if page.cursor_created_at is not None and page.cursor_id is not None:
+        statement = statement.where(
+            or_(
+                ScannerToolRun.created_at < page.cursor_created_at,
+                and_(ScannerToolRun.created_at == page.cursor_created_at, ScannerToolRun.id < page.cursor_id),
+            )
+        )
+    rows = list(
+        db.scalars(statement.order_by(ScannerToolRun.created_at.desc(), ScannerToolRun.id.desc()).limit(page.limit + 1)).all()
+    )
+    visible, next_cursor = page_items(rows, page.limit)
+    return CursorPage(items=[ScannerToolRunRead.model_validate(tool_run) for tool_run in visible], next_cursor=next_cursor)
 
 
 def resolve_scan_profile(payload: ScanCreate) -> ScanProfile:
-    profile: ScanProfile | None = None
-    if payload.scan_profile_id is not None:
-        profile = scan_profile_for_id(payload.scan_profile_id)
-        if profile is None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported scan profile.")
-
-    if payload.mode is not None:
-        try:
-            mode = ScanMode(payload.mode)
-        except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported scan mode.") from exc
-        mode_profile = default_scan_profile_for_mode(mode.value)
-        if mode_profile is None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported scan mode.") from None
-        if profile is not None and profile.mode != mode:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan mode does not match scan profile.")
-        profile = profile or mode_profile
-
+    profile = scan_profile_for_id(payload.scan_profile_id)
     if profile is None:
-        profile = scan_profile_for_id("passive-web")
-        if profile is None:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Default scan profile is not configured.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported scan profile.")
     return profile
 
 
@@ -184,8 +198,7 @@ def validate_scan_profile(
     target: Target,
     allowlist: ScanAllowlist,
     *,
-    active_demo_acknowledged: bool,
-    ajax_short_acknowledged: bool,
+    acknowledgements: set[str],
 ) -> ScanMode:
     mode = profile.mode
 
@@ -198,23 +211,16 @@ def validate_scan_profile(
         if allowlist_target is None or not allowlist_target.local_demo:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{profile.label} scans are local/demo allowlist only.")
 
-    if profile.requires_active_demo_acknowledgement:
-        if not active_demo_acknowledged:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Active Demo scans require explicit acknowledgement.",
-            )
-
-    if profile.requires_ajax_short_acknowledgement:
-        if not ajax_short_acknowledged:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="AJAX Short scans require explicit acknowledgement.",
-            )
+    missing_acknowledgements = profile.required_acknowledgements - acknowledgements
+    if missing_acknowledgements:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Missing required acknowledgements: {', '.join(sorted(missing_acknowledgements))}.",
+        )
 
     if profile.requires_repo_path:
         try:
-            validate_repo_path(target.repo_path, repo_scan_root=settings.repo_scan_root)
+            resolve_stored_repo_path(target.repo_path, repo_scan_root=settings.repo_scan_root)
         except RepoPathError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -226,6 +232,23 @@ def validate_scan_profile(
 
     revalidate_target_record(target, allowlist)
     return mode
+
+
+def scan_to_read(scan: Scan) -> ScanRead:
+    return ScanRead(
+        id=scan.id,
+        target_id=scan.target_id,
+        scan_profile_id=scan.scan_profile_id,
+        status=scan.status,
+        current_step=scan.current_step,
+        status_message=scan.status_message,
+        progress_percent=scan.progress_percent,
+        started_at=scan.started_at,
+        completed_at=scan.completed_at,
+        cancellation_requested_at=scan.cancellation_requested_at,
+        failure=safe_scan_failure(scan.error_code, scan.status),
+        created_at=scan.created_at,
+    )
 
 
 def revalidate_target_record(target: Target, allowlist: ScanAllowlist) -> None:

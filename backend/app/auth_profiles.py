@@ -21,7 +21,7 @@ ALLOWED_CUSTOM_HEADERS = {
     "x-access-token",
 }
 HEADER_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,119}$")
-LOCAL_DEV_EXAMPLE_SECRET_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+LOCAL_DEV_EXAMPLE_SECRET_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="  # noqa: S105 - rejected outside local mode
 
 
 @dataclass(frozen=True)
@@ -79,6 +79,8 @@ def validate_custom_header_name(header_name: str) -> None:
 
 
 def build_scanner_auth_material(profile: AuthProfile, config: Settings = settings) -> ScannerAuthMaterial:
+    if profile.revoked_at is not None or not profile.encrypted_secret:
+        raise AuthProfileError("Auth profile is revoked.")
     secret = decrypt_secret(profile.encrypted_secret, config)
     if profile.profile_type == "bearer_token":
         return ScannerAuthMaterial(headers={"Authorization": f"Bearer {secret}"})

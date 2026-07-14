@@ -7,12 +7,12 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-from app.core.contracts import Confidence, DEFAULT_LIMITS, Severity
+from app.core.config import settings
+from app.core.contracts import DEFAULT_LIMITS, Confidence, Severity
 from app.findings.schemas import NormalizedFindingInput
 from app.security.allowlist import AllowlistTarget
 from app.security.ssrf import Resolver, SsrfGuardError, validate_destination
 from app.security.target_url import NormalizedTargetUrl, TargetUrlError, normalize_target_url
-
 
 ZAP_PASSIVE_URL_CAP = int(DEFAULT_LIMITS["page_cap"])
 ZAP_ALERT_PAGE_SIZE = 100
@@ -46,8 +46,9 @@ class ZapAlertPage:
 
 
 class ZapApiClient:
-    def __init__(self, *, base_url: str, timeout_seconds: float = 10.0) -> None:
+    def __init__(self, *, base_url: str, api_key: str | None = None, timeout_seconds: float = 10.0) -> None:
         self.base_url = base_url.rstrip("/")
+        self.api_key = settings.zap_api_key if api_key is None else api_key
         self.timeout_seconds = timeout_seconds
 
     def new_session(self, *, name: str) -> None:
@@ -140,6 +141,47 @@ class ZapApiClient:
     def stop_ajax(self) -> None:
         self._zap_get("/JSON/ajaxSpider/action/stop/", {})
 
+    def client_spider_scan(
+        self,
+        *,
+        url: str,
+        context_name: str,
+        max_crawl_depth: int,
+        page_load_seconds: int,
+        number_of_browsers: int,
+    ) -> str:
+        payload = self._zap_get(
+            "/JSON/clientSpider/action/scan/",
+            {
+                "browser": "firefox-headless",
+                "url": url,
+                "contextName": context_name,
+                "subtreeOnly": "true",
+                "maxCrawlDepth": str(max_crawl_depth),
+                "pageLoadTime": str(page_load_seconds),
+                "numberOfBrowsers": str(number_of_browsers),
+                "scopeCheck": "STRICT",
+            },
+        )
+        scan_id = payload.get("scanId") or payload.get("scan")
+        if not isinstance(scan_id, str):
+            raise ZapPassiveError("ZAP did not return a Client Spider scan id.")
+        return scan_id
+
+    def client_spider_status(self, *, scan_id: str) -> int:
+        payload = self._zap_get("/JSON/clientSpider/view/status/", {"scanId": scan_id})
+        raw_status = payload.get("status")
+        try:
+            status = int(raw_status)  # type: ignore[arg-type]
+        except (TypeError, ValueError) as exc:
+            raise ZapPassiveError("ZAP returned an invalid Client Spider status.") from exc
+        if status < 0 or status > 100:
+            raise ZapPassiveError("ZAP returned an invalid Client Spider status.")
+        return status
+
+    def stop_client_spider(self, *, scan_id: str) -> None:
+        self._zap_get("/JSON/clientSpider/action/stop/", {"scanId": scan_id})
+
     def alerts(self, *, base_url: str) -> ZapAlertPage:
         collected: list[dict[str, object]] = []
         start = 0
@@ -172,7 +214,12 @@ class ZapApiClient:
 
     def _zap_get(self, path: str, params: dict[str, str]) -> dict[str, object]:
         try:
-            response = httpx.get(f"{self.base_url}{path}", params=params, timeout=self.timeout_seconds)
+            response = httpx.get(
+                f"{self.base_url}{path}",
+                params=params,
+                headers={"X-ZAP-API-Key": self.api_key},
+                timeout=self.timeout_seconds,
+            )
             response.raise_for_status()
             payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:

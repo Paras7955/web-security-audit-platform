@@ -14,6 +14,7 @@ class SsrfGuardError(ValueError):
 
 
 Resolver = Callable[[str, int], list[str]]
+IpAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 
 
 @dataclass(frozen=True)
@@ -44,7 +45,7 @@ def resolve_host(host: str, port: int) -> list[str]:
     except socket.gaierror as exc:
         raise SsrfGuardError("target host could not be resolved") from exc
 
-    ips = sorted({item[4][0] for item in addrinfo})
+    ips = sorted({str(item[4][0]) for item in addrinfo})
     if not ips:
         raise SsrfGuardError("target host resolved to no addresses")
     return ips
@@ -77,7 +78,7 @@ def validate_destination(
     )
 
 
-def validate_ip_for_target(ip: ipaddress._BaseAddress, host: str, allowlist_target: AllowlistTarget) -> None:
+def validate_ip_for_target(ip: IpAddress, host: str, allowlist_target: AllowlistTarget) -> None:
     if ip in METADATA_IPS:
         raise SsrfGuardError("cloud metadata destinations are blocked")
 
@@ -92,8 +93,11 @@ def validate_ip_for_target(ip: ipaddress._BaseAddress, host: str, allowlist_targ
     if is_internal_address(ip):
         raise SsrfGuardError("private, loopback, link-local, and internal destinations are blocked")
 
+    if allowlist_target.local_demo:
+        raise SsrfGuardError("local Docker service targets must resolve only to an RFC1918 container address")
 
-def is_internal_address(ip: ipaddress._BaseAddress) -> bool:
+
+def is_internal_address(ip: IpAddress) -> bool:
     return bool(
         ip.is_private
         or ip.is_loopback
@@ -104,7 +108,7 @@ def is_internal_address(ip: ipaddress._BaseAddress) -> bool:
     )
 
 
-def is_never_allowed_internal_address(ip: ipaddress._BaseAddress) -> bool:
+def is_never_allowed_internal_address(ip: IpAddress) -> bool:
     return bool(
         ip.is_loopback
         or ip.is_link_local
@@ -114,7 +118,7 @@ def is_never_allowed_internal_address(ip: ipaddress._BaseAddress) -> bool:
     )
 
 
-def is_local_demo_network_address(ip: ipaddress._BaseAddress) -> bool:
+def is_local_demo_network_address(ip: IpAddress) -> bool:
     if isinstance(ip, ipaddress.IPv4Address):
         return any(ip in network for network in RFC1918_NETWORKS)
     return ip in UNIQUE_LOCAL_IPV6

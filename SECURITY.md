@@ -1,130 +1,161 @@
-# Security Policy And Responsible Use
+# ScopeHarbor Security Policy
 
-This project is a defensive web application security learning and portfolio tool. It is not an unauthorized hacking tool and does not replace a professional penetration test, code review, compliance audit, or legal authorization process.
+ScopeHarbor is a defensive, local-first application security audit platform.
+Use it only against applications, services, and repositories you own or have
+explicit permission to assess. You are responsible for confirming the target,
+scope, timing, data-handling rules, and authorization before every scan.
 
-## Authorized Use Only
+This repository is source-visible and currently unlicensed. It is not a hosted
+service and does not provide a public scanning service.
 
-Use this platform only against applications that you own, run locally, or are explicitly authorized to test.
+## Report a vulnerability in ScopeHarbor
 
-V1 active scans are local/demo allowlist only. Arbitrary public targets must be blocked by code, not only by warnings.
+Use GitHub Private Vulnerability Reporting from this repository's **Security**
+tab and select **Report a vulnerability**. Include:
 
-Do not use this platform for:
+- the affected version or commit;
+- a concise impact statement;
+- minimal reproduction steps using a target you control;
+- the security boundary that was crossed;
+- a suggested mitigation, if known.
 
-- Credential attacks.
-- Password spraying or brute force.
-- Destructive testing.
-- Stealth scanning.
-- Mass scanning.
-- Scanning systems you do not own or lack permission to test.
-- Testing the project itself outside authorized environments.
+Do not include real credentials, cookies, raw production traffic, personal data,
+or third-party secrets. Use a synthetic canary when evidence is necessary.
 
-## Scan Safety Rules
+The repository owner must enable GitHub Private Vulnerability Reporting before
+this channel is available. Until it is enabled, do not publish an exploit or
+sensitive report in a public issue. General, non-sensitive defects may still be
+reported through ordinary repository channels when those channels are open.
 
-- Scanner targets must match `config/scan-allowlist.yml`.
-- Platform APIs that create or read targets, scans, findings, reports, and AI explanations must require authenticated workspace context.
-- Workspace isolation must be enforced in backend queries, including direct finding and report artifact lookups by ID.
-- Background scan jobs and generated artifacts must carry persisted workspace and user context.
-- Docker service names are canonical scanner targets inside containers.
-- HTTP clients must disable automatic redirects and manually revalidate redirect destinations.
-- Every outbound scanner request must pass SSRF and allowlist validation.
-- ZAP must be scoped to the exact allowlisted target/context.
-- ZAP passive URL submission must use only validated allowlisted URLs, pin submission URLs to the SSRF-validated destination IP, serialize shared daemon access, and disable automatic redirect following.
-- Active Demo scans require explicit user acknowledgement, must be limited to configured local/demo targets, and must use the same scoped ZAP context and destination-IP pinning controls.
-- AJAX Short scans require explicit user acknowledgement, must be limited to configured local/demo targets, and must use the same scoped ZAP context, destination-IP pinning controls, and shared daemon serialization.
-- Repo scans require a saved allowlisted target with a configured local repo path.
-- Repo paths must be absolute, existing directories under the configured `REPO_SCAN_ROOT`, and must not be symlinks.
-- Repo scans must not clone remote code, install dependencies, fetch remote repositories, run package scripts, run builds, or execute repository code.
-- Target-application auth profiles are supported only for guarded passive-web scanner requests in Phase 14.
-- Active Demo, AJAX Short, browser/ZAP authenticated behavior, repo scans, login automation, password-form workflows, and business-logic auth testing must not use auth profiles in Phase 14.
-- Cloud demos must use sample data only and must not allow arbitrary active scans.
+No response-time or remediation-time commitment is currently offered.
 
-## Evidence And Secret Handling
+## Supported version
 
-- Do not store full HTTP response bodies by default.
-- Store minimal evidence snippets only.
-- Redact sensitive values before database writes, reports, or AI processing.
-- Generate reports only from normalized persisted findings and redacted evidence snippets.
-- Reports are available for completed passive, Active Demo, and Repo scans after normalization and redaction.
-- AI is available for completed passive and Active Demo scans only; repo findings must not be sent to AI providers in Phase 10.
-- Secret scan results must be redacted.
-- Auth profile secrets must be encrypted with a deployment-specific `AUTH_PROFILE_SECRET_KEY`.
-- `AUTH_PROFILE_SECRET_KEY` must be present and valid at startup/readiness; production-like environments must not use the local development example key.
-- Auth profile API reads must never return secret material.
-- Auth profile secrets must not appear in findings, reports, AI payloads, artifacts, logs, scan status messages, or audit-style records.
-- Never send raw response bodies, raw ZAP output, raw secret scanner output, or unredacted evidence to AI providers.
+Security fixes target the current `main` branch and the latest published source
+version. Historical phase branches are development records and are not supported
+release lines.
 
-## Risk Scoring And Dashboards
+## Defensive-use boundaries
 
-- Risk scores must be deterministic and versioned with `scoring_model_version`.
-- Risk scoring must use normalized/redacted persisted finding fields only.
-- Dashboard, risk-score, and scan-comparison APIs must enforce authenticated workspace scope.
-- Scan comparison must compare only compatible completed scans from the same workspace and target.
-- Stable comparison identity must come from normalized target plus finding `dedupe_key`, not raw scanner output.
-- AI providers may explain deterministic score inputs in later phases, but must not compute risk scores.
+ScopeHarbor enforces these boundaries in backend and worker code:
 
-## Finding Management
+- Every launchable web target must exactly match
+  `config/scan-allowlist.yml`; arbitrary URLs are denied.
+- Users must confirm authorization when creating a target and submit the
+  profile-specific acknowledgement codes when starting a scan.
+- ZAP active and Client Spider profiles are limited to allowlist entries marked
+  as local demos.
+- The guarded web scanner accepts exact HTTP Docker-service targets only. HTTPS
+  is rejected until destination-pinned TLS can verify certificate and SNI
+  correctly.
+- Scanner requests disable automatic redirects. Each redirect is normalized,
+  rematched to the allowlist, revalidated for SSRF, and connected to the
+  validated destination IP.
+- ZAP uses a generated API key and exact target/context scope. It is not
+  published to the host network.
+- Cancelling a scan stops it at a safe checkpoint. Active demo and browser scans
+  are never automatically retried after worker interruption.
+- A worker owns a scan through a bounded lease. Stale work fails with the safe
+  `worker_interrupted` code rather than being silently adopted.
 
-- Finding lifecycle state must be workspace-owned and keyed by normalized target plus finding `dedupe_key`.
-- Lifecycle and suppression state must not rewrite immutable scan finding occurrences or scanner evidence.
-- Suppression rules must use normalized persisted finding fields only, never raw scanner output or raw artifacts.
-- Suppression must not prevent scanners from detecting or storing future matching findings.
-- Suppression expiration must be reflected when findings are read.
-- Tags and tag assignments must be scoped to the authenticated workspace.
-- Finding filters and direct finding lookups must enforce authenticated workspace scope.
+Do not weaken these controls for convenience, examples, tests, or UI behavior.
+Adding an allowlist entry is a security decision, not general application data.
 
-## Platform Operations Safety
+## Repository-scanner isolation
 
-- API rate limits must be enforced server-side and scoped by authenticated workspace/user/action.
-- Audit records are append-only operational records; corrections must create new events rather than rewriting old ones.
-- Audit metadata must not include secrets, auth profile material, raw artifacts, raw HTTP bodies, cookies, credentials, or unredacted evidence.
-- Scan cancellation is cooperative. Queued scans may become `cancelled` immediately; running scans must stop only at safe worker checkpoints.
-- Cancellation must not broaden scanner scope, skip SSRF checks, or leave ZAP contexts outside the existing target scope.
-- Health endpoints may report operational status but must not expose secrets or sensitive local filesystem contents.
+Repository scans accept only absolute existing directories below the configured
+`REPO_SCAN_ROOT`. ScopeHarbor stages regular files into a per-scan `0700`
+ephemeral workspace and excludes symlinks, special files, `.git`, dependency
+directories, caches, and build output.
 
-## Demo Seed Safety
+The worker uses trusted ScopeHarbor configurations with pinned Gitleaks and
+OSV-Scanner binaries. It does not honor repository-supplied ignore/config files,
+clone code, access remotes during a scan, resolve dependencies, run package
+managers, build projects, execute hooks, or execute repository code. Gitleaks
+uses full redaction. OSV runs only against a deliberately updated offline
+database. Raw scanner output is bounded, parsed from ephemeral storage, and
+discarded.
 
-- Demo seed behavior must be an explicit command gated by `DEMO_SEED_ENABLED=true`; it must not run automatically at startup and must not be exposed as a public API endpoint.
-- Seeded targets must use existing allowlist entries and must not allow arbitrary public URLs.
-- Seeded repo paths must stay under `REPO_SCAN_ROOT`.
-- Seeded findings, reports, lifecycle state, suppression rules, tags, and risk scores must remain workspace-scoped sample data.
-- Seeded data must not include real credentials, auth profile secrets, raw HTTP bodies, raw scanner artifacts, cookies, or unredacted evidence.
-- The seed command must not clone repositories, fetch remote code, install dependencies, run package scripts, build, or execute repository code.
+The explicit OSV database update command is the only repository-scanner network
+operation. A missing or stale OSV database results in a safe warning and skipped
+dependency adapter, not an online fallback.
 
-## AI Provider Safety
+## Authentication and workspace isolation
 
-- Use `AI_PROVIDER=template` by default for local deterministic explanations.
-- Optional OpenAI explanations must receive only normalized finding fields and redacted evidence snippets.
-- Omit finding text fields from AI provider payloads when redaction has not been confirmed.
-- Strip query strings and fragments from URLs before including locations in AI provider payloads.
-- Cache AI explanations only from normalized/redacted inputs and safe generated output; never cache raw artifacts, raw scanner output, secrets, credentials, cookies, or unredacted evidence.
-- Treat lifecycle state, suppression state and expiration, report context, provider/model/config, and deterministic risk-score model inputs as cache invalidation inputs.
-- Rate-limit uncached interactive and report-triggered AI generation by workspace/user/action/provider/model/config window.
-- Do not send raw artifacts, raw HTTP bodies, raw ZAP output, secret scanner output, authorization material, cookies, or unredacted evidence to any AI provider.
-- Do not send repo-scan findings to AI providers in Phase 10.
-- AI explanations must describe only existing findings and must not invent vulnerabilities, affected assets, evidence, or scan coverage.
-- AI may explain deterministic risk score inputs, but must not compute or override risk scores.
-- If an optional provider fails or is misconfigured, fall back to template explanations and disclose the fallback.
+Local development auth is accepted only under explicit local/dev configuration,
+uses constant-time token comparison, and must not use example credentials.
+Production-like authentication requires an OIDC bearer token with strict
+issuer, audience, RS256 signature, `sub`, `exp`, and `iat` validation.
 
-## Vulnerability Reporting For This Project
+Every protected API lookup is scoped by the authenticated workspace. Direct IDs
+must never be treated as authorization. Worker jobs persist their workspace and
+user context and reject mismatches.
 
-Do not open public issues with exploitable details.
+Target auth profiles are not platform identities. Supported profile secrets are
+Fernet-encrypted at rest, never returned by the API, and injected only into the
+guarded passive HTTP client. Browser/ZAP authentication, login automation, and
+password-form workflows are not supported. Rotation and revocation are blocked
+while a nonterminal scan references a profile; revocation destroys encrypted
+material and leaves only a history-safe tombstone.
 
-Preferred reporting path before public release: GitHub private vulnerability reporting/security advisory.
+Keep `AUTH_PROFILE_SECRET_KEY`, its temporary previous key, development tokens,
+OIDC settings, ZAP keys, database passwords, and AI provider keys in local
+environment configuration. Never commit them.
 
-Before publishing this project, replace this placeholder with a maintainer contact:
+## Data minimization and redaction
 
-```text
-security-contact@example.com
-```
+All persistence boundaries must independently sanitize their input. Scanner
+claims such as `redaction_applied` are not trusted. Before any database or
+artifact write, ScopeHarbor removes URL userinfo, queries, and fragments; caps
+free text; redacts credential-like material; and converts failures into stable
+operator-safe codes and messages.
 
-When reporting a vulnerability, include:
+The following must not cross database, artifact, API, report, audit, cache, log,
+or external-AI boundaries:
 
-- Affected version or commit.
-- Clear reproduction steps.
-- Expected and actual behavior.
-- Impact.
-- Any relevant logs or screenshots with secrets removed.
+- raw HTTP request or response bodies;
+- cookies, authorization values, API keys, passwords, or session material;
+- raw ZAP/Gitleaks/OSV output;
+- raw provider errors, tracebacks, or internal exception details;
+- absolute repository paths;
+- URLs containing userinfo, queries, or fragments;
+- unredacted finding evidence.
 
-## Disclosure Boundary
+Reports use normalized safe projections, atomic no-follow writes, restrictive
+file permissions, HTML escaping, and a strict report content security policy.
+The optional external AI provider receives only a bounded safe projection and
+validated structured output; it never receives repository or modern-crawl
+findings.
 
-This project is for local defensive learning and authorized testing. Report vulnerabilities found in third-party software only through that software owner's approved disclosure process.
+If a canary secret appears in any persisted or returned surface, treat it as a
+security defect and stop the affected workflow.
+
+## Operational expectations
+
+- Run the bootstrap before first use and protect the generated `.env`.
+- Keep container digests and dependency locks reviewed and current.
+- Update the OSV offline database deliberately before dependency scans.
+- Review maintenance dry-runs before adding `--apply`.
+- Never automatically prune audit logs, findings, reports, or scan history.
+- Use a clean temporary database for release verification and migration tests.
+- Restrict API CORS origins and trusted hosts to exact operator-controlled
+  values.
+- Treat `/health` as liveness only; use authenticated platform health and
+  operator logs for diagnostics.
+
+## Explicit non-goals
+
+ScopeHarbor 1.0 does not provide:
+
+- arbitrary public or cloud scanning;
+- authorization for any target;
+- multi-tenant SaaS hardening, RBAC, or team administration;
+- authenticated browser sessions, login automation, or business-logic tests;
+- user-to-user IDOR test automation;
+- Nuclei, Semgrep, or full SAST coverage;
+- remote repository cloning or dependency installation;
+- PDF reports;
+- a guarantee that an assessed target is secure.
+
+Security findings are signals for qualified human review. Scanner output can be
+incomplete, incorrect, or context-dependent.

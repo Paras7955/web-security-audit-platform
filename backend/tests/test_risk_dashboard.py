@@ -1,15 +1,15 @@
-from datetime import datetime, timedelta, timezone
 import unittest
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
-
-from fastapi.testclient import TestClient
-from sqlalchemy import delete
 
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import AuthIdentity, Finding, PlatformUser, RiskScore, Scan, Target, Workspace
-from app.risk import SCORING_MODEL_VERSION, calculate_scan_risk_score
+from app.risk import SCORING_MODEL_VERSION, calculate_scan_risk_score, persist_scan_risk_score
 from app.security.auth import ensure_user_workspace_identity
+from fastapi.testclient import TestClient
+from sqlalchemy import delete, select
+
 from tests.helpers import DEV_AUTH_HEADERS, DEV_USER_ID, DEV_WORKSPACE_ID, ensure_dev_principal
 
 
@@ -59,12 +59,12 @@ class RiskDashboardTests(unittest.TestCase):
         self.assertEqual(score.input_summary["scan_profile_id"], "passive-web")
         self.assertEqual(score.input_summary["lifecycle_adjustments"], [])
 
-    def test_scan_risk_score_persists_model_version(self) -> None:
+    def test_scan_risk_score_calculates_missing_legacy_score_without_get_write(self) -> None:
         target_id = self.create_target()
         scan_id = self.create_scan(target_id)
         self.create_finding(scan_id, "medium-high", severity="medium", confidence="high")
 
-        response = self.client.get(f"/scans/{scan_id}/risk-score", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/scans/{scan_id}/risk-score", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -72,11 +72,10 @@ class RiskDashboardTests(unittest.TestCase):
         self.assertEqual(body["score"], 32)
         self.assertEqual(body["label"], "Moderate")
         with SessionLocal() as db:
-            stored = db.query(RiskScore).filter(RiskScore.scan_id == scan_id).one()
-            self.assertEqual(stored.scoring_model_version, SCORING_MODEL_VERSION)
+            self.assertEqual(db.query(RiskScore).filter(RiskScore.scan_id == scan_id).count(), 0)
 
     def test_dashboard_endpoints_are_workspace_scoped(self) -> None:
-        baseline_overview = self.client.get("/dashboard/overview", headers=DEV_AUTH_HEADERS)
+        baseline_overview = self.client.get("/api/v1/dashboard/overview", headers=DEV_AUTH_HEADERS)
         self.assertEqual(baseline_overview.status_code, 200)
         baseline_body = baseline_overview.json()
         target_id = self.create_target()
@@ -88,10 +87,10 @@ class RiskDashboardTests(unittest.TestCase):
         other_scan_id = self.create_scan(other_target_id, workspace_id=other_workspace_id, user_id=other_user_id)
         self.create_finding(other_scan_id, "other-finding", workspace_id=other_workspace_id, severity="critical", confidence="confirmed")
 
-        overview = self.client.get("/dashboard/overview", headers=DEV_AUTH_HEADERS)
-        target_dashboard = self.client.get(f"/targets/{target_id}/dashboard", headers=DEV_AUTH_HEADERS)
-        hidden_target_dashboard = self.client.get(f"/targets/{other_target_id}/dashboard", headers=DEV_AUTH_HEADERS)
-        hidden_score = self.client.get(f"/scans/{other_scan_id}/risk-score", headers=DEV_AUTH_HEADERS)
+        overview = self.client.get("/api/v1/dashboard/overview", headers=DEV_AUTH_HEADERS)
+        target_dashboard = self.client.get(f"/api/v1/targets/{target_id}/dashboard", headers=DEV_AUTH_HEADERS)
+        hidden_target_dashboard = self.client.get(f"/api/v1/targets/{other_target_id}/dashboard", headers=DEV_AUTH_HEADERS)
+        hidden_score = self.client.get(f"/api/v1/scans/{other_scan_id}/risk-score", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(overview.status_code, 200)
         self.assertEqual(overview.json()["targets_count"], baseline_body["targets_count"] + 1)
@@ -110,7 +109,7 @@ class RiskDashboardTests(unittest.TestCase):
         self.create_finding(first_scan_id, "shared-key", severity="medium", confidence="high")
         self.create_finding(second_scan_id, "shared-key", severity="medium", confidence="high")
 
-        overview = self.client.get("/dashboard/overview", headers=DEV_AUTH_HEADERS)
+        overview = self.client.get("/api/v1/dashboard/overview", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(overview.status_code, 200)
         self.assertGreaterEqual(overview.json()["severity_counts"]["medium"], 2)
@@ -139,7 +138,7 @@ class RiskDashboardTests(unittest.TestCase):
         self.create_finding(comparison_scan_id, "new", severity="low", confidence="medium")
 
         response = self.client.get(
-            f"/scans/{comparison_scan_id}/comparison?baseline_scan_id={baseline_scan_id}",
+            f"/api/v1/scans/{comparison_scan_id}/comparison?baseline_scan_id={baseline_scan_id}",
             headers=DEV_AUTH_HEADERS,
         )
 
@@ -159,8 +158,8 @@ class RiskDashboardTests(unittest.TestCase):
         second_scan_id = self.create_scan(second_target_id)
         queued_scan_id = self.create_scan(first_target_id, status="queued")
 
-        cross_target = self.client.get(f"/scans/{second_scan_id}/comparison?baseline_scan_id={first_scan_id}", headers=DEV_AUTH_HEADERS)
-        incomplete = self.client.get(f"/scans/{first_scan_id}/comparison?baseline_scan_id={queued_scan_id}", headers=DEV_AUTH_HEADERS)
+        cross_target = self.client.get(f"/api/v1/scans/{second_scan_id}/comparison?baseline_scan_id={first_scan_id}", headers=DEV_AUTH_HEADERS)
+        incomplete = self.client.get(f"/api/v1/scans/{first_scan_id}/comparison?baseline_scan_id={queued_scan_id}", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(cross_target.status_code, 400)
         self.assertIn("same target", cross_target.json()["detail"])
@@ -174,9 +173,9 @@ class RiskDashboardTests(unittest.TestCase):
         self.create_finding(baseline_scan_id, "baseline", severity="low", confidence="high")
         self.create_finding(comparison_scan_id, "comparison", severity="medium", confidence="high")
 
-        score = self.client.get(f"/scans/{baseline_scan_id}/risk-score", headers=DEV_AUTH_HEADERS)
+        score = self.client.get(f"/api/v1/scans/{baseline_scan_id}/risk-score", headers=DEV_AUTH_HEADERS)
         comparison = self.client.get(
-            f"/scans/{comparison_scan_id}/comparison?baseline_scan_id={baseline_scan_id}",
+            f"/api/v1/scans/{comparison_scan_id}/comparison?baseline_scan_id={baseline_scan_id}",
             headers=DEV_AUTH_HEADERS,
         )
 
@@ -188,8 +187,12 @@ class RiskDashboardTests(unittest.TestCase):
         target_id = self.create_target()
         scan_id = self.create_scan(target_id)
         self.create_finding(scan_id, "medium-high", severity="medium", confidence="high")
-        first = self.client.get(f"/scans/{scan_id}/risk-score", headers=DEV_AUTH_HEADERS)
-        second = self.client.get(f"/scans/{scan_id}/risk-score", headers=DEV_AUTH_HEADERS)
+        with SessionLocal() as db:
+            scan = db.get(Scan, scan_id)
+            findings = list(db.scalars(select(Finding).where(Finding.scan_id == scan_id)).all())
+            persist_scan_risk_score(db, scan, findings)
+        first = self.client.get(f"/api/v1/scans/{scan_id}/risk-score", headers=DEV_AUTH_HEADERS)
+        second = self.client.get(f"/api/v1/scans/{scan_id}/risk-score", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
@@ -205,7 +208,7 @@ class RiskDashboardTests(unittest.TestCase):
         self.create_finding(oldest_scan_id, "old", severity="low", confidence="high")
         self.create_finding(newest_scan_id, "new", severity="medium", confidence="high")
 
-        response = self.client.get(f"/targets/{target_id}/latest-comparison", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/targets/{target_id}/latest-comparison", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -220,8 +223,8 @@ class RiskDashboardTests(unittest.TestCase):
         self.create_finding(created_later_completed_earlier, "baseline", severity="low", confidence="high")
         self.create_finding(created_earlier_completed_later, "latest", severity="medium", confidence="high")
 
-        response = self.client.get(f"/targets/{target_id}/latest-comparison", headers=DEV_AUTH_HEADERS)
-        target_dashboard = self.client.get(f"/targets/{target_id}/dashboard", headers=DEV_AUTH_HEADERS)
+        response = self.client.get(f"/api/v1/targets/{target_id}/latest-comparison", headers=DEV_AUTH_HEADERS)
+        target_dashboard = self.client.get(f"/api/v1/targets/{target_id}/dashboard", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["baseline_scan_id"], created_later_completed_earlier)
@@ -236,7 +239,7 @@ class RiskDashboardTests(unittest.TestCase):
         self.create_finding(created_later_completed_earlier, "earlier", severity="low", confidence="high")
         self.create_finding(created_earlier_completed_later, "later", severity="medium", confidence="high")
 
-        response = self.client.get("/dashboard/overview", headers=DEV_AUTH_HEADERS)
+        response = self.client.get("/api/v1/dashboard/overview", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["latest_risk_score"]["scan_id"], created_earlier_completed_later)
@@ -258,8 +261,8 @@ class RiskDashboardTests(unittest.TestCase):
         self.create_finding(lower_scan_id, "lower", severity="low", confidence="high")
         self.create_finding(higher_scan_id, "higher", severity="medium", confidence="high")
 
-        latest = self.client.get(f"/targets/{target_id}/latest-comparison", headers=DEV_AUTH_HEADERS)
-        overview = self.client.get("/dashboard/overview", headers=DEV_AUTH_HEADERS)
+        latest = self.client.get(f"/api/v1/targets/{target_id}/latest-comparison", headers=DEV_AUTH_HEADERS)
+        overview = self.client.get("/api/v1/dashboard/overview", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(latest.status_code, 200)
         self.assertEqual(latest.json()["comparison_scan_id"], higher_scan_id)
@@ -301,9 +304,9 @@ class RiskDashboardTests(unittest.TestCase):
         scan_id: str | None = None,
     ) -> str:
         scan_id = scan_id or str(uuid4())
-        created_at = datetime(2026, 7, 7, tzinfo=timezone.utc) + timedelta(minutes=created_offset)
+        created_at = datetime(2026, 7, 7, tzinfo=UTC) + timedelta(minutes=created_offset)
         is_completed = status in {"completed", "completed_with_warnings"}
-        completed_at = datetime(2026, 7, 7, tzinfo=timezone.utc) + timedelta(minutes=completed_offset if completed_offset is not None else created_offset + 1)
+        completed_at = datetime(2026, 7, 7, tzinfo=UTC) + timedelta(minutes=completed_offset if completed_offset is not None else created_offset + 1)
         with SessionLocal() as db:
             scan = Scan(
                 id=scan_id,

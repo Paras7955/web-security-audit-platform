@@ -112,7 +112,7 @@ export function FindingsDashboard({
       <div className="panel findingsPanel">
         <div className="panelHeader">
           <h3>Findings</h3>
-          <span className="phaseBadge">{findings.length}</span>
+          <span className="contextBadge">{findings.length}</span>
         </div>
 
         <div className="filterBar" role="tablist" aria-label="Severity filter">
@@ -290,7 +290,7 @@ function FindingDetail({
       <div className="panel findingDetail">
         <div className="panelHeader">
           <h3>Finding Detail</h3>
-          <span className="phaseBadge">Empty</span>
+          <span className="contextBadge">Empty</span>
         </div>
         <p className="emptyState">Select a completed scan with findings.</p>
       </div>
@@ -350,8 +350,8 @@ function FindingDetail({
           <dd>{finding.affected_url ?? finding.affected_file ?? "global"}</dd>
         </div>
         <div>
-          <dt>Redaction</dt>
-          <dd>{finding.redaction_applied ? "applied" : "not needed"}</dd>
+          <dt>Evidence boundary</dt>
+          <dd>Normalized and redacted</dd>
         </div>
         <div>
           <dt>Tags</dt>
