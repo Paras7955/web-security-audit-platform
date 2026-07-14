@@ -79,7 +79,7 @@ Default host endpoints are frontend `127.0.0.1:3001`, API
 
 - Clean PostgreSQL migration from zero through `0011`, representative upgrade
   from schema `0008`, and Alembic model-drift check: passed.
-- Backend: 267 tests passed; 2 real-binary integration tests are intentionally
+- Backend: 265 tests passed; 2 real-binary integration tests are intentionally
   opt-in and were exercised separately with the pinned tools.
 - Backend branch coverage: 87% overall. Focused coverage: authentication 100%,
   SSRF/redirects 100%, persistence redaction 96.21%, artifact paths 98.28%, and
