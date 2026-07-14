@@ -6,6 +6,7 @@ from uuid import uuid4
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from app import __version__
 from app.auth_profiles import AuthProfileError, build_scanner_auth_material
 from app.core.config import settings
 from app.core.contracts import DEFAULT_LIMITS, ScanMode, ScanStatus, ScanStep
@@ -36,6 +37,7 @@ class ScanDeadlineExceeded(ScanLifecycleError):
 
 
 ZAP_DAEMON_LOCK_KEY = 9001
+ZAP_TOOL_VERSION = "2.17.0"
 
 
 def claim_next_queued_scan(db: Session, *, worker_id: str | None = None) -> Scan | None:
@@ -101,6 +103,7 @@ def run_passive_scan_job(
     zap_base_url: str | None = None,
 ) -> None:
     try:
+        tool_receipts: list[ToolReceipt] = []
         validate_scan_job(scan)
         check_scan_cancelled(db, scan)
         if scan.target is None:
@@ -142,12 +145,22 @@ def run_passive_scan_job(
             progress_percent=30,
         )
 
+        passive_started_at = datetime.now(UTC)
         result = run_passive_scan(
             scan_id=scan.id,
             target_url=scan.target.base_url,
             allowlist_target=allowlist_target,
             artifact_root=artifact_root,
             auth_headers=auth_headers,
+        )
+        tool_receipts.append(
+            completed_tool_receipt(
+                tool_name="scopeharbor-passive",
+                tool_version=__version__,
+                finding_count=len(result.findings),
+                started_at=passive_started_at,
+                warning_code="passive_scan_warning" if result.errors else None,
+            )
         )
         check_scan_cancelled(db, scan)
 
@@ -175,6 +188,7 @@ def run_passive_scan_job(
                 status_message="Running scoped ZAP passive analysis for allowlisted URLs.",
                 progress_percent=76,
             )
+            zap_passive_started_at = datetime.now(UTC)
             with zap_daemon_lock(db):
                 check_scan_cancelled(db, scan)
                 zap_result = run_zap_passive_scan(
@@ -186,6 +200,15 @@ def run_passive_scan_job(
                 )
             zap_findings = zap_result.findings
             zap_errors = zap_result.errors
+            tool_receipts.append(
+                completed_tool_receipt(
+                    tool_name="zap-passive",
+                    tool_version=ZAP_TOOL_VERSION,
+                    finding_count=len(zap_findings),
+                    started_at=zap_passive_started_at,
+                    warning_code="zap_passive_warning" if zap_errors else None,
+                )
+            )
 
             if active_demo:
                 check_scan_cancelled(db, scan)
@@ -197,6 +220,7 @@ def run_passive_scan_job(
                     status_message="Running bounded ZAP Active Demo scan against the local/demo target.",
                     progress_percent=82,
                 )
+                active_started_at = datetime.now(UTC)
                 with zap_daemon_lock(db):
                     check_scan_cancelled(db, scan)
                     active_result = run_zap_active_demo_scan(
@@ -207,6 +231,15 @@ def run_passive_scan_job(
                     )
                 active_findings = active_result.findings
                 active_errors = active_result.errors
+                tool_receipts.append(
+                    completed_tool_receipt(
+                        tool_name="zap-active",
+                        tool_version=ZAP_TOOL_VERSION,
+                        finding_count=len(active_findings),
+                        started_at=active_started_at,
+                        warning_code="zap_active_warning" if active_errors else None,
+                    )
+                )
 
             if modern_web_crawl:
                 check_scan_cancelled(db, scan)
@@ -218,6 +251,7 @@ def run_passive_scan_job(
                     status_message="Running bounded ZAP Client Spider against the local/demo target.",
                     progress_percent=82,
                 )
+                client_spider_started_at = datetime.now(UTC)
                 with zap_daemon_lock(db):
                     check_scan_cancelled(db, scan)
                     client_spider_result = run_zap_client_spider_scan(
@@ -229,10 +263,20 @@ def run_passive_scan_job(
                     )
                 client_spider_findings = client_spider_result.findings
                 client_spider_errors = client_spider_result.errors
+                tool_receipts.append(
+                    completed_tool_receipt(
+                        tool_name="zap-client-spider",
+                        tool_version=ZAP_TOOL_VERSION,
+                        finding_count=len(client_spider_findings),
+                        started_at=client_spider_started_at,
+                        warning_code="client_spider_warning" if client_spider_errors else None,
+                    )
+                )
 
         all_findings = tuple(result.findings) + tuple(zap_findings) + tuple(active_findings) + tuple(client_spider_findings)
         all_errors = tuple(result.errors) + tuple(zap_errors) + tuple(active_errors) + tuple(client_spider_errors)
         check_scan_cancelled(db, scan)
+        persist_tool_receipts(db, scan, tuple(tool_receipts))
         update_scan_progress(
             db,
             scan,
@@ -556,3 +600,22 @@ def persist_tool_receipts(db: Session, scan: Scan, receipts: tuple[ToolReceipt, 
         run.completed_at = receipt.completed_at
         db.add(run)
     db.commit()
+
+
+def completed_tool_receipt(
+    *,
+    tool_name: str,
+    tool_version: str,
+    finding_count: int,
+    started_at: datetime,
+    warning_code: str | None,
+) -> ToolReceipt:
+    return ToolReceipt(
+        tool_name=tool_name,
+        tool_version=tool_version,
+        status="completed_with_warnings" if warning_code else "completed",
+        warning_code=warning_code,
+        finding_count=finding_count,
+        started_at=started_at,
+        completed_at=datetime.now(UTC),
+    )

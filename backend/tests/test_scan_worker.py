@@ -365,6 +365,10 @@ class ScanWorkerTests(unittest.TestCase):
                 persisted = db.scalars(select(Finding).where(Finding.scan_id == self.scan_id).order_by(Finding.source_tool.asc())).all()
                 self.assertEqual(len(persisted), 2)
                 self.assertEqual({finding.source_tool for finding in persisted}, {"custom-passive", "zap-passive"})
+                receipts = db.scalars(select(ScannerToolRun).where(ScannerToolRun.scan_id == self.scan_id)).all()
+                self.assertEqual({receipt.tool_name for receipt in receipts}, {"scopeharbor-passive", "zap-passive"})
+                self.assertTrue(all(receipt.status == "completed" for receipt in receipts))
+                self.assertEqual({receipt.tool_name: receipt.finding_count for receipt in receipts}, {"scopeharbor-passive": 1, "zap-passive": 1})
 
     def test_passive_scan_job_completes_with_warning_when_zap_warns(self) -> None:
         allowlist = build_test_allowlist()
@@ -393,6 +397,16 @@ class ScanWorkerTests(unittest.TestCase):
                 self.assertEqual(scan.status, "completed_with_warnings")
                 self.assertEqual(scan.current_step, "normalizing_findings")
                 self.assertIn("warning", scan.status_message)
+                receipt = db.scalar(
+                    select(ScannerToolRun).where(
+                        ScannerToolRun.scan_id == self.scan_id,
+                        ScannerToolRun.tool_name == "zap-passive",
+                    )
+                )
+                self.assertIsNotNone(receipt)
+                self.assertEqual(receipt.status, "completed_with_warnings")
+                self.assertEqual(receipt.warning_code, "zap_passive_warning")
+                self.assertNotIn("poll limit", receipt.warning_code)
 
     def test_active_demo_scan_job_persists_zap_active_findings(self) -> None:
         allowlist = build_test_allowlist(allowed_modes=("passive", "active_demo"))
@@ -439,6 +453,11 @@ class ScanWorkerTests(unittest.TestCase):
                 persisted = db.scalars(select(Finding).where(Finding.scan_id == self.scan_id)).all()
                 self.assertEqual(len(persisted), 1)
                 self.assertEqual(persisted[0].source_tool, "zap-active")
+                receipts = db.scalars(select(ScannerToolRun).where(ScannerToolRun.scan_id == self.scan_id)).all()
+                self.assertEqual(
+                    {receipt.tool_name for receipt in receipts},
+                    {"scopeharbor-passive", "zap-passive", "zap-active"},
+                )
 
     def test_active_demo_scan_job_fails_when_mode_removed_from_allowlist(self) -> None:
         allowlist = build_test_allowlist(allowed_modes=("passive",))
@@ -520,6 +539,11 @@ class ScanWorkerTests(unittest.TestCase):
                 persisted = db.scalars(select(Finding).where(Finding.scan_id == self.scan_id)).all()
                 self.assertEqual(len(persisted), 1)
                 self.assertEqual(persisted[0].source_tool, "zap-client-spider")
+                receipts = db.scalars(select(ScannerToolRun).where(ScannerToolRun.scan_id == self.scan_id)).all()
+                self.assertEqual(
+                    {receipt.tool_name for receipt in receipts},
+                    {"scopeharbor-passive", "zap-passive", "zap-client-spider"},
+                )
 
     def test_modern_web_crawl_job_fails_without_zap_base_url(self) -> None:
         allowlist = build_test_allowlist(allowed_modes=("passive", "modern_web_crawl"))
