@@ -42,7 +42,7 @@ jobs:
       DEV_AUTH_WORKSPACE_ID: scopeharbor-ci-workspace
       DEV_AUTH_SUBJECT: scopeharbor-ci-user
       AUTH_PROFILE_SECRET_KEY: QyZiRES0KAYWYtkLanwPjjEbVZiKA8tLRoNxxgxqG5M=
-      ZAP_BASE_URL: http://127.0.0.1:18080
+      ZAP_BASE_URL: http://zap:8080
       ZAP_API_KEY: 0123456789abcdef0123456789abcdef
       ARTIFACT_ROOT: ${{ runner.temp }}/scopeharbor-artifacts
       REPO_SCAN_ROOT: ${{ github.workspace }}

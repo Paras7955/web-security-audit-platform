@@ -6,6 +6,8 @@ from unittest.mock import patch
 from app import demo_seed
 from app.demo_seed import (
     BASELINE_SCAN_ID,
+    DEMO_USER_ID,
+    DEMO_WORKSPACE_ID,
     FINDING_SEEDS,
     JUICE_TARGET_ID,
     LATEST_SCAN_ID,
@@ -30,8 +32,6 @@ from app.models import (
 from app.reports.service import read_report_artifact_file
 from app.risk import SCORING_MODEL_VERSION
 from sqlalchemy import delete, select
-
-from tests.helpers import DEV_USER_ID, DEV_WORKSPACE_ID
 
 
 class DemoSeedTests(unittest.TestCase):
@@ -86,11 +86,11 @@ class DemoSeedTests(unittest.TestCase):
                 scans = db.scalars(select(Scan).where(Scan.id.in_([BASELINE_SCAN_ID, LATEST_SCAN_ID, REPO_SCAN_ID]))).all()
                 findings = db.scalars(select(Finding).where(Finding.id.in_([seed.id for seed in FINDING_SEEDS]))).all()
 
-                self.assertTrue(all(target.workspace_id == DEV_WORKSPACE_ID for target in targets))
+                self.assertTrue(all(target.workspace_id == DEMO_WORKSPACE_ID for target in targets))
                 self.assertTrue(all(target.allowlist_id == "juice-shop" for target in targets))
                 self.assertTrue(all(target.base_url == "http://juice-shop:3000" for target in targets))
-                self.assertTrue(all(scan.workspace_id == DEV_WORKSPACE_ID for scan in scans))
-                self.assertTrue(all(finding.workspace_id == DEV_WORKSPACE_ID for finding in findings))
+                self.assertTrue(all(scan.workspace_id == DEMO_WORKSPACE_ID for scan in scans))
+                self.assertTrue(all(finding.workspace_id == DEMO_WORKSPACE_ID for finding in findings))
                 self.assertTrue(all(finding.redaction_applied for finding in findings))
                 self.assertFalse(any("super-secret" in (finding.evidence or "") for finding in findings))
 
@@ -99,7 +99,7 @@ class DemoSeedTests(unittest.TestCase):
                 self.assertFalse(Path(repo_target.repo_path).is_absolute())
                 self.assertTrue((repo_root / repo_target.repo_path).resolve().is_relative_to(repo_root.resolve()))
 
-                other_workspace = Workspace(id="demo-seed-other-workspace", owner_user_id=DEV_USER_ID, name="Other")
+                other_workspace = Workspace(id="demo-seed-other-workspace", owner_user_id=DEMO_USER_ID, name="Other")
                 db.add(other_workspace)
                 db.commit()
                 other_count = db.query(Target).filter(Target.workspace_id == "demo-seed-other-workspace").count()

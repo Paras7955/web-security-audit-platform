@@ -161,6 +161,7 @@ class SecurityHardeningTests(unittest.TestCase):
             base = Settings(
                 _env_file=None,
                 zap_api_key="a" * 32,
+                zap_base_url="http://zap:8080",
                 allowlist_path=str(allowlist),
                 artifact_root=str(root_path / "artifacts"),
                 repo_scan_root=str(root_path / "repos"),
