@@ -2,147 +2,130 @@
 
 ## Current state
 
-ScopeHarbor is a local-first defensive AppSec audit platform. V1 phases 1–19
-are complete. Phase 20 is the approved post-V1 public-readiness program and is
-currently in progress on `phase-20-public-readiness`.
+ScopeHarbor — Local AppSec Audit Platform is at version `1.0.0`. V1 phases
+1–19 and the approved Phase 20 public-readiness program are complete. Any new
+development is post-1.0 scope and requires explicit approval.
 
-Completed Phase 20 areas:
+The release provides:
 
-- ScopeHarbor branding and version `1.0.0`.
-- Product API moved to `/api/v1`; root is limited to liveness, readiness, and
-  generated API documentation.
-- Cursor pagination and workspace-scoped collection reads.
-- RFC 9457-style problem responses, request IDs, bounded request bodies,
-  security/no-store headers, exact CORS origins, and trusted hosts.
-- Safe scan contracts and failure projections, scanner tool receipts, risk-v1
-  completion writes, worker leases, and legacy data migration.
-- OIDC required-claim/JWKS hardening and constant-time local auth.
-- Central persistence sanitization across findings, reports, audit, health,
-  worker failures, AI, and cache surfaces.
-- Auth-profile rotation/revocation lifecycle and dry-run-first maintenance CLI.
-- Real pinned Gitleaks/OSV adapters with bounded ephemeral staging and offline
-  dependency data.
-- ZAP Client Spider replacement for launchable AJAX scanning; historical AJAX
-  records remain readable.
-- Non-root, capability-dropped, read-only-oriented Compose services with pinned
-  images and loopback host ports.
-- Hash-locked Python dependencies, Ruff/Pyright/coverage configuration, and
-  frontend compatibility with the public API.
-- Public product, security, architecture, threat-model, operator, API, upgrade,
-  contribution, and development-history documentation.
-
-Remaining Phase 20 work:
-
-- Add and validate GitHub quality/security automation and Dependabot.
-- Raise focused branch coverage to the stated security-boundary targets.
-- Run dependency audits, final clean-database migrations/suite, Docker image
-  builds, Compose smoke tests, and controlled real scanner demonstrations.
-- Perform the final self-review and refresh this handoff with final results.
+- A FastAPI API under `/api/v1`, a Next.js operator UI, PostgreSQL, and a
+  separately isolated scanner worker.
+- Provider-neutral dev/OIDC authentication, workspace isolation, cursor
+  pagination, RFC 9457-style problems, request IDs, bounded bodies, exact CORS,
+  trusted hosts, security headers, rate limits, and secret-safe structured logs.
+- Exact-allowlist passive web scanning, local-demo ZAP Active scanning, and a
+  bounded local-demo ZAP Client Spider profile. Historical AJAX records remain
+  readable, but the old profile is retired.
+- Local repository scanning with pinned Gitleaks 8.30.1 and OSV-Scanner 2.3.8,
+  bounded regular-file-only staging, trusted scanner configuration, fully
+  redacted evidence, and offline dependency data.
+- Safe scanner tool receipts, normalized findings, lifecycle/suppressions/tags,
+  `risk-v1`, comparisons, Markdown/HTML reports, template explanations, and an
+  optional bounded external AI provider.
+- Encrypted passive-client auth profiles with rotation and revocation, worker
+  leases, schema/legacy cleanup migrations, dry-run-first maintenance, an
+  explicit safe demo seed, and hardened container defaults.
 
 ## Safety invariants
 
-- No arbitrary public URL scanning. Launchable targets must exactly match
+- Never scan arbitrary public URLs. Launchable targets must exactly match
   `config/scan-allowlist.yml` and have explicit authorization confirmation.
-- Current guarded-scanner support is exact HTTP Docker-service targets. Do not
-  admit HTTPS until destination-pinned TLS validates SNI and certificates.
-- Automatic redirects stay disabled; every hop is allowlist/SSRF revalidated
+- Guarded scanner targets are exact HTTP Docker services. HTTPS remains denied
+  until destination-pinned TLS correctly verifies SNI and certificates.
+- Automatic redirects stay disabled. Every hop is allowlist/SSRF revalidated
   and connected to the validated destination IP.
-- ZAP active and Client Spider scans stay local-demo-only and use strict scope,
-  bounded execution, a generated API key, and advisory locking.
-- Repository scans never clone, install, build, run scripts/hooks, execute code,
-  or trust repository-supplied scanner configuration.
-- Persist only sanitized projections. Never persist or emit raw bodies, scanner
-  output, cookies, secrets, URL query data, absolute repository paths, raw
-  provider errors, or unredacted evidence.
-- Direct IDs are not authorization. API and worker operations remain
-  workspace-scoped.
-- Auth-profile secrets stay encrypted and may enter only guarded passive HTTP
-  requests. They never enter ZAP/browser/repository workflows.
+- ZAP Active and Client Spider scans stay local-demo-only, strictly scoped,
+  bounded, API-key protected, and serialized through the ZAP advisory lock.
+- Repository scans never clone, fetch, install, build, run scripts/hooks,
+  execute repository code, or trust repository-supplied scanner configuration.
+- Persist and expose only sanitized projections. Raw bodies, scanner output,
+  cookies, secrets, query strings, absolute repository paths, provider errors,
+  and unredacted evidence must not cross persistence, API, report, AI, cache,
+  audit, artifact, or log boundaries.
+- Direct IDs are not authorization. API, artifacts, reports, and worker jobs
+  remain workspace-scoped.
+- Auth-profile secrets may enter only guarded passive HTTP requests. They never
+  enter ZAP, browser, repository, report, AI, audit, or status workflows.
 
-Read `SECURITY.md` and `docs/THREAT_MODEL.md` before changing a boundary.
+Read `SECURITY.md` and `docs/THREAT_MODEL.md` before changing a trust boundary.
 
 ## Runtime map
 
 | Component | Location | Responsibility |
 | --- | --- | --- |
-| FastAPI app | `backend/app/main.py` | API assembly, lifespan validation, root probes |
-| Public routes | `backend/app/api/` | Authenticated workspace API under `/api/v1` |
-| Models/migrations | `backend/app/models.py`, `backend/alembic/` | Persistence and upgrades |
-| Worker | `backend/worker/main.py` | Queue leasing and scan orchestration |
-| Web scanning | `backend/app/scanner/`, `backend/app/zap/` | Guarded HTTP and ZAP adapters |
-| Repository scanning | `backend/app/repo_scanner/` | Staging, Gitleaks, offline OSV |
-| Safety boundary | `backend/app/security/` | Allowlist, SSRF, URLs, auth, redaction |
-| Reports/AI | `backend/app/reports/`, `backend/app/ai/` | Safe downstream projections |
-| Platform ops | `backend/app/ops/`, `backend/app/maintenance.py` | Audit, health, rate limits, maintenance |
-| Shared contract | `shared/contracts.json` | Product, profiles, acknowledgements, limits |
-| Frontend | `frontend/` | Local operator interface |
-| Runtime | `docker-compose.yml`, `backend/Dockerfile` | Isolated local deployment |
+| API application | `backend/app/main.py`, `backend/app/api/` | Lifespan validation and workspace API |
+| Models and upgrades | `backend/app/models.py`, `backend/alembic/` | Persistence, constraints, and legacy cleanup |
+| Worker and web scanners | `backend/worker/`, `backend/app/scans/`, `backend/app/scanner/`, `backend/app/zap/` | Leasing and guarded web execution |
+| Repository scanners | `backend/app/repo_scanner/` | Bounded staging, Gitleaks, and offline OSV |
+| Safety boundary | `backend/app/security/`, `backend/app/findings/redaction.py` | Allowlist, SSRF, URLs, auth, and sanitization |
+| Reports and AI | `backend/app/reports/`, `backend/app/ai/` | Safe downstream projections |
+| Operations | `backend/app/ops/`, `backend/app/maintenance.py` | Audit, health, limits, and maintenance |
+| Public contract | `shared/contracts.json` | Profiles, acknowledgements, limits, and version |
+| Operator UI | `frontend/` | Local frontend |
+| Runtime | `docker-compose.yml`, `backend/Dockerfile`, `frontend/Dockerfile` | Hardened local deployment |
 
-Host defaults: frontend `127.0.0.1:3001`, API `127.0.0.1:8000`, Juice Shop
-`127.0.0.1:3000`, PostgreSQL `127.0.0.1:5432`; ZAP is internal only.
+Default host endpoints are frontend `127.0.0.1:3001`, API
+`127.0.0.1:8000`, Juice Shop `127.0.0.1:3000`, and PostgreSQL
+`127.0.0.1:5432`. ZAP and the scanner worker are internal only.
 
-## Configuration and operator actions
+## Final verification record
 
-Run `python3 scripts/bootstrap_env.py` before Compose. It fills missing local
-secrets without replacing an existing `AUTH_PROFILE_SECRET_KEY`. The Fernet key
-is user-managed and belongs only in `.env` or the shell environment.
+- Clean PostgreSQL migration from zero through `0010`, representative upgrade
+  from schema `0008`, and Alembic model-drift check: passed.
+- Backend: 263 tests passed; 2 real-binary integration tests are intentionally
+  opt-in and were exercised separately with the pinned tools.
+- Backend branch coverage: 87% overall. Focused coverage: authentication 100%,
+  SSRF/redirects 100%, persistence redaction 96.21%, artifact paths 98.28%, and
+  repository runner boundaries 100%.
+- Ruff and Pyright: clean.
+- Python runtime/dev dependency audits and npm audit: no known vulnerabilities.
+- Frontend lint and production build: passed.
+- API, worker, and frontend image builds: passed on the pinned runtime inputs.
+- Compose bootstrap, migrations, health/readiness, loopback bindings, container
+  users/capabilities, and hardened service startup: passed. Runtime processes
+  were capability-free; scanner services remained on the internal network.
+- Real Gitleaks and offline OSV controlled fixtures: passed, including proof
+  that package scripts/build hooks were not executed.
+- Real passive, repository, and modern Client Spider demo scans: completed with
+  safe findings and versioned scanner receipts.
+- Canary-secret boundary tests cover database, artifacts, reports, AI/cache,
+  audit, API, and captured logs.
 
-Before dependency scanning, populate/update the named offline database:
+## Operator actions
 
-```bash
-docker compose --profile maintenance run --rm osv-db-update
-```
+1. Run `python3 scripts/bootstrap_env.py`. It fills missing local values without
+   replacing an existing user-managed `AUTH_PROFILE_SECRET_KEY`.
+2. Populate the offline advisory database before repository dependency scans:
 
-For production-like login, replace dev auth with strict OIDC settings. The owner
-must separately enable GitHub Private Vulnerability Reporting and desired
-repository security features. The repository remains unlicensed/source-visible.
+   ```bash
+   docker compose --profile maintenance run --rm osv-db-update
+   ```
 
-See `docs/OPERATOR_GUIDE.md` for startup, health, maintenance, seed, and key
-rotation procedures.
+3. Enable GitHub Private Vulnerability Reporting and the desired repository
+   security features in GitHub settings.
+4. For production-like login, replace local dev auth with the documented strict
+   OIDC configuration.
 
-## Verification history
+See `README.md`, `docs/OPERATOR_GUIDE.md`, and `docs/UPGRADING.md` for setup,
+maintenance, seed, key rotation, and upgrade procedures.
 
-Latest completed checks during Phase 20:
+## Known limits and future decisions
 
-- Backend: 254 tests passed; one intentional real-binary test skipped unless
-  `SCOPEHARBOR_REAL_SCANNER_TESTS=1`.
-- Backend branch coverage: 86% overall.
-- Focused boundary coverage at that checkpoint: auth 91%, redirect validation
-  94%, sanitization 98%, SSRF 97%, artifacts 94%, repository adapters 93%.
-- Ruff clean and Pyright reported zero errors.
-- Frontend lint and production build clean.
-- `npm ci` reported zero known audit vulnerabilities.
-- Compose configuration validated with a bootstrapped temporary environment.
-
-These are interim results, not the final acceptance record. Dependency audits,
-container builds/smoke tests, controlled real scanner runs, and the final clean
-database verification remain outstanding.
-
-## Known risks and limits
-
-- Security-critical auth, redirect, artifact, and repository-runner modules do
-  not all yet meet the planned 95% branch-coverage threshold.
-- The OSV adapter is intentionally unavailable until an operator downloads the
-  offline database; stale data yields a visible warning rather than online use.
-- External AI is optional and adds an operator-controlled data processor even
-  though payloads are bounded and sanitized. Template mode is the safe default.
-- ZAP and browser add-ons are third-party scanner engines; strict scope and
-  local-demo limits reduce but do not eliminate application-side effects.
-- ScopeHarbor is not designed or documented as a hosted multi-tenant service.
-- The ScopeHarbor name has only informal collision checking, not legal trademark
+- ScopeHarbor is local-first and is not designed as a hosted multi-tenant SaaS.
+- The offline OSV database is operator-managed. Missing or stale data produces
+  an explicit warning and skips dependency analysis instead of going online.
+- External AI is optional and adds an operator-controlled data processor;
+  deterministic template mode remains the safe default.
+- Juice Shop needs a writable root filesystem for its bundled demo database and
+  fixtures; it still runs non-root with all capabilities dropped.
+- The repository is source-visible and unlicensed, with reuse rights reserved.
+  External pull requests are not accepted until licensing is resolved.
+- The ScopeHarbor name has informal collision checking only, not legal trademark
   clearance.
+- Arbitrary public/cloud scanning, SaaS/RBAC administration, authenticated
+  browser workflows, business-logic automation, Semgrep/full SAST, Nuclei, and
+  PDF export remain out of scope unless explicitly approved.
 
-## Next implementation actions
-
-1. Add pinned GitHub workflows for backend/frontend quality, CodeQL, dependency
-   review, and scheduled dependency update configuration.
-2. Add focused tests for remaining uncovered auth, redirect, artifact, repository
-   path/staging, and adapter error branches.
-3. Run final audits and acceptance verification using a clean temporary database
-   and controlled local scanner fixtures.
-4. Record final self-review decisions and update this handoff's status and
-   verification section.
-
-Do not infer prior chat decisions that are absent from `AGENTS.md`, this handoff,
-`README.md`, or `SECURITY.md`; ask the user when a missing decision would change
-scope or safety.
+Do not infer prior decisions that are absent from `AGENTS.md`, this handoff,
+`README.md`, or `SECURITY.md`; ask when a missing decision would change scope or
+safety.
