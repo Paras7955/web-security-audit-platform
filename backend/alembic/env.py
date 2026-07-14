@@ -1,6 +1,7 @@
 from logging.config import fileConfig
 
 from alembic import context
+from app import models as _models  # noqa: F401 - populate Base.metadata for drift detection
 from app.core.config import settings
 from app.db.base import Base
 from sqlalchemy import engine_from_config, pool

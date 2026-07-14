@@ -92,6 +92,12 @@ class MigrationTests(unittest.TestCase):
             finally:
                 isolated_engine.dispose()
 
+    def test_schema_head_has_no_model_drift(self) -> None:
+        with isolated_schema() as (database_url, migration_config):
+            with patch("app.core.config.settings.database_url", database_url):
+                command.upgrade(migration_config, "head")
+                command.check(migration_config)
+
 
 @contextmanager
 def isolated_schema():
