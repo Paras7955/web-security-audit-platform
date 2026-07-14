@@ -120,8 +120,13 @@ paths are not public fields.
 | GET | `/targets/{target_id}` | Read target metadata |
 | PATCH | `/targets/{target_id}/repo-path` | Set/clear confined repository path |
 | PATCH | `/targets/{target_id}/auth-profile` | Attach/detach workspace auth profile |
+| DELETE | `/targets/{target_id}` | Archive an inactive target while preserving history |
 
-Target reads expose `has_repo_path`, never the absolute stored path.
+Target reads expose `has_repo_path`, never the absolute stored path. `DELETE`
+returns `409` while any nonterminal scan references the target. A successful
+archive clears authorization timestamps, repository configuration, and the
+auth-profile attachment; active target reads no longer return it, while prior
+scans, findings, reports, scores, and audit records remain workspace-readable.
 
 ### Auth profiles
 

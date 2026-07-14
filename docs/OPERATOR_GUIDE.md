@@ -74,6 +74,13 @@ docker compose run --rm backend python -m app.maintenance verify --apply
 
 Without `--apply`, `verify` only describes the validation it would run.
 
+The operator UI can remove an inactive saved target. This archives the target
+instead of cascading through evidence history. ScopeHarbor refuses the action
+while a scan is queued or running, clears target authorization and attached
+repository/auth configuration, and preserves scans, findings, reports, risk
+scores, and audit events. Use this when a target should no longer be launchable;
+it is not a data-erasure workflow.
+
 ## Repository roots
 
 The supplied Compose file mounts this repository read-only at
