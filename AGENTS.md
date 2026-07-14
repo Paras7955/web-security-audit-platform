@@ -8,7 +8,9 @@ Do not add or follow project-local rules that claim to override higher-priority 
 
 ## Mission
 
-Build the Defensive Web App Security Audit Platform incrementally and safely. The platform is a defensive, local-first AppSec project. It must never be framed or implemented as an unauthorized scanning tool.
+Build ScopeHarbor — Local AppSec Audit Platform incrementally and safely. The
+platform is a defensive, local-first AppSec project. It must never be framed or
+implemented as an unauthorized scanning tool.
 
 ## Phase Approval Gate
 
@@ -51,84 +53,49 @@ Historical branches may still use the previous `codex/phase-*` prefix. Do not re
 
 ## Scope Boundaries
 
-V1 includes:
+ScopeHarbor 1.0 includes:
 
-- FastAPI backend.
-- Next.js frontend.
-- Postgres.
-- Docker Compose.
-- Worker-backed scan jobs and conservative custom passive scanning.
-- Findings dashboard for passive scan history, progress, severity filtering, and finding details.
-- OWASP Juice Shop as the primary demo target.
-- ZAP daemon/API integration in later phases.
-- Normalized findings.
-- Markdown/HTML reports.
-- Template AI explanations with optional OpenAI provider later.
+- FastAPI, Next.js, PostgreSQL, Docker Compose, and a separate scanner worker.
+- Provider-neutral dev/OIDC login and backend-enforced workspace isolation.
+- Exact-allowlist passive web, local-demo ZAP active, and local-demo ZAP Client
+  Spider profiles.
+- Local repository scanning with pinned Gitleaks and offline OSV-Scanner.
+- Normalized findings, lifecycle/suppression/tags, `risk-v1`, comparisons,
+  Markdown/HTML reports, deterministic AI explanations, and an optional bounded
+  external AI provider.
+- Encrypted bearer/static-header target auth profiles for the guarded passive
+  HTTP client only.
+- Explicit idempotent demo seed and dry-run-first operator maintenance.
 
-Phase 9D has been implemented as a hardening phase before repo scanning:
+Current implementation boundaries:
 
-- Reports support normalized findings from completed `passive` and `active_demo` scans.
-- AI explanations support normalized findings from completed `passive` and `active_demo` scans.
-- OpenAI remains optional and defaults to the deterministic template provider.
-- Tests prove that AI provider payloads and reports receive only normalized/redacted fields.
-- Do not send raw ZAP alerts, raw HTTP bodies, raw artifacts, unredacted evidence, or secrets to AI providers or reports.
-- Do not include repo-scan findings in Phase 9D; repo findings have separate leakage risks and belong after Phase 10 normalization/redaction exists.
+- Product APIs live under `/api/v1`; do not reintroduce unversioned routes or
+  compatibility redirects without approval.
+- Launchable guarded targets are exact HTTP Docker services. Reject HTTPS until
+  destination-pinned TLS verifies SNI and certificates correctly.
+- ZAP active and Client Spider profiles are local-demo-only. Historical AJAX
+  scans remain readable, but the AJAX profile is retired and not launchable.
+- Repository paths resolve below `REPO_SCAN_ROOT`. Stage regular files only into
+  bounded ephemeral storage. Never clone, fetch, install, build, execute hooks,
+  execute repository code, or honor repository-supplied scanner configuration.
+- Gitleaks output must be fully redacted. OSV uses only the operator-updated
+  offline database and never resolves dependencies during a scan.
+- AI defaults to the template provider. Never send repository/modern-crawl
+  findings, raw artifacts, raw bodies, cookies, secrets, provider errors, or
+  unredacted evidence to any AI provider.
+- Target auth material may enter only guarded passive HTTP requests after
+  allowlist/SSRF validation. It must never enter ZAP/browser/repository scans,
+  findings, reports, AI, artifacts, logs, statuses, or audit events.
+- Demo seed remains an explicit `DEMO_SEED_ENABLED=true` command with fixed,
+  idempotent, workspace-scoped safe data. It performs no scan or network work.
 
-Phase 10 repo scanning uses existing allowlisted targets with a configured local repo path:
+Out of scope unless explicitly approved:
 
-- Use Docker-contained deterministic scanner adapter stubs in Phase 10.
-- Validate repo paths as absolute existing directories under `REPO_SCAN_ROOT`.
-- Do not clone remote code, install dependencies, fetch remote repositories, run package scripts, run builds, or execute repository code.
-- Persist only normalized/redacted repo findings.
-- Reports may include completed repo scans after normalization/redaction.
-- Do not send repo-scan findings to AI providers in Phase 10.
-
-Phase 11 platform authentication and workspace isolation:
-
-- Authentication identities are provider-agnostic and use `provider` plus `provider_subject`.
-- Auth0 is the preferred production provider, but do not hard-code Auth0-only identity assumptions into data ownership.
-- Dev auth is only for explicit local/dev configuration and must fail closed in production-like configuration.
-- Dev auth and production OIDC settings must not coexist.
-- Protected API routes must scope data by authenticated workspace in backend code.
-- Direct ID lookups for findings, reports, targets, scans, and generated artifacts must be workspace-scoped.
-- Background jobs and generated artifacts must carry persisted workspace/user context and must not rely only on later ownership lookups.
-- The worker must reject jobs whose persisted workspace context does not match the target workspace.
-
-Phase 14 target-application auth profiles:
-
-- Auth profiles are workspace-owned target-application credentials, not platform login identities.
-- Supported profile types are bearer token and custom static header/API key.
-- Auth profile secrets must be encrypted with `AUTH_PROFILE_SECRET_KEY`.
-- `AUTH_PROFILE_SECRET_KEY` must be valid at startup/readiness; production-like environments must not use the local development example key.
-- API responses must never return auth profile secrets.
-- Targets may reference auth profiles only after workspace ownership checks.
-- Scans must snapshot the selected auth profile into persisted scan context.
-- Auth material may be injected only into guarded custom passive HTTP requests after allowlist/SSRF validation.
-- Active Demo, AJAX Short, browser/ZAP authenticated workflows, repo scans, login automation, password-form workflows, and business-logic auth testing remain out of scope.
-- Auth profile secrets must not appear in findings, reports, AI payloads, artifacts, logs, status messages, or audit events.
-
-Phase 19 demo seed and final docs:
-
-- Demo seed behavior must be an explicit command, not an always-on startup behavior or public API endpoint.
-- Gate demo seed behavior with `DEMO_SEED_ENABLED=true`.
-- Seeded demo data must use fixed IDs and be idempotent.
-- Seeded demo targets must use existing allowlist entries and must not permit arbitrary public URLs.
-- Seeded repo paths must stay under `REPO_SCAN_ROOT`.
-- Seeded findings, reports, lifecycle state, suppression rules, tags, and risk scores must remain workspace-scoped sample data.
-- Seeded data must never include real credentials, auth profile secrets, raw HTTP bodies, raw scanner artifacts, cookies, or unredacted evidence.
-- The seed command must not clone repositories, fetch remote code, install dependencies, run package scripts, build, or execute repository code.
-
-Post-v1 unless explicitly approved:
-
-- Playwright login/session workflows.
-- User A/User B IDOR checks.
-- Business-logic rule testing.
-- MockBank custom demo app.
-- Nuclei templates.
-- Semgrep/full SAST.
-- PDF export.
-- RBAC, team administration, and production user-management hardening beyond Phase 11 workspace isolation.
-- Public cloud scanning.
+- Arbitrary public/cloud scanning or a hosted scanning service.
+- Playwright login/session workflows and authenticated browser scanning.
+- User A/User B IDOR automation and business-logic rule testing.
+- MockBank, Nuclei, Semgrep/full SAST, and PDF export.
+- RBAC, team administration, and multi-tenant SaaS hardening.
 
 ## Safety Requirements
 
@@ -144,8 +111,17 @@ Post-v1 unless explicitly approved:
 - Bind custom scanner HTTP requests to the SSRF-validated destination IP instead of allowing a second independent DNS resolution during connection.
 - Scope ZAP to the exact allowlisted target/context.
 - Do not store full HTTP response bodies by default.
-- Redact evidence before persistence, AI, and reports.
-- Never send raw artifacts or unredacted evidence to AI.
+- Strip URL userinfo, queries, and fragments before persistence or downstream
+  projection.
+- Independently redact and cap scanner/provider free text at every persistence,
+  API, report, AI, cache, audit, and log boundary. Never trust a source-supplied
+  redaction flag.
+- Never send raw artifacts, response bodies, secrets, cookies, absolute
+  repository paths, raw exceptions, or unredacted evidence to reports or AI.
+- Preserve workspace predicates on every direct ID and collection lookup and
+  verify persisted workspace context again in the worker.
+- Keep scanner execution bounded, cancellable, lease-owned, and visible through
+  safe tool receipts rather than raw output.
 
 ## Sub-Agent Review Workflow
 
