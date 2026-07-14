@@ -1,0 +1,45 @@
+name: Container builds
+
+on:
+  push:
+    branches: [main, "phase-*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Validate Compose configuration
+        env:
+          POSTGRES_PASSWORD: scopeharbor-ci-database
+          DEV_AUTH_TOKEN: scopeharbor-ci-development-token
+          NEXT_PUBLIC_DEV_AUTH_TOKEN: scopeharbor-ci-development-token
+          AUTH_PROFILE_SECRET_KEY: QyZiRES0KAYWYtkLanwPjjEbVZiKA8tLRoNxxgxqG5M=
+          ZAP_API_KEY: 0123456789abcdef0123456789abcdef
+        run: docker compose config --quiet
+
+      - name: Build API image
+        run: docker build --file backend/Dockerfile --target api --tag scopeharbor-api:ci .
+
+      - name: Build scanner worker image
+        run: docker build --file backend/Dockerfile --target worker --tag scopeharbor-worker:ci .
+
+      - name: Build frontend image
+        run: >-
+          docker build --file frontend/Dockerfile --tag scopeharbor-frontend:ci
+          --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+          --build-arg NEXT_PUBLIC_DEV_AUTH_TOKEN=scopeharbor-ci-development-token .
