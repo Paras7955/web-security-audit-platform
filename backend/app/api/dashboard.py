@@ -27,6 +27,7 @@ def dashboard_overview(
     db: Session = Depends(get_db),
 ) -> DashboardOverviewRead:
     targets = list(db.scalars(select(Target).where(Target.workspace_id == principal.workspace_id)).all())
+    active_targets = [target for target in targets if target.archived_at is None]
     scans = list(db.scalars(select(Scan).where(Scan.workspace_id == principal.workspace_id).order_by(Scan.created_at.desc())).all())
     completed_scans = sort_completed_scans([scan for scan in scans if scan.status in COMPLETED_SCAN_STATUSES])
     findings = list(db.scalars(select(Finding).where(Finding.workspace_id == principal.workspace_id)).all())
@@ -34,7 +35,7 @@ def dashboard_overview(
     latest_score = read_scan_risk_score(db, completed_scans[0], findings_for_scan(findings, completed_scans[0].id)) if completed_scans else None
 
     return DashboardOverviewRead(
-        targets_count=len(targets),
+        targets_count=len(active_targets),
         scans_count=len(scans),
         completed_scans_count=len(completed_scans),
         findings_count=len(findings),
@@ -177,7 +178,13 @@ def build_comparison(db: Session, baseline_scan: Scan, comparison_scan: Scan) ->
 
 
 def get_target_or_404(db: Session, target_id: str, workspace_id: str) -> Target:
-    target = db.scalar(select(Target).where(Target.id == target_id, Target.workspace_id == workspace_id))
+    target = db.scalar(
+        select(Target).where(
+            Target.id == target_id,
+            Target.workspace_id == workspace_id,
+            Target.archived_at.is_(None),
+        )
+    )
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
     return target

@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
@@ -10,8 +10,8 @@ from app.api.deps import get_current_principal, get_db, get_scan_allowlist
 from app.api.pagination import PageRequest, page_items, page_request
 from app.api.schemas import CursorPage, TargetAuthProfileUpdate, TargetCreate, TargetRead, TargetRepoPathUpdate, TargetValidationRead
 from app.core.config import settings
-from app.core.contracts import SCAN_PROFILES, ScanMode
-from app.models import AuthProfile, Target
+from app.core.contracts import SCAN_PROFILES, ScanMode, ScanStatus
+from app.models import AuthProfile, Scan, Target
 from app.ops.audit import record_audit_event
 from app.repo_scanner.paths import RepoPathError, repo_path_for_storage
 from app.security.allowlist import ScanAllowlist
@@ -21,6 +21,12 @@ from app.security.ssrf import SsrfGuardError, validate_destination
 from app.security.target_url import TargetUrlError, match_allowlisted_target
 
 router = APIRouter(prefix="/targets", tags=["targets"])
+TERMINAL_SCAN_STATUSES = {
+    ScanStatus.COMPLETED.value,
+    ScanStatus.COMPLETED_WITH_WARNINGS.value,
+    ScanStatus.FAILED.value,
+    ScanStatus.CANCELLED.value,
+}
 
 
 @router.get("/validate", response_model=TargetValidationRead)
@@ -98,7 +104,10 @@ def list_targets(
     db: Session = Depends(get_db),
     allowlist: ScanAllowlist = Depends(get_scan_allowlist),
 ) -> CursorPage[TargetRead]:
-    statement = select(Target).where(Target.workspace_id == principal.workspace_id)
+    statement = select(Target).where(
+        Target.workspace_id == principal.workspace_id,
+        Target.archived_at.is_(None),
+    )
     if page.cursor_created_at is not None and page.cursor_id is not None:
         statement = statement.where(
             or_(
@@ -119,7 +128,13 @@ def update_target_repo_path(
     db: Session = Depends(get_db),
     allowlist: ScanAllowlist = Depends(get_scan_allowlist),
 ) -> TargetRead:
-    target = db.scalar(select(Target).where(Target.id == target_id, Target.workspace_id == principal.workspace_id))
+    target = db.scalar(
+        select(Target).where(
+            Target.id == target_id,
+            Target.workspace_id == principal.workspace_id,
+            Target.archived_at.is_(None),
+        )
+    )
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
 
@@ -153,7 +168,13 @@ def update_target_auth_profile(
     db: Session = Depends(get_db),
     allowlist: ScanAllowlist = Depends(get_scan_allowlist),
 ) -> TargetRead:
-    target = db.scalar(select(Target).where(Target.id == target_id, Target.workspace_id == principal.workspace_id))
+    target = db.scalar(
+        select(Target).where(
+            Target.id == target_id,
+            Target.workspace_id == principal.workspace_id,
+            Target.archived_at.is_(None),
+        )
+    )
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
 
@@ -180,10 +201,67 @@ def get_target(
     db: Session = Depends(get_db),
     allowlist: ScanAllowlist = Depends(get_scan_allowlist),
 ) -> TargetRead:
-    target = db.scalar(select(Target).where(Target.id == target_id, Target.workspace_id == principal.workspace_id))
+    target = db.scalar(
+        select(Target).where(
+            Target.id == target_id,
+            Target.workspace_id == principal.workspace_id,
+            Target.archived_at.is_(None),
+        )
+    )
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
     return target_to_read(target, allowlist)
+
+
+@router.delete("/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
+def archive_target(
+    target_id: str,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> Response:
+    target = db.scalar(
+        select(Target)
+        .where(
+            Target.id == target_id,
+            Target.workspace_id == principal.workspace_id,
+            Target.archived_at.is_(None),
+        )
+        .with_for_update()
+    )
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
+
+    active_scan_id = db.scalar(
+        select(Scan.id).where(
+            Scan.target_id == target.id,
+            Scan.workspace_id == principal.workspace_id,
+            ~Scan.status.in_(TERMINAL_SCAN_STATUSES),
+        )
+    )
+    if active_scan_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Target cannot be removed while a scan is active. Cancel or finish the scan first.",
+        )
+
+    target.archived_at = datetime.now(UTC)
+    target.archived_by_user_id = principal.user_id
+    target.permission_confirmed = False
+    target.authorization_confirmed_at = None
+    target.repo_path = None
+    target.auth_profile_id = None
+    target.auth_profile_attached_at = None
+    db.add(target)
+    record_audit_event(
+        db,
+        principal,
+        event_type="target.archived",
+        resource_type="target",
+        resource_id=target.id,
+        metadata={"allowlist_id": target.allowlist_id, "history_preserved": True},
+    )
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def validate_allowed_target_url(target_url: str, allowlist: ScanAllowlist):

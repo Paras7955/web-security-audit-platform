@@ -8,7 +8,7 @@ from uuid import uuid4
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import AuthProfile, Target
+from app.models import AuthProfile, PlatformUser, Scan, Target, Workspace
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
@@ -21,15 +21,27 @@ class TargetApiTests(unittest.TestCase):
         self.destination_guard = patch("app.api.targets.validate_destination")
         self.destination_guard.start()
         self.addCleanup(self.destination_guard.stop)
+        self.scan_destination_guard = patch("app.api.scans.validate_destination")
+        self.scan_destination_guard.start()
+        self.addCleanup(self.scan_destination_guard.stop)
         self.created_target_ids: list[str] = []
         self.created_auth_profile_ids: list[str] = []
+        self.created_scan_ids: list[str] = []
+        self.created_workspace_ids: list[str] = []
+        self.created_user_ids: list[str] = []
 
     def tearDown(self) -> None:
         with SessionLocal() as db:
+            if self.created_scan_ids:
+                db.execute(delete(Scan).where(Scan.id.in_(self.created_scan_ids)))
             if self.created_target_ids:
                 db.execute(delete(Target).where(Target.id.in_(self.created_target_ids)))
             if self.created_auth_profile_ids:
                 db.execute(delete(AuthProfile).where(AuthProfile.id.in_(self.created_auth_profile_ids)))
+            if self.created_workspace_ids:
+                db.execute(delete(Workspace).where(Workspace.id.in_(self.created_workspace_ids)))
+            if self.created_user_ids:
+                db.execute(delete(PlatformUser).where(PlatformUser.id.in_(self.created_user_ids)))
             db.commit()
 
     def test_validate_allowed_target(self) -> None:
@@ -201,6 +213,119 @@ class TargetApiTests(unittest.TestCase):
         response = self.client.get(f"/api/v1/targets/{uuid4()}", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 404)
+
+    def test_archive_target_removes_configuration_and_preserves_completed_scan_history(self) -> None:
+        target = self.client.post(
+            "/api/v1/targets",
+            json={"target_url": "http://juice-shop:3000", "permission_confirmed": True},
+            headers=DEV_AUTH_HEADERS,
+        )
+        self.assertEqual(target.status_code, 201)
+        target_id = target.json()["id"]
+        self.created_target_ids.append(target_id)
+
+        scan = self.client.post(
+            "/api/v1/scans",
+            json={
+                "target_id": target_id,
+                "scan_profile_id": "passive-web",
+                "acknowledgements": ["authorized_target"],
+            },
+            headers=DEV_AUTH_HEADERS,
+        )
+        self.assertEqual(scan.status_code, 201)
+        scan_id = scan.json()["id"]
+        self.created_scan_ids.append(scan_id)
+        with SessionLocal() as db:
+            stored_scan = db.get(Scan, scan_id)
+            stored_scan.status = "completed"
+            db.commit()
+
+        archived = self.client.delete(f"/api/v1/targets/{target_id}", headers=DEV_AUTH_HEADERS)
+        self.assertEqual(archived.status_code, 204)
+        self.assertEqual(self.client.get(f"/api/v1/targets/{target_id}", headers=DEV_AUTH_HEADERS).status_code, 404)
+        listed = self.client.get("/api/v1/targets?limit=200", headers=DEV_AUTH_HEADERS)
+        self.assertNotIn(target_id, {item["id"] for item in listed.json()["items"]})
+        self.assertEqual(self.client.get(f"/api/v1/scans/{scan_id}", headers=DEV_AUTH_HEADERS).status_code, 200)
+
+        with SessionLocal() as db:
+            stored_target = db.get(Target, target_id)
+            self.assertIsNotNone(stored_target.archived_at)
+            self.assertIsNotNone(stored_target.archived_by_user_id)
+            self.assertFalse(stored_target.permission_confirmed)
+            self.assertIsNone(stored_target.authorization_confirmed_at)
+            self.assertIsNone(stored_target.repo_path)
+            self.assertIsNone(stored_target.auth_profile_id)
+
+    def test_archive_target_rejects_active_scan(self) -> None:
+        target = self.client.post(
+            "/api/v1/targets",
+            json={"target_url": "http://juice-shop:3000", "permission_confirmed": True},
+            headers=DEV_AUTH_HEADERS,
+        )
+        target_id = target.json()["id"]
+        self.created_target_ids.append(target_id)
+        scan = self.client.post(
+            "/api/v1/scans",
+            json={
+                "target_id": target_id,
+                "scan_profile_id": "passive-web",
+                "acknowledgements": ["authorized_target"],
+            },
+            headers=DEV_AUTH_HEADERS,
+        )
+        self.created_scan_ids.append(scan.json()["id"])
+
+        archived = self.client.delete(f"/api/v1/targets/{target_id}", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(archived.status_code, 409)
+        self.assertIn("scan is active", archived.json()["detail"])
+        with SessionLocal() as db:
+            self.assertIsNone(db.get(Target, target_id).archived_at)
+
+    def test_archive_target_is_workspace_scoped(self) -> None:
+        user_id = str(uuid4())
+        workspace_id = str(uuid4())
+        target_id = str(uuid4())
+        self.created_user_ids.append(user_id)
+        self.created_workspace_ids.append(workspace_id)
+        self.created_target_ids.append(target_id)
+        with SessionLocal() as db:
+            db.add(PlatformUser(id=user_id, display_name="Other user"))
+            db.flush()
+            db.add(Workspace(id=workspace_id, owner_user_id=user_id, name="Other workspace"))
+            db.flush()
+            db.add(
+                Target(
+                    id=target_id,
+                    workspace_id=workspace_id,
+                    created_by_user_id=user_id,
+                    allowlist_id="juice-shop",
+                    name="Other target",
+                    base_url="http://juice-shop:3000/",
+                    permission_confirmed=True,
+                )
+            )
+            db.commit()
+
+        archived = self.client.delete(f"/api/v1/targets/{target_id}", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(archived.status_code, 404)
+        with SessionLocal() as db:
+            self.assertIsNone(db.get(Target, target_id).archived_at)
+
+    def test_archive_target_allows_browser_preflight(self) -> None:
+        response = self.client.options(
+            f"/api/v1/targets/{uuid4()}",
+            headers={
+                "Origin": "http://localhost:3001",
+                "Access-Control-Request-Method": "DELETE",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["access-control-allow-origin"], "http://localhost:3001")
+        self.assertIn("DELETE", response.headers["access-control-allow-methods"])
 
 
 if __name__ == "__main__":

@@ -33,9 +33,11 @@ controlled scan for each profile you use.
 
 ## Upgrading from schema 0008
 
-Migrations `0009_public_readiness` and `0010_public_indexes` add scanner tool
+Migrations `0009_public_readiness`, `0010_public_indexes`, and
+`0011_target_archiving` add scanner tool
 receipts, auth-profile lifecycle timestamps, target authorization timestamps,
-worker leases/counters, constraints, and cursor indexes.
+worker leases/counters, constraints, cursor indexes, and history-preserving
+target removal.
 
 The 0009 upgrade deliberately:
 

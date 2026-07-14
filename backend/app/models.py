@@ -83,6 +83,7 @@ class Target(Base):
     __table_args__ = (
         Index("ix_targets_workspace_id", "workspace_id"),
         Index("ix_targets_workspace_created_id", "workspace_id", "created_at", "id"),
+        Index("ix_targets_workspace_active_created_id", "workspace_id", "archived_at", "created_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -109,6 +110,8 @@ class Target(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     authorization_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     auth_profile_attached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_by_user_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=True)
 
     scans: Mapped[list["Scan"]] = relationship(back_populates="target")
 
