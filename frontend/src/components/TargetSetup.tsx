@@ -1161,6 +1161,7 @@ export function TargetSetup({
                     id={`audit-phase-${phase.id}`}
                     aria-selected={isActive}
                     aria-controls="audit-phase-panel"
+                    tabIndex={isActive ? 0 : -1}
                     className={`auditPhaseTab${isActive ? " auditPhaseTabActive" : ""}${isComplete ? " auditPhaseTabComplete" : ""}${isPriority ? " auditPhaseTabPriority" : ""}`}
                     onClick={() => setAuditPhase(phase.id)}
                     onKeyDown={(event) => handlePhaseKeyDown(event, index)}

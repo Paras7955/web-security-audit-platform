@@ -271,6 +271,33 @@ export function FindingsDashboard({
                 </tbody>
               </table>
             </div>
+            <ul className="findingsMobileList" aria-label="Finding results">
+              {visibleFindings.map((finding) => {
+                const isSelected = finding.id === selectedFinding?.id;
+                return (
+                  <li key={finding.id} className={isSelected ? "findingMobileItemSelected" : undefined}>
+                    <button
+                      type="button"
+                      className="findingSelectButton findingMobileButton"
+                      aria-current={isSelected ? "true" : undefined}
+                      onClick={() => onSelectFinding(finding.id)}
+                    >
+                      <span className="findingMobileStatus">
+                        <span className={`severity severity-${finding.severity}`}>{finding.severity}</span>
+                        <span className={finding.suppressed ? "stateBadge stateBadgeSuppressed" : "stateBadge"}>
+                          {formatStatus(finding.lifecycle_status)}
+                        </span>
+                      </span>
+                      <strong>{finding.title}</strong>
+                      <span className="findingMobileMeta">
+                        <span><small>Tool</small>{finding.source_tool}</span>
+                        <span><small>Location</small>{finding.affected_url ?? finding.affected_file ?? "global"}</span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
             <nav className="resultsPagination" aria-label="Finding result pages">
               <button type="button" className="secondaryButton" onClick={() => selectPage(currentPage - 1)} disabled={currentPage === 1}>Previous</button>
               <span>Page <strong>{currentPage}</strong> of <strong>{pageCount}</strong></span>

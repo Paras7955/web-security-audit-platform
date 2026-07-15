@@ -155,7 +155,10 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let animationFrame = 0;
     let visible = !document.hidden;
+    let intersecting = true;
     let start = performance.now();
+    let routeArchitectureKey = "";
+    let routeArchitecture: SceneBox[] = [];
 
     const drawBox = (box: SceneBox, viewProjection: Float32Array) => {
       const isCylinder = box.geometry === "cylinder";
@@ -194,6 +197,19 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
       const structure: Vec3 = lightTheme ? [0.36, 0.4, 0.48] : [0.035, 0.052, 0.082];
       const structureTop: Vec3 = lightTheme ? [0.52, 0.56, 0.64] : [0.105, 0.135, 0.19];
       const structureEdge: Vec3 = lightTheme ? [0.26, 0.3, 0.38] : [0.065, 0.085, 0.125];
+      const nextRouteArchitectureKey = lightTheme ? "light" : "dark";
+      if (routeArchitectureKey !== nextRouteArchitectureKey) {
+        const routePoints: Vec3[] = [
+          [-4.82, -0.34, -0.72],
+          [-3.45, -0.34, 0.58],
+          [-2.15, -0.31, -0.08],
+          [-0.35, -0.32, lane],
+          [1.5, -0.31, 0.03],
+          [3.28, -0.34, 0]
+        ];
+        routeArchitecture = createRouteArchitecture(routePoints, structureEdge, structureTop);
+        routeArchitectureKey = nextRouteArchitectureKey;
+      }
       const pointer = pointerRef.current;
       const aspect = width / height;
       const compactScene = aspect < 2;
@@ -219,15 +235,7 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
       ];
       platforms.forEach((box) => drawBox(box, viewProjection));
 
-      const routePoints: Vec3[] = [
-        [-4.82, -0.34, -0.72],
-        [-3.45, -0.34, 0.58],
-        [-2.15, -0.31, -0.08],
-        [-0.35, -0.32, lane],
-        [1.5, -0.31, 0.03],
-        [3.28, -0.34, 0]
-      ];
-      createRouteArchitecture(routePoints, structureEdge, structureTop).forEach((box) => drawBox(box, viewProjection));
+      routeArchitecture.forEach((box) => drawBox(box, viewProjection));
 
       const route: SceneBox[] = [
         { position: [-4.12, -0.12, -0.18], scale: [0.82, 0.035, 0.075], color: routeColor, rotation: [0, -0.5, 0] },
@@ -280,19 +288,20 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
       }));
       terrain.forEach((box) => drawBox(box, viewProjection));
 
-      if (visible && !reducedMotion.matches) {
+      if (visible && intersecting && !reducedMotion.matches) {
         animationFrame = window.requestAnimationFrame(render);
       }
     };
 
     const restart = () => {
       window.cancelAnimationFrame(animationFrame);
+      if (!visible || !intersecting) return;
       start = performance.now();
       render(start);
     };
     const handleVisibility = () => {
       visible = !document.hidden;
-      if (visible) restart();
+      if (visible && intersecting) restart();
       else window.cancelAnimationFrame(animationFrame);
     };
     const handlePointerMove = (event: PointerEvent) => {
@@ -306,7 +315,17 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
       pointerRef.current = { x: 0, y: 0 };
     };
     const themeObserver = new MutationObserver(restart);
+    const intersectionObserver = "IntersectionObserver" in window
+      ? new IntersectionObserver(([entry]) => {
+          const nextIntersecting = entry.isIntersecting;
+          if (nextIntersecting === intersecting) return;
+          intersecting = nextIntersecting;
+          if (intersecting && visible) restart();
+          else window.cancelAnimationFrame(animationFrame);
+        })
+      : null;
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    intersectionObserver?.observe(field);
     reducedMotion.addEventListener("change", restart);
     window.addEventListener("resize", restart);
     document.addEventListener("visibilitychange", handleVisibility);
@@ -317,6 +336,7 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
     return () => {
       window.cancelAnimationFrame(animationFrame);
       themeObserver.disconnect();
+      intersectionObserver?.disconnect();
       reducedMotion.removeEventListener("change", restart);
       window.removeEventListener("resize", restart);
       document.removeEventListener("visibilitychange", handleVisibility);

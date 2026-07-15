@@ -18,6 +18,9 @@
   --accent-strong: oklch(73% 0.19 42);
   --accent-deep: oklch(51% 0.19 34);
   --action: oklch(73% 0.19 42);
+  --action-end: oklch(68% 0.22 35);
+  --action-hover-end: oklch(72% 0.21 35);
+  --on-action: oklch(18% 0.035 45);
   --accent-soft: oklch(64% 0.205 37 / 0.14);
   --blue: oklch(72% 0.14 251);
   --blue-soft: oklch(72% 0.14 251 / 0.12);
@@ -31,6 +34,9 @@
   --shadow: 0 4px 8px oklch(2% 0.02 250 / 0.34);
   --shadow-soft: 0 2px 6px oklch(2% 0.02 250 / 0.26);
   --hero-glow: oklch(63% 0.21 36 / 0.23);
+  --brand-mark-glow: oklch(61% 0.17 45 / 0.24);
+  --modal-scrim: oklch(4% 0.01 65 / 0.78);
+  --dialog-shadow: 0 6px 8px oklch(0% 0 0 / 0.38);
   --input: oklch(11.8% 0.026 252);
   --body-gradient-start: oklch(13% 0.032 252);
   --body-glow-secondary: oklch(51% 0.12 252 / 0.12);
@@ -229,7 +235,7 @@ h4 {
 .brandMark svg {
   width: 100%;
   height: 100%;
-  filter: drop-shadow(0 0 10px oklch(61% 0.17 45 / 0.24));
+  filter: drop-shadow(0 0 10px var(--brand-mark-glow));
 }
 
 .topbarActions,
@@ -420,8 +426,8 @@ h4 {
   gap: var(--space-xs);
   border: 0;
   border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, var(--action), oklch(68% 0.22 35));
-  color: oklch(18% 0.035 45);
+  background: linear-gradient(135deg, var(--action), var(--action-end));
+  color: var(--on-action);
   font-size: 0.82rem;
   font-weight: 760;
   padding: 10px 15px;
@@ -429,7 +435,7 @@ h4 {
 }
 
 .primaryAction:hover {
-  background: linear-gradient(135deg, color-mix(in oklch, var(--action) 90%, white), oklch(72% 0.21 35));
+  background: linear-gradient(135deg, color-mix(in oklch, var(--action) 90%, white), var(--action-hover-end));
   transform: translateY(-1px);
 }
 
@@ -564,9 +570,9 @@ button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scan
   gap: 8px;
   border: 1px solid color-mix(in oklch, var(--accent-deep) 64%, var(--border));
   border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, var(--action), oklch(68% 0.22 35));
+  background: linear-gradient(135deg, var(--action), var(--action-end));
   box-shadow: none;
-  color: oklch(18% 0.035 45);
+  color: var(--on-action);
   font-size: 0.78rem;
   font-weight: 760;
   padding: 8px 14px;
@@ -575,14 +581,14 @@ button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scan
 
 :root[data-theme="light"] .refreshButton,
 :root[data-theme="light"] button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .findingSelectButton, .quietDangerButton, .iconButton, .textButton, .modeCard) {
-  color: oklch(18% 0.035 45);
+  color: var(--on-action);
 }
 
 .refreshButton:hover:not(:disabled),
 button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .findingSelectButton, .quietDangerButton, .iconButton, .textButton, .modeCard):hover:not(:disabled) {
   transform: translateY(-1px);
   border-color: var(--accent);
-  background: linear-gradient(135deg, color-mix(in oklch, var(--action) 90%, white), oklch(72% 0.21 35));
+  background: linear-gradient(135deg, color-mix(in oklch, var(--action) 90%, white), var(--action-hover-end));
 }
 
 button.secondaryButton,
@@ -1215,7 +1221,7 @@ tbody tr:last-child td {
   place-items: center;
   border-radius: 50%;
   background: var(--accent);
-  color: oklch(18% 0.035 45);
+  color: var(--on-action);
 }
 
 .quietDangerButton {
@@ -1860,6 +1866,69 @@ textarea:focus {
   border-bottom: 1px solid var(--border);
 }
 
+.findingsMobileList {
+  display: none;
+  margin: 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 0;
+  list-style: none;
+}
+
+.findingsMobileList li + li {
+  border-top: 1px solid var(--border);
+}
+
+.findingMobileButton {
+  min-height: 44px;
+  display: grid;
+  gap: var(--space-sm);
+  padding: var(--space-md) 0;
+}
+
+.findingMobileButton > strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: var(--type-body);
+  line-height: 1.35;
+}
+
+.findingMobileStatus,
+.findingMobileMeta,
+.findingMobileMeta > span {
+  display: flex;
+  align-items: center;
+}
+
+.findingMobileStatus {
+  gap: var(--space-xs);
+}
+
+.findingMobileMeta {
+  min-width: 0;
+  justify-content: space-between;
+  gap: var(--space-md);
+  color: var(--text-soft);
+  font-size: var(--type-meta);
+}
+
+.findingMobileMeta > span {
+  min-width: 0;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
+.findingMobileMeta small {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: var(--type-caption);
+  font-weight: 700;
+}
+
+.findingMobileItemSelected {
+  background: var(--accent-soft);
+}
+
 .findingsTable tbody tr {
   cursor: pointer;
   transition: background 130ms ease;
@@ -2402,7 +2471,7 @@ textarea:focus {
 
 .auditPhaseTabActive .auditPhaseMarker {
   background: var(--accent);
-  color: oklch(18% 0.035 45);
+  color: var(--on-action);
 }
 
 .auditPhaseTabComplete .auditPhaseMarker {
@@ -2922,7 +2991,7 @@ textarea:focus {
   z-index: 100;
   display: grid;
   place-items: center;
-  background: oklch(4% 0.01 65 / 0.78);
+  background: var(--modal-scrim);
   padding: 20px;
   backdrop-filter: blur(10px);
   animation: fade-in 150ms ease both;
@@ -2936,7 +3005,7 @@ textarea:focus {
   border: 1px solid var(--border-strong);
   border-radius: 17px;
   background: var(--surface-solid);
-  box-shadow: 0 6px 8px oklch(0% 0 0 / 0.38);
+  box-shadow: var(--dialog-shadow);
   padding: 23px;
   animation: dialog-enter 180ms ease both;
 }
@@ -3303,6 +3372,20 @@ textarea:focus {
 
   .resultsPagination {
     justify-content: space-between;
+  }
+
+  .findingsTableViewport {
+    display: none;
+  }
+
+  .findingsMobileList {
+    display: block;
+  }
+
+  .findingMobileMeta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
   }
 
   .auditLogToolbar {
