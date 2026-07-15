@@ -1,70 +1,82 @@
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #070a11;
-  --bg-elevated: #0b101a;
-  --surface: rgba(16, 22, 35, 0.88);
-  --surface-solid: #101623;
-  --surface-raised: #151d2d;
-  --surface-soft: rgba(255, 255, 255, 0.035);
-  --surface-hover: rgba(255, 255, 255, 0.065);
-  --text: #f3f6fb;
-  --text-soft: #c6cede;
-  --muted: #8793a8;
-  --faint: #5f6a7e;
-  --border: rgba(155, 174, 205, 0.16);
-  --border-strong: rgba(155, 174, 205, 0.28);
-  --accent: #59e5c3;
-  --accent-strong: #35cfae;
-  --accent-soft: rgba(89, 229, 195, 0.12);
-  --blue: #55a9ff;
-  --blue-soft: rgba(85, 169, 255, 0.13);
-  --violet: #9a7bff;
-  --violet-soft: rgba(154, 123, 255, 0.13);
-  --amber: #f3bb4f;
-  --amber-soft: rgba(243, 187, 79, 0.13);
-  --danger: #ff6d7a;
-  --danger-soft: rgba(255, 109, 122, 0.12);
-  --success: #62dda8;
-  --shadow: 0 18px 55px rgba(0, 0, 0, 0.3);
-  --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.18);
-  --grid-line: rgba(118, 149, 195, 0.055);
-  --hero-glow: rgba(30, 181, 192, 0.12);
-  --input: rgba(7, 10, 17, 0.7);
+  --bg: oklch(12% 0.009 65);
+  --bg-elevated: oklch(15% 0.01 65);
+  --surface: oklch(17.5% 0.009 65);
+  --surface-solid: oklch(17.5% 0.009 65);
+  --surface-raised: oklch(21% 0.011 65);
+  --surface-soft: oklch(100% 0 0 / 0.038);
+  --surface-hover: oklch(100% 0 0 / 0.072);
+  --text: oklch(94% 0.012 72);
+  --text-soft: oklch(80% 0.012 72);
+  --muted: oklch(65% 0.014 68);
+  --faint: oklch(52% 0.014 68);
+  --border: oklch(72% 0.02 68 / 0.16);
+  --border-strong: oklch(72% 0.02 68 / 0.29);
+  --accent: oklch(61% 0.17 45);
+  --accent-strong: oklch(72% 0.16 48);
+  --accent-deep: oklch(49% 0.16 42);
+  --accent-soft: oklch(64% 0.17 45 / 0.13);
+  --blue: oklch(71% 0.055 240);
+  --blue-soft: oklch(71% 0.055 240 / 0.12);
+  --violet: oklch(72% 0.04 65);
+  --violet-soft: oklch(72% 0.04 65 / 0.11);
+  --amber: oklch(80% 0.15 78);
+  --amber-soft: oklch(80% 0.15 78 / 0.13);
+  --danger: oklch(70% 0.18 25);
+  --danger-soft: oklch(70% 0.18 25 / 0.12);
+  --success: oklch(76% 0.12 157);
+  --shadow: 0 4px 8px oklch(0% 0 0 / 0.26);
+  --shadow-soft: 0 2px 6px oklch(0% 0 0 / 0.2);
+  --hero-glow: oklch(57% 0.18 42 / 0.15);
+  --input: oklch(11% 0.008 65);
+  --space-2xs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #eef3f8;
-  --bg-elevated: #e7eef6;
-  --surface: rgba(255, 255, 255, 0.9);
-  --surface-solid: #ffffff;
-  --surface-raised: #f7faff;
-  --surface-soft: rgba(26, 55, 82, 0.035);
-  --surface-hover: rgba(35, 80, 118, 0.065);
-  --text: #102033;
-  --text-soft: #35465a;
-  --muted: #65758a;
-  --faint: #8a98aa;
-  --border: rgba(38, 68, 98, 0.14);
-  --border-strong: rgba(38, 68, 98, 0.24);
-  --accent: #087f73;
-  --accent-strong: #076b62;
-  --accent-soft: rgba(8, 127, 115, 0.1);
-  --blue: #176ec5;
-  --blue-soft: rgba(23, 110, 197, 0.1);
-  --violet: #7255d9;
-  --violet-soft: rgba(114, 85, 217, 0.1);
-  --amber: #9d6809;
-  --amber-soft: rgba(196, 130, 17, 0.11);
-  --danger: #c4364b;
-  --danger-soft: rgba(196, 54, 75, 0.09);
-  --success: #16825d;
-  --shadow: 0 18px 50px rgba(29, 51, 78, 0.12);
-  --shadow-soft: 0 8px 26px rgba(29, 51, 78, 0.09);
-  --grid-line: rgba(35, 80, 118, 0.055);
-  --hero-glow: rgba(17, 152, 153, 0.11);
-  --input: rgba(247, 250, 255, 0.92);
+  --bg: oklch(96% 0.006 70);
+  --bg-elevated: oklch(93.5% 0.008 70);
+  --surface: oklch(99% 0.004 70);
+  --surface-solid: oklch(99% 0.004 70);
+  --surface-raised: oklch(97% 0.006 70);
+  --surface-soft: oklch(23% 0.012 65 / 0.035);
+  --surface-hover: oklch(23% 0.012 65 / 0.065);
+  --text: oklch(24% 0.018 60);
+  --text-soft: oklch(39% 0.018 60);
+  --muted: oklch(49% 0.016 60);
+  --faint: oklch(58% 0.014 60);
+  --border: oklch(35% 0.02 60 / 0.14);
+  --border-strong: oklch(35% 0.02 60 / 0.25);
+  --accent: oklch(54% 0.18 43);
+  --accent-strong: oklch(62% 0.18 46);
+  --accent-deep: oklch(46% 0.16 41);
+  --accent-soft: oklch(61% 0.17 45 / 0.11);
+  --blue: oklch(50% 0.075 240);
+  --blue-soft: oklch(50% 0.075 240 / 0.1);
+  --violet: oklch(54% 0.05 65);
+  --violet-soft: oklch(54% 0.05 65 / 0.09);
+  --amber: oklch(55% 0.15 72);
+  --amber-soft: oklch(65% 0.15 72 / 0.1);
+  --danger: oklch(53% 0.19 25);
+  --danger-soft: oklch(53% 0.19 25 / 0.09);
+  --success: oklch(49% 0.12 157);
+  --shadow: 0 4px 8px oklch(30% 0.02 60 / 0.1);
+  --shadow-soft: 0 2px 6px oklch(30% 0.02 60 / 0.08);
+  --hero-glow: oklch(57% 0.18 42 / 0.1);
+  --input: oklch(100% 0 0 / 0.92);
 }
 
 * {
@@ -80,15 +92,12 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
-    radial-gradient(circle at 76% 3%, var(--hero-glow), transparent 29rem),
-    radial-gradient(circle at 14% 25%, rgba(103, 81, 215, 0.07), transparent 25rem),
+    radial-gradient(circle at 74% -8%, var(--hero-glow), transparent 31rem),
+    radial-gradient(circle at 10% 33%, oklch(50% 0.04 55 / 0.055), transparent 25rem),
     var(--bg);
-  background-size: 48px 48px, 48px 48px, auto, auto, auto;
   color: var(--text);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 15px;
+  font-family: "Avenir Next", Avenir, "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 16px;
   line-height: 1.55;
   transition: background-color 180ms ease, color 180ms ease;
 }
@@ -157,7 +166,7 @@ strong {
 }
 
 .appShell {
-  width: min(1460px, calc(100% - 48px));
+  width: min(1560px, calc(100% - 48px));
   margin: 0 auto;
   padding: 18px 0 64px;
 }
@@ -207,7 +216,7 @@ strong {
 .brandMark svg {
   width: 100%;
   height: 100%;
-  filter: drop-shadow(0 0 14px rgba(77, 211, 203, 0.2));
+  filter: drop-shadow(0 0 10px oklch(61% 0.17 45 / 0.24));
 }
 
 .topbarActions,
@@ -269,8 +278,8 @@ strong {
 .commandHero {
   position: relative;
   display: grid;
-  min-height: 355px;
-  grid-template-columns: minmax(0, 1.18fr) minmax(340px, 0.82fr);
+  min-height: 430px;
+  grid-template-columns: minmax(340px, 0.82fr) minmax(560px, 1.18fr);
   align-items: center;
   gap: 40px;
   overflow: hidden;
@@ -283,14 +292,14 @@ strong {
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
   content: "";
-  opacity: 0.32;
+  opacity: 0.42;
 }
 
 .commandHeroCopy {
   position: relative;
   z-index: 2;
-  max-width: 820px;
-  padding: 54px 0 48px;
+  max-width: 620px;
+  padding: var(--space-3xl) 0;
 }
 
 .eyebrow,
@@ -314,12 +323,13 @@ strong {
 }
 
 .commandHero h1 {
-  max-width: 790px;
+  max-width: 620px;
   margin: 0;
-  font-size: clamp(2.4rem, 5vw, 4.7rem);
-  font-weight: 735;
-  line-height: 0.99;
-  letter-spacing: -0.065em;
+  font-size: 3.65rem;
+  font-weight: 720;
+  line-height: 1.01;
+  letter-spacing: -0.038em;
+  text-wrap: balance;
 }
 
 .commandHero h1 span {
@@ -331,8 +341,46 @@ strong {
   max-width: 710px;
   margin: 24px 0 0;
   color: var(--text-soft);
-  font-size: 1rem;
-  line-height: 1.72;
+  font-size: 1.02rem;
+  line-height: 1.68;
+  text-wrap: pretty;
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+}
+
+.primaryAction {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: var(--accent-strong);
+  color: oklch(18% 0.035 45);
+  font-size: 0.82rem;
+  font-weight: 760;
+  padding: 10px 15px;
+  transition: background 180ms var(--ease-out), transform 180ms var(--ease-out);
+}
+
+.primaryAction:hover {
+  background: color-mix(in oklch, var(--accent-strong) 88%, white);
+  transform: translateY(-1px);
+}
+
+.heroReady {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--muted);
+  font-size: 0.73rem;
+  font-weight: 620;
 }
 
 .safetyStrip {
@@ -364,7 +412,8 @@ strong {
 
 .scopeField {
   position: relative;
-  min-height: 320px;
+  min-height: 390px;
+  margin: 0;
   overflow: hidden;
   isolation: isolate;
 }
@@ -374,10 +423,10 @@ strong {
   top: 50%;
   left: 50%;
   z-index: -1;
-  width: 280px;
-  height: 280px;
+  width: 420px;
+  height: 250px;
   border-radius: 999px;
-  background: radial-gradient(circle, rgba(55, 183, 214, 0.18), transparent 67%);
+  background: radial-gradient(ellipse, var(--hero-glow), transparent 68%);
   content: "";
   filter: blur(20px);
   transform: translate(-50%, -50%);
@@ -385,34 +434,60 @@ strong {
 
 .scopeField canvas {
   width: 100%;
-  height: 320px;
+  height: 390px;
+  touch-action: pan-y;
 }
 
 .scopeFieldFallback {
-  background:
-    radial-gradient(circle at center, transparent 0 23%, color-mix(in srgb, var(--violet) 45%, transparent) 23.4% 24%, transparent 24.4% 44%, color-mix(in srgb, var(--blue) 45%, transparent) 44.4% 45%, transparent 45.4%);
+  background: linear-gradient(165deg, transparent 34%, var(--accent-soft) 34.5% 35.5%, transparent 36% 62%, var(--surface-soft) 62.5% 63.5%, transparent 64%);
 }
 
-.scopeFieldCore {
+.scopeFieldLabels {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent), 0 0 28px var(--blue);
-  transform: translate(-50%, -50%);
+  inset: 0;
+  pointer-events: none;
 }
 
-.scopeFieldLabel {
+.scopeNode {
   position: absolute;
-  right: 13%;
-  bottom: 13%;
+  display: grid;
+  gap: 1px;
+  color: var(--text-soft);
+  font-size: 0.65rem;
+  font-weight: 720;
+  line-height: 1.25;
+  text-shadow: 0 1px 4px var(--bg);
+}
+
+.scopeNode small {
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 560;
+}
+
+.scopeNodeSource { left: 2%; bottom: 17%; }
+.scopeNodePolicy { left: 25%; top: 28%; }
+.scopeNodeProfile { left: 44%; bottom: 20%; color: var(--accent-strong); }
+.scopeNodeNormalize { right: 22%; top: 25%; }
+.scopeNodeHarbor { right: 1%; bottom: 20%; }
+
+.scopeField figcaption {
+  position: absolute;
+  right: 1%;
+  bottom: 3%;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
   color: var(--faint);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.6rem;
-  letter-spacing: 0.18em;
+  font-size: 0.65rem;
+  font-weight: 620;
+}
+
+.scopeFieldSignal {
+  width: 24px;
+  height: 1px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
 }
 
 .workspaceConsole {
@@ -874,9 +949,8 @@ button.dangerButton,
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), var(--blue), var(--violet));
-  box-shadow: 0 0 18px color-mix(in srgb, var(--blue) 38%, transparent);
-  transition: width 500ms ease;
+  background: var(--accent-strong);
+  box-shadow: 0 0 8px color-mix(in oklch, var(--accent) 38%, transparent);
 }
 
 .compactMeta,

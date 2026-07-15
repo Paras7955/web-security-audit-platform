@@ -4,9 +4,9 @@ export function ScopeHarborMark({ compact = false }: { compact?: boolean }) {
       <svg viewBox="0 0 48 48" role="presentation">
         <defs>
           <linearGradient id="scopeharbor-mark-gradient" x1="7" y1="6" x2="41" y2="43" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#72F5D1" />
-            <stop offset="0.48" stopColor="#31A7FF" />
-            <stop offset="1" stopColor="#8B6BFF" />
+            <stop stopColor="#F39A58" />
+            <stop offset="0.52" stopColor="#D6672C" />
+            <stop offset="1" stopColor="#8E3517" />
           </linearGradient>
         </defs>
         <path

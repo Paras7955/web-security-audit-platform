@@ -5,7 +5,7 @@ import { ScopeHarborMark } from "@/components/ScopeHarborMark";
 import { TargetSetup } from "@/components/TargetSetup";
 import { WebGLScopeField } from "@/components/WebGLScopeField";
 
-const safetyRules = ["Exact allowlist", "Workspace isolated", "Evidence redacted"];
+const safetyRules = ["Exact allowlist", "Local-first", "Evidence redacted"];
 
 export function AppShell() {
   function toggleTheme() {
@@ -41,18 +41,22 @@ export function AppShell() {
 
       <section className="commandHero" aria-labelledby="workspace-title">
         <div className="commandHeroCopy">
-          <p className="eyebrow"><AppIcon name="shield" size={15} /> Defensive security workspace</p>
-          <h1 id="workspace-title">See the attack surface.<br /><span>Keep control of the scope.</span></h1>
+          <p className="eyebrow"><AppIcon name="shield" size={15} /> Authorized security workspace</p>
+          <h1 id="workspace-title">Find the risks.<br /><span>Keep the path clear.</span></h1>
           <p className="heroSummary">
-            Launch authorized scans, triage normalized findings, and turn evidence into clear remediation decisions—without sending raw artifacts outside your environment.
+            Move from an approved local target to clear, normalized findings through a guided audit path that keeps scope, evidence, and decisions under your control.
           </p>
+          <div className="heroActions">
+            <a className="primaryAction" href="#workspace-console">Start an audit <AppIcon name="arrow" size={16} /></a>
+            <span className="heroReady"><span className="liveDot" /> Platform readiness is visible before launch</span>
+          </div>
           <ul className="safetyStrip" aria-label="Safety boundaries">
             {safetyRules.map((rule) => (
               <li key={rule}><AppIcon name="check" size={14} />{rule}</li>
             ))}
           </ul>
         </div>
-        <WebGLScopeField />
+        <WebGLScopeField activeProfile="passive-web" status="ready" />
       </section>
 
       <section id="workspace-console" className="workspaceConsole">
