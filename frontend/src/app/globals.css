@@ -232,6 +232,54 @@ strong {
   gap: 10px;
 }
 
+.primaryNavigation {
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.primaryNavItem {
+  position: relative;
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 650;
+  padding: 9px 12px;
+  transition: color 180ms var(--ease-out), background 180ms var(--ease-out);
+}
+
+.primaryNavItem:hover {
+  background: var(--surface-soft);
+  color: var(--text-soft);
+}
+
+.primaryNavItem::after {
+  position: absolute;
+  right: 12px;
+  bottom: 2px;
+  left: 12px;
+  height: 2px;
+  background: var(--accent);
+  content: "";
+  opacity: 0;
+  transform: scaleX(0.5);
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+}
+
+.primaryNavItemActive {
+  color: var(--text);
+}
+
+.primaryNavItemActive::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
 .localOnlyBadge {
   gap: 8px;
   color: var(--text-soft);
@@ -360,6 +408,7 @@ strong {
   align-items: center;
   justify-content: center;
   gap: var(--space-xs);
+  border: 0;
   border-radius: var(--radius-sm);
   background: var(--accent-strong);
   color: oklch(18% 0.035 45);
@@ -518,33 +567,33 @@ strong {
 }
 
 .refreshButton,
-button:not(.workspaceTab, .targetSelect, .scanRow, .quietDangerButton, .iconButton, .textButton) {
+button:not(.workspaceTab, .primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .quietDangerButton, .iconButton, .textButton, .modeCard) {
   display: inline-flex;
   min-height: 39px;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid color-mix(in srgb, var(--accent) 43%, var(--border));
-  border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent-strong), color-mix(in srgb, var(--blue) 75%, var(--accent)));
-  box-shadow: 0 7px 22px color-mix(in srgb, var(--accent) 12%, transparent);
-  color: #031512;
+  border: 1px solid color-mix(in oklch, var(--accent-deep) 64%, var(--border));
+  border-radius: var(--radius-sm);
+  background: var(--accent-strong);
+  box-shadow: none;
+  color: oklch(18% 0.035 45);
   font-size: 0.78rem;
   font-weight: 760;
   padding: 8px 14px;
-  transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
+  transition: transform 180ms var(--ease-out), background 180ms var(--ease-out), border-color 180ms var(--ease-out);
 }
 
 :root[data-theme="light"] .refreshButton,
-:root[data-theme="light"] button:not(.workspaceTab, .targetSelect, .scanRow, .quietDangerButton, .iconButton, .textButton) {
-  color: #ffffff;
+:root[data-theme="light"] button:not(.workspaceTab, .primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .quietDangerButton, .iconButton, .textButton, .modeCard) {
+  color: oklch(18% 0.035 45);
 }
 
 .refreshButton:hover:not(:disabled),
-button:not(.workspaceTab, .targetSelect, .scanRow, .quietDangerButton, .iconButton, .textButton):hover:not(:disabled) {
+button:not(.workspaceTab, .primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .quietDangerButton, .iconButton, .textButton, .modeCard):hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--accent) 20%, transparent);
-  filter: saturate(1.08);
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent-strong) 88%, white);
 }
 
 button.secondaryButton,
@@ -653,6 +702,29 @@ button.dangerButton,
   animation: panel-enter 220ms ease both;
 }
 
+.workspaceUtilityBar {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-sm);
+}
+
+.workspaceUtilityBar > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.workspaceUtilityBar > span svg {
+  color: var(--accent);
+}
+
 @keyframes panel-enter {
   from { opacity: 0; transform: translateY(7px); }
   to { opacity: 1; transform: translateY(0); }
@@ -660,6 +732,7 @@ button.dangerButton,
 
 .overviewWorkspace,
 .scanningWorkspace,
+.auditWorkspace,
 .findingsWorkspace,
 .intelligenceWorkspace,
 .credentialWorkspace,
@@ -682,7 +755,6 @@ button.dangerButton,
   border-radius: 15px;
   background: var(--surface);
   box-shadow: var(--shadow-soft);
-  backdrop-filter: blur(14px);
 }
 
 .panel,
@@ -2008,6 +2080,477 @@ textarea:focus {
   font-size: 0.72rem;
 }
 
+.auditWorkspace > .viewIntro h2 {
+  margin: 0;
+  font-size: 1.65rem;
+  font-weight: 720;
+  letter-spacing: -0.028em;
+  line-height: 1.2;
+}
+
+.auditPhaseTabs {
+  position: sticky;
+  top: var(--space-xs);
+  z-index: 15;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-soft);
+  padding: 5px;
+}
+
+.auditPhaseTab {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 58px;
+  align-items: center;
+  gap: var(--space-xs);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 10px;
+  text-align: left;
+  transition: color 180ms var(--ease-out), background 180ms var(--ease-out), border-color 180ms var(--ease-out);
+}
+
+.auditPhaseTab:hover {
+  background: var(--surface-soft);
+  color: var(--text-soft);
+}
+
+.auditPhaseTab > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+
+.auditPhaseTab strong,
+.auditPhaseTab small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auditPhaseTab strong {
+  font-size: 0.74rem;
+}
+
+.auditPhaseTab small {
+  color: var(--faint);
+  font-size: 0.59rem;
+}
+
+.auditPhaseMarker {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--surface-hover);
+}
+
+.auditPhaseTabActive {
+  border-color: color-mix(in oklch, var(--accent) 42%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.auditPhaseTabActive small {
+  color: var(--text-soft);
+}
+
+.auditPhaseTabActive .auditPhaseMarker {
+  background: var(--accent);
+  color: oklch(18% 0.035 45);
+}
+
+.auditPhaseTabComplete .auditPhaseMarker {
+  background: color-mix(in oklch, var(--success) 16%, transparent);
+  color: var(--success);
+}
+
+.auditPhaseTabPriority:not(.auditPhaseTabActive)::after {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  content: "";
+  opacity: 0.8;
+}
+
+.auditPhasePanel {
+  min-width: 0;
+}
+
+.auditPhaseContent {
+  display: grid;
+  gap: var(--space-lg);
+  min-width: 0;
+  animation: panel-enter 220ms var(--ease-out) both;
+}
+
+.auditPhaseContentPriority {
+  border-top: 1px solid color-mix(in oklch, var(--accent) 36%, var(--border));
+  padding-top: var(--space-lg);
+}
+
+.phaseHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-xl);
+  padding: var(--space-sm) 2px 0;
+}
+
+.phaseHeading > div:first-child {
+  max-width: 72ch;
+}
+
+.phaseHeading > div:first-child > span {
+  display: block;
+  margin-bottom: var(--space-2xs);
+  color: var(--accent-strong);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.phaseHeading h3,
+.profileSelectorHeader h3,
+.profileContext h3,
+.authorizationLayout h3,
+.launchReview h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.phaseHeading p,
+.profileSelectorHeader p,
+.profileContext > p:not(.panelKicker),
+.authorizationChecklist > p,
+.launchReview > div > p,
+.boundarySummary > p:not(.panelKicker) {
+  max-width: 70ch;
+  margin: var(--space-xs) 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.readinessState {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: var(--space-xs);
+  border: 1px solid color-mix(in oklch, var(--amber) 34%, var(--border));
+  border-radius: 999px;
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 0.7rem;
+  font-weight: 720;
+  padding: 6px 10px;
+}
+
+.readinessState .statusDot { background: var(--amber); }
+.readinessStateReady { border-color: color-mix(in oklch, var(--success) 34%, var(--border)); background: color-mix(in oklch, var(--success) 11%, transparent); color: var(--success); }
+.readinessStateReady .statusDot { background: var(--success); }
+
+.boundaryStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm) var(--space-xl);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-md) 2px;
+}
+
+.boundaryStrip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.boundaryStrip svg { color: var(--accent); }
+.boundaryStrip strong { color: var(--text-soft); }
+
+.phaseFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-lg);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-md);
+}
+
+.phaseFooter > span {
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-align: right;
+}
+
+.profileWorkspace {
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.profileSelectorHeader {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-xl);
+}
+
+.compactSelect {
+  width: min(390px, 100%);
+  flex: 0 0 auto;
+}
+
+.profileDecisionGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(300px, 0.68fr);
+  gap: var(--space-lg);
+  align-items: stretch;
+}
+
+.profileDecisionGrid .modeGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm);
+  margin: 0;
+}
+
+.profileDecisionGrid .modeCard {
+  min-height: 154px !important;
+  align-content: start !important;
+  gap: var(--space-xs) !important;
+  border-radius: var(--radius-md) !important;
+  padding: var(--space-md) !important;
+}
+
+.modeCardActive {
+  border-color: var(--accent) !important;
+  background: color-mix(in oklch, var(--accent-soft) 86%, var(--surface)) !important;
+  color: var(--text) !important;
+}
+
+.modeCardUnavailable:not(.modeCardActive) {
+  opacity: 0.62;
+}
+
+.modeCardTop {
+  display: flex !important;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin: 0 !important;
+}
+
+.modeCardTop strong {
+  color: var(--text);
+  font-size: 0.84rem;
+}
+
+.modeCardTop em {
+  color: var(--success);
+  font-size: 0.6rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.modeCardUnavailable .modeCardTop em { color: var(--faint); }
+
+.profileMeta {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: auto !important;
+}
+
+.profileMeta small {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.57rem;
+  font-weight: 650;
+  padding: 3px 6px;
+}
+
+.profileContext,
+.authorizationChecklist,
+.launchReview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  padding: var(--space-lg);
+}
+
+.profileContext {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.profileContextIcon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  margin-bottom: var(--space-md);
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.profileContext dl {
+  display: grid;
+  width: 100%;
+  gap: 0;
+  margin: var(--space-lg) 0;
+}
+
+.profileContext dl div,
+.launchReview dl div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+}
+
+.profileContext dt,
+.launchReview dt { color: var(--muted); font-size: 0.65rem; }
+.profileContext dd,
+.launchReview dd { margin: 0; color: var(--text-soft); font-size: 0.68rem; font-weight: 650; text-align: right; }
+.profileContext > button { width: 100%; margin-top: auto; }
+
+.profileContext .repoPathNotice {
+  width: 100%;
+  margin: 0 0 var(--space-md);
+}
+
+.profileContext .repoPathNotice p { margin: 0 0 var(--space-xs); color: var(--muted); font-size: 0.68rem; line-height: 1.55; }
+.profileContext .repoPathNotice strong { display: block; margin-bottom: var(--space-xs); color: var(--text-soft); font-size: 0.68rem; }
+
+.authorizationLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+.authorizationSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin: var(--space-lg) 0 var(--space-md);
+}
+
+.authorizationSummary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  padding: 6px 9px;
+}
+
+.authorizationSummary svg { color: var(--accent); }
+
+.acknowledgementList {
+  display: grid;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-md);
+}
+
+.authorizationChecklist > button { margin-top: var(--space-md); }
+
+.boundarySummary {
+  padding: var(--space-lg) var(--space-sm) var(--space-lg) var(--space-lg);
+}
+
+.boundarySummary > ul {
+  display: grid;
+  gap: var(--space-md);
+  margin: var(--space-lg) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.boundarySummary > ul li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  color: var(--muted);
+  font-size: 0.69rem;
+  line-height: 1.5;
+}
+
+.boundarySummary > ul li > svg { flex: 0 0 auto; margin-top: 2px; color: var(--success); }
+.boundarySummary > ul li span { display: grid; gap: 2px; }
+.boundarySummary > ul li strong { color: var(--text-soft); }
+
+.credentialPrompt {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-sm);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-md);
+}
+
+.credentialPrompt > span { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
+.credentialPrompt strong { color: var(--text-soft); font-size: 0.7rem; }
+.credentialPrompt p { margin: 3px 0 0; color: var(--muted); font-size: 0.66rem; line-height: 1.5; }
+.credentialPrompt .textButton { grid-column: 2; justify-self: start; }
+
+.launchReview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.85fr) auto;
+  align-items: center;
+  gap: var(--space-xl);
+}
+
+.launchReview dl { margin: 0; }
+.launchReview > button { white-space: nowrap; }
+.launchReview > .formMessage { grid-column: 1 / -1; margin: 0; }
+
+.runWorkspaceGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.8fr);
+  gap: var(--space-md);
+  align-items: start;
+}
+
+.runWorkspaceGrid > .richEmptyState { min-height: 260px; background: var(--surface); }
+
+.reviewPhaseHeading {
+  align-items: flex-end;
+}
+
+.reviewOutputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
 .modalBackdrop {
   position: fixed;
   inset: 0;
@@ -2117,6 +2660,15 @@ textarea:focus {
   .changeGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .launchReview {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 0.9fr);
+  }
+
+  .launchReview > button {
+    grid-column: 2;
+    justify-self: end;
+  }
 }
 
 @media (max-width: 900px) {
@@ -2127,6 +2679,22 @@ textarea:focus {
   .commandHero {
     min-height: 0;
     grid-template-columns: 1fr;
+  }
+
+  .appTopbar {
+    flex-wrap: wrap;
+  }
+
+  .primaryNavigation {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    border-top: 1px solid var(--border);
+  }
+
+  .primaryNavItem {
+    flex: 0 0 auto;
   }
 
   .commandHeroCopy {
@@ -2146,8 +2714,30 @@ textarea:focus {
   .targetManagementGrid,
   .scanWorkspaceGrid,
   .riskDashboardGrid,
-  .intelligenceGrid {
+  .intelligenceGrid,
+  .profileDecisionGrid,
+  .authorizationLayout,
+  .launchReview,
+  .runWorkspaceGrid,
+  .reviewOutputs {
     grid-template-columns: 1fr;
+  }
+
+  .launchReview > button {
+    grid-column: auto;
+    justify-self: start;
+  }
+
+  .auditPhaseTabs {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+  }
+
+  .auditPhaseTab {
+    min-width: 132px;
+    flex: 1 0 132px;
+    scroll-snap-align: start;
   }
 
   .filterGrid {
@@ -2171,6 +2761,10 @@ textarea:focus {
 
   .appTopbar {
     min-height: 56px;
+  }
+
+  .topbarActions {
+    margin-left: auto;
   }
 
   .brandLockup small,
@@ -2198,19 +2792,40 @@ textarea:focus {
     height: 205px;
   }
 
+  .scopeNodePolicy,
+  .scopeNodeNormalize,
+  .scopeField figcaption {
+    display: none;
+  }
+
+  .scopeNodeSource { left: 3%; bottom: 9%; }
+  .scopeNodeProfile { left: 40%; bottom: 9%; }
+  .scopeNodeHarbor { right: 2%; bottom: 9%; }
+
   .workspaceConsole {
     padding-top: 27px;
   }
 
   .workspaceHeader,
   .viewIntro,
-  .viewToolbar {
+  .viewToolbar,
+  .phaseHeading,
+  .profileSelectorHeader,
+  .reviewPhaseHeading {
     align-items: stretch;
     flex-direction: column;
   }
 
   .refreshButton {
-    width: 100%;
+    min-width: 44px;
+  }
+
+  .workspaceUtilityBar > span {
+    display: none;
+  }
+
+  .workspaceUtilityBar {
+    justify-content: flex-end;
   }
 
   .workspaceTabs {
@@ -2265,6 +2880,34 @@ textarea:focus {
   .filterGrid,
   .changeGrid {
     grid-template-columns: 1fr;
+  }
+
+  .profileDecisionGrid .modeGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .profileDecisionGrid .modeCard {
+    min-height: 138px !important;
+  }
+
+  .phaseFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .phaseFooter > span {
+    text-align: left;
+  }
+
+  .phaseFooter button,
+  .authorizationChecklist > button,
+  .launchReview > button {
+    width: 100%;
+  }
+
+  .boundaryStrip {
+    display: grid;
+    gap: var(--space-sm);
   }
 
   .searchField {

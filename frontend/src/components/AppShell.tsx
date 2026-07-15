@@ -1,19 +1,29 @@
 "use client";
 
+import { useState } from "react";
+
 import { AppIcon } from "@/components/AppIcon";
 import { ScopeHarborMark } from "@/components/ScopeHarborMark";
-import { TargetSetup } from "@/components/TargetSetup";
+import { TargetSetup, workspaceViews, type WorkspaceView } from "@/components/TargetSetup";
 import { WebGLScopeField } from "@/components/WebGLScopeField";
 
 const safetyRules = ["Exact allowlist", "Local-first", "Evidence redacted"];
 
 export function AppShell() {
+  const [activeView, setActiveView] = useState<WorkspaceView>("overview");
+  const [heroState, setHeroState] = useState({ activeProfile: "passive-web", currentStep: null as string | null, status: "ready" });
+
   function toggleTheme() {
     const root = document.documentElement;
     const nextTheme = root.dataset.theme === "light" ? "dark" : "light";
     root.dataset.theme = nextTheme;
     root.style.colorScheme = nextTheme;
     window.localStorage.setItem("scopeharbor-theme", nextTheme);
+  }
+
+  function navigateTo(view: WorkspaceView) {
+    setActiveView(view);
+    window.requestAnimationFrame(() => document.getElementById("workspace-console")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
   return (
@@ -26,6 +36,20 @@ export function AppShell() {
             <small>Local AppSec Audit Platform</small>
           </span>
         </a>
+
+        <nav className="primaryNavigation" aria-label="Primary workspace navigation">
+          {workspaceViews.map((view) => (
+            <button
+              key={view.id}
+              type="button"
+              className={activeView === view.id ? "primaryNavItem primaryNavItemActive" : "primaryNavItem"}
+              aria-current={activeView === view.id ? "page" : undefined}
+              onClick={() => navigateTo(view.id)}
+            >
+              {view.label}
+            </button>
+          ))}
+        </nav>
 
         <div className="topbarActions">
           <div className="localOnlyBadge">
@@ -47,7 +71,7 @@ export function AppShell() {
             Move from an approved local target to clear, normalized findings through a guided audit path that keeps scope, evidence, and decisions under your control.
           </p>
           <div className="heroActions">
-            <a className="primaryAction" href="#workspace-console">Start an audit <AppIcon name="arrow" size={16} /></a>
+            <button className="primaryAction" type="button" onClick={() => navigateTo("scanning")}>Start an audit <AppIcon name="arrow" size={16} /></button>
             <span className="heroReady"><span className="liveDot" /> Platform readiness is visible before launch</span>
           </div>
           <ul className="safetyStrip" aria-label="Safety boundaries">
@@ -56,11 +80,11 @@ export function AppShell() {
             ))}
           </ul>
         </div>
-        <WebGLScopeField activeProfile="passive-web" status="ready" />
+        <WebGLScopeField {...heroState} />
       </section>
 
       <section id="workspace-console" className="workspaceConsole">
-        <TargetSetup />
+        <TargetSetup activeView={activeView} onActiveViewChange={navigateTo} onHeroStateChange={setHeroState} />
       </section>
     </main>
   );
