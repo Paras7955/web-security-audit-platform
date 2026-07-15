@@ -96,7 +96,7 @@ export function ScanProfileSelector({
                 key={profile.id}
                 type="button"
                 aria-pressed={scanProfileId === profile.id}
-                className={`${scanProfileId === profile.id ? "modeCard modeCardActive" : "modeCard"}${!isAvailable && selectedTarget ? " modeCardUnavailable" : ""}`}
+                className={`modeCard modeCard-${profile.id}${scanProfileId === profile.id ? " modeCardActive" : ""}${!isAvailable && selectedTarget ? " modeCardUnavailable" : ""}`}
                 onClick={() => onSelectScanProfile(profile.id)}
               >
                 <span className="modeCardIcon"><AppIcon name={profileIcon(profile.id)} size={28} /></span>
@@ -111,7 +111,7 @@ export function ScanProfileSelector({
           })}
         </div>
 
-        <aside className="profileContext" aria-live="polite">
+        <aside className={`profileContext profileContext-${selectedProfile.id}`} aria-live="polite">
           <div className="profileContextHeading">
             <span className="profileContextIcon"><AppIcon name={selectedProfile.mode === "repo" ? "intelligence" : "scan"} size={20} /></span>
             <div><span>Selected profile</span><h3>{selectedProfile.label}</h3></div>

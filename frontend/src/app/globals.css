@@ -40,8 +40,12 @@
   --input: oklch(11.8% 0.026 252);
   --body-gradient-start: oklch(13% 0.032 252);
   --body-glow-secondary: oklch(51% 0.12 252 / 0.12);
-  --font-sans: "Avenir Next", Avenir, "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
   --type-caption: 0.75rem;
   --type-meta: 0.875rem;
   --type-body: 1rem;
@@ -213,7 +217,7 @@ h4 {
 
 .brandLockup strong {
   font-size: 1.17rem;
-  font-weight: 760;
+  font-weight: var(--weight-bold);
 }
 
 .brandContext {
@@ -267,7 +271,7 @@ h4 {
   background: transparent;
   color: var(--muted);
   font-size: 0.82rem;
-  font-weight: 650;
+  font-weight: 600;
   padding: 9px 12px;
   transition: color 180ms var(--ease-out), background 180ms var(--ease-out);
 }
@@ -303,7 +307,7 @@ h4 {
   gap: 8px;
   color: var(--text-soft);
   font-size: 0.8rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .liveDot {
@@ -377,7 +381,7 @@ h4 {
   margin: 0 0 10px;
   color: var(--accent);
   font-size: 0.72rem;
-  font-weight: 760;
+  font-weight: var(--weight-bold);
   letter-spacing: 0.115em;
   text-transform: uppercase;
 }
@@ -386,7 +390,7 @@ h4 {
   margin-bottom: 4px;
   color: var(--muted);
   font-size: var(--type-caption);
-  font-weight: 650;
+  font-weight: var(--weight-medium);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -395,7 +399,7 @@ h4 {
   max-width: 260px;
   margin: 0;
   font-size: var(--type-display);
-  font-weight: 740;
+  font-weight: var(--weight-bold);
   line-height: 1.15;
   letter-spacing: -0.028em;
   text-wrap: balance;
@@ -429,7 +433,7 @@ h4 {
   background: linear-gradient(135deg, var(--action), var(--action-end));
   color: var(--on-action);
   font-size: 0.82rem;
-  font-weight: 760;
+  font-weight: var(--weight-semibold);
   padding: 10px 15px;
   transition: background 180ms var(--ease-out), transform 180ms var(--ease-out);
 }
@@ -445,7 +449,7 @@ h4 {
   gap: var(--space-xs);
   color: var(--muted);
   font-size: 0.73rem;
-  font-weight: 620;
+  font-weight: var(--weight-medium);
 }
 
 .safetyStrip {
@@ -462,14 +466,17 @@ h4 {
   margin: 0;
   color: var(--text-soft);
   font-size: 0.82rem;
-  font-weight: 560;
+  font-weight: 500;
   list-style: none;
   padding: 0;
 }
 
 .safetyStrip svg {
-  color: var(--accent);
+  color: var(--accent-strong);
 }
+
+.safetyStrip li:nth-child(2) svg { color: var(--blue); }
+.safetyStrip li:nth-child(3) svg { color: var(--amber); }
 
 .scopeField {
   position: relative;
@@ -487,7 +494,10 @@ h4 {
   width: 620px;
   height: 260px;
   border-radius: 999px;
-  background: radial-gradient(ellipse, var(--hero-glow), transparent 68%);
+  background:
+    radial-gradient(circle at 78% 34%, var(--blue-soft), transparent 28%),
+    radial-gradient(circle at 26% 72%, var(--amber-soft), transparent 22%),
+    radial-gradient(ellipse, var(--hero-glow), transparent 68%);
   content: "";
   filter: blur(28px);
   transform: translate(-50%, -50%);
@@ -515,23 +525,36 @@ h4 {
   gap: 1px;
   color: var(--text);
   font-size: var(--type-meta);
-  font-weight: 720;
+  padding-left: var(--space-sm);
+  font-weight: var(--weight-semibold);
   line-height: 1.25;
   text-shadow: 0 1px 5px var(--bg), 0 0 14px var(--bg);
+}
+
+.scopeNode::before {
+  position: absolute;
+  top: 0.42em;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--node-accent, var(--accent-strong));
+  box-shadow: 0 0 10px var(--node-accent, var(--accent-strong));
+  content: "";
 }
 
 .scopeNode small {
   color: var(--muted);
   font-size: var(--type-caption);
-  font-weight: 560;
+  font-weight: var(--weight-regular);
 }
 
-.scopeNodeWeb { left: 4%; top: 31%; }
-.scopeNodeRepo { left: 19%; top: 27%; }
-.scopeNodePolicy { left: 34%; top: 12%; }
-.scopeNodeProfile { left: 50%; top: 13%; }
-.scopeNodeNormalize { left: 67%; top: 18%; }
-.scopeNodeHarbor { right: 5%; top: 2%; }
+.scopeNodeWeb { --node-accent: var(--blue); left: 4%; top: 31%; }
+.scopeNodeRepo { --node-accent: var(--amber); left: 19%; top: 27%; }
+.scopeNodePolicy { --node-accent: var(--blue); left: 34%; top: 12%; }
+.scopeNodeProfile { --node-accent: var(--accent-strong); left: 50%; top: 13%; }
+.scopeNodeNormalize { --node-accent: var(--amber); left: 67%; top: 18%; }
+.scopeNodeHarbor { --node-accent: var(--accent-strong); right: 5%; top: 2%; }
 
 .scopeField figcaption {
   position: absolute;
@@ -542,7 +565,7 @@ h4 {
   gap: var(--space-xs);
   color: var(--faint);
   font-size: 0.65rem;
-  font-weight: 620;
+  font-weight: 600;
 }
 
 .scopeFieldSignal {
@@ -574,7 +597,7 @@ button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scan
   box-shadow: none;
   color: var(--on-action);
   font-size: 0.78rem;
-  font-weight: 760;
+  font-weight: var(--weight-semibold);
   padding: 8px 14px;
   transition: transform 180ms var(--ease-out), background 180ms var(--ease-out), border-color 180ms var(--ease-out);
 }
@@ -647,7 +670,7 @@ button.dangerButton,
   gap: var(--space-xs);
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .workspaceUtilityBar > span svg {
@@ -715,7 +738,7 @@ button.dangerButton,
 .viewToolbar h3 {
   margin: 0;
   font-size: var(--type-subheading);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 
 .contextBadge,
@@ -734,7 +757,7 @@ button.dangerButton,
   color: var(--muted);
   font-size: 0.72rem;
   font-style: normal;
-  font-weight: 740;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.025em;
   padding: 5px 9px;
   text-transform: capitalize;
@@ -788,12 +811,12 @@ button.dangerButton,
 .metricCard > div > span {
   color: var(--muted);
   font-size: 0.73rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .metricCard > div > strong {
   font-size: 2.05rem;
-  font-weight: 730;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1.13;
 }
@@ -931,7 +954,7 @@ button.dangerButton,
 
 .activityProgress strong {
   font-size: 2.65rem;
-  font-weight: 720;
+  font-weight: 700;
 }
 
 .activityProgress span {
@@ -994,7 +1017,7 @@ dd {
   overflow-wrap: anywhere;
   color: var(--text-soft);
   font-size: 0.78rem;
-  font-weight: 650;
+  font-weight: 600;
   text-align: right;
 }
 
@@ -1037,7 +1060,7 @@ td {
 th {
   color: var(--muted);
   font-size: 0.71rem;
-  font-weight: 730;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -1062,7 +1085,7 @@ tbody tr:last-child td {
   background: transparent;
   color: var(--text);
   font-size: inherit;
-  font-weight: 650;
+  font-weight: 600;
   padding: 4px 0;
   text-align: left;
 }
@@ -1087,7 +1110,7 @@ tbody tr:last-child td {
 .viewToolbar h2 {
   margin: 0;
   font-size: 1.55rem;
-  font-weight: 720;
+  font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1.2;
 }
@@ -1253,7 +1276,7 @@ tbody tr:last-child td {
   gap: 6px;
   color: var(--muted);
   font-size: 0.76rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 input,
@@ -1662,8 +1685,8 @@ textarea:focus {
 .tagManagement {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
-  margin-bottom: 10px;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
 }
 
 .filterButton {
@@ -1692,22 +1715,22 @@ textarea:focus {
 }
 
 .advancedFindingControls {
-  margin: 0 0 var(--space-sm);
+  margin: 0 0 var(--space-xs);
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
 
 .advancedFindingControls summary {
   display: grid;
-  min-height: 42px;
+  min-height: 40px;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-sm);
+  gap: var(--space-xs);
   color: var(--text-soft);
   cursor: pointer;
   font-size: 0.78rem;
-  font-weight: 680;
-  padding: 10px 2px;
+  font-weight: 600;
+  padding: var(--space-xs) 2px;
 }
 
 .advancedFindingControls summary::before {
@@ -1782,11 +1805,11 @@ textarea:focus {
 }
 
 .resultsToolbar {
-  min-height: 48px;
+  min-height: 44px;
   justify-content: space-between;
   gap: var(--space-md);
-  border-top: 1px solid var(--border);
-  margin-top: var(--space-xs);
+  border-top: 0;
+  margin-top: 0;
 }
 
 .resultsToolbar p {
@@ -1806,10 +1829,10 @@ textarea:focus {
 .resultsToolbar label {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-xs);
   color: var(--muted);
   font-size: 0.74rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .resultsToolbar select {
@@ -1962,7 +1985,7 @@ textarea:focus {
 .findingDetail {
   position: sticky;
   top: 92px;
-  max-height: calc(100vh - 110px);
+  max-height: min(35rem, calc(100vh - 110px));
   overflow-y: auto;
 }
 
@@ -1971,12 +1994,14 @@ textarea:focus {
 .toolRunPanel h4 {
   margin: 17px 0 7px;
   color: var(--text-soft);
-  font-size: 0.72rem;
+  font-size: var(--type-meta);
+  font-weight: var(--weight-semibold);
 }
 
 .findingDetail p {
   color: var(--text-soft);
-  font-size: 0.84rem;
+  font-size: var(--type-body);
+  line-height: 1.6;
 }
 
 .findingDetail pre {
@@ -2023,12 +2048,12 @@ textarea:focus {
 .riskScoreCard > span {
   color: var(--muted);
   font-size: 0.71rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .riskScoreCard > strong {
   font-size: 2rem;
-  font-weight: 720;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2143,8 +2168,8 @@ textarea:focus {
 .reportList,
 .aiGroupList {
   display: grid;
-  gap: 7px;
-  margin-top: 14px;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
 }
 
 .reportList li {
@@ -2153,15 +2178,16 @@ textarea:focus {
   align-items: center;
   gap: 8px;
   margin: 0;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface-soft);
-  padding: 9px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  padding: var(--space-xs) 0;
 }
 
 .reportList li strong,
 .reportList li span {
-  font-size: 0.74rem;
+  font-size: var(--type-meta);
 }
 
 .reportList li span {
@@ -2185,7 +2211,7 @@ textarea:focus {
 .aiExecutiveSummary {
   margin: 0;
   color: var(--text-soft) !important;
-  font-size: 0.9rem !important;
+  font-size: var(--type-body) !important;
   line-height: 1.55 !important;
   text-wrap: pretty;
 }
@@ -2236,7 +2262,7 @@ textarea:focus {
 .aiContextBody > p {
   margin: var(--space-sm) 0 0;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--type-meta);
   line-height: 1.55;
   text-wrap: pretty;
 }
@@ -2312,7 +2338,7 @@ textarea:focus {
   gap: var(--space-sm);
   cursor: pointer;
   list-style: none;
-  padding: 9px 2px;
+  padding: var(--space-xs) 2px;
 }
 
 .aiFindingSummary::after {
@@ -2344,7 +2370,7 @@ textarea:focus {
 .aiFindingSummary > span:nth-child(2) {
   overflow-wrap: anywhere;
   color: var(--text-soft);
-  font-size: 0.78rem;
+  font-size: var(--type-meta);
   line-height: 1.45;
   text-wrap: pretty;
 }
@@ -2369,8 +2395,8 @@ textarea:focus {
 .aiFindingBody p {
   margin: 0;
   overflow-wrap: anywhere;
-  color: var(--muted);
-  font-size: 0.78rem;
+  color: var(--text-soft);
+  font-size: var(--type-meta);
   line-height: 1.55;
   text-wrap: pretty;
 }
@@ -2507,7 +2533,7 @@ textarea:focus {
   align-items: center;
   gap: 6px;
   color: var(--text-soft);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .auditEvent svg {
@@ -2523,7 +2549,7 @@ textarea:focus {
 .auditWorkspace > .viewIntro h2 {
   margin: 0;
   font-size: 1.65rem;
-  font-weight: 720;
+  font-weight: 700;
   letter-spacing: -0.028em;
   line-height: 1.2;
 }
@@ -2543,6 +2569,8 @@ textarea:focus {
 }
 
 .auditPhaseTab {
+  --phase-color: var(--accent-strong);
+  --phase-soft: var(--accent-soft);
   position: relative;
   display: flex;
   min-width: 0;
@@ -2557,6 +2585,13 @@ textarea:focus {
   text-align: left;
   transition: color 180ms var(--ease-out), background 180ms var(--ease-out), border-color 180ms var(--ease-out);
 }
+
+.auditPhaseTab-ready,
+.auditPhaseTab-scope { --phase-color: var(--blue); --phase-soft: var(--blue-soft); }
+.auditPhaseTab-profile,
+.auditPhaseTab-run { --phase-color: var(--accent-strong); --phase-soft: var(--accent-soft); }
+.auditPhaseTab-authorize,
+.auditPhaseTab-review { --phase-color: var(--amber); --phase-soft: var(--amber-soft); }
 
 .auditPhaseTab + .auditPhaseTab {
   border-left-color: var(--border);
@@ -2581,6 +2616,7 @@ textarea:focus {
 
 .auditPhaseTab strong {
   font-size: var(--type-meta);
+  font-weight: var(--weight-semibold);
 }
 
 .auditPhaseTab small {
@@ -2597,14 +2633,14 @@ textarea:focus {
   border-radius: 50%;
   background: var(--surface-hover);
   font-size: 0.72rem;
-  font-weight: 760;
+  font-weight: var(--weight-semibold);
 }
 
 .auditPhaseTabActive {
   border-color: transparent;
-  border-bottom-color: var(--accent);
-  background: color-mix(in oklch, var(--accent-soft) 58%, transparent);
-  color: var(--accent-strong);
+  border-bottom-color: var(--phase-color);
+  background: color-mix(in oklch, var(--phase-soft) 64%, transparent);
+  color: var(--phase-color);
 }
 
 .auditPhaseTabActive::before {
@@ -2613,7 +2649,7 @@ textarea:focus {
   bottom: -1px;
   left: 0;
   height: 2px;
-  background: var(--accent-strong);
+  background: var(--phase-color);
   content: "";
 }
 
@@ -2622,8 +2658,8 @@ textarea:focus {
 }
 
 .auditPhaseTabActive .auditPhaseMarker {
-  background: var(--accent);
-  color: var(--on-action);
+  background: color-mix(in oklch, var(--phase-color) 22%, transparent);
+  color: var(--phase-color);
 }
 
 .auditPhaseTabComplete .auditPhaseMarker {
@@ -2638,7 +2674,7 @@ textarea:focus {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--phase-color);
   content: "";
   opacity: 0.8;
 }
@@ -2674,7 +2710,7 @@ textarea:focus {
 .phaseHeading > div:first-child > span {
   display: block;
   margin-bottom: var(--space-2xs);
-  color: var(--accent-strong);
+  color: var(--amber);
   font-size: 0.76rem;
   font-weight: 700;
 }
@@ -2685,7 +2721,7 @@ textarea:focus {
 .launchReview h2 {
   margin: 0;
   font-size: var(--type-heading);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   letter-spacing: -0.02em;
   line-height: 1.25;
 }
@@ -2694,7 +2730,7 @@ textarea:focus {
 .authorizationLayout h3 {
   margin: 0;
   font-size: var(--type-subheading);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   line-height: 1.3;
 }
 
@@ -2722,7 +2758,7 @@ textarea:focus {
   background: var(--amber-soft);
   color: var(--amber);
   font-size: 0.7rem;
-  font-weight: 720;
+  font-weight: 700;
   padding: 6px 10px;
 }
 
@@ -2748,6 +2784,9 @@ textarea:focus {
 }
 
 .boundaryStrip svg { color: var(--accent); }
+.boundaryStrip span:nth-child(1) svg { color: var(--blue); }
+.boundaryStrip span:nth-child(2) svg { color: var(--amber); }
+.boundaryStrip span:nth-child(3) svg { color: var(--accent-strong); }
 .boundaryStrip strong { color: var(--text-soft); }
 
 .phaseFooter {
@@ -2823,13 +2862,18 @@ textarea:focus {
   place-items: center;
   margin: 0 !important;
   border-radius: 10px;
-  background: var(--surface-hover);
-  color: var(--muted) !important;
+  background: var(--profile-soft);
+  color: var(--profile-color) !important;
 }
 
+.modeCard-passive-web { --profile-color: var(--accent-strong); --profile-soft: var(--accent-soft); }
+.modeCard-active-demo { --profile-color: var(--blue); --profile-soft: var(--blue-soft); }
+.modeCard-modern-web-crawl { --profile-color: var(--amber); --profile-soft: var(--amber-soft); }
+.modeCard-repo { --profile-color: var(--violet); --profile-soft: var(--violet-soft); }
+
 .modeCardActive .modeCardIcon {
-  background: var(--accent-soft);
-  color: var(--accent-strong) !important;
+  background: var(--profile-soft);
+  color: var(--profile-color) !important;
 }
 
 .profileDecisionGrid .modeCard > span:not(.modeCardIcon) {
@@ -2847,8 +2891,8 @@ textarea:focus {
 }
 
 .modeCardActive {
-  border-color: var(--accent) !important;
-  background: color-mix(in oklch, var(--accent-soft) 86%, var(--surface)) !important;
+  border-color: var(--profile-color) !important;
+  background: color-mix(in oklch, var(--profile-soft) 86%, var(--surface)) !important;
   color: var(--text) !important;
 }
 
@@ -2868,6 +2912,7 @@ textarea:focus {
 .modeCardTop strong {
   color: var(--text);
   font-size: var(--type-meta);
+  font-weight: var(--weight-semibold);
 }
 
 .modeCardTop em {
@@ -2915,7 +2960,7 @@ textarea:focus {
   margin-bottom: 1px;
   color: var(--muted);
   font-size: var(--type-caption);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .profileContextIcon {
@@ -2928,6 +2973,10 @@ textarea:focus {
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
+
+.profileContext-active-demo .profileContextIcon { background: var(--blue-soft); color: var(--blue); }
+.profileContext-modern-web-crawl .profileContextIcon { background: var(--amber-soft); color: var(--amber); }
+.profileContext-repo .profileContextIcon { background: var(--violet-soft); color: var(--violet); }
 
 .profileAssuranceList {
   display: grid;
@@ -2947,15 +2996,23 @@ textarea:focus {
   padding: var(--space-2xs) 0;
 }
 
+.profileAssuranceList li:nth-child(1) { color: var(--blue); }
+.profileAssuranceList li:nth-child(2) { color: var(--amber); }
+.profileAssuranceList li:nth-child(3) { color: var(--accent-strong); }
+
 .profileAssuranceList li > span {
   display: grid;
   min-width: 0;
+  grid-template-columns: minmax(112px, auto) minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-xs);
 }
 
 .profileAssuranceList strong {
   color: var(--text-soft);
   font-size: var(--type-caption);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
 }
 
 .profileAssuranceList small {
@@ -2974,7 +3031,7 @@ textarea:focus {
 }
 
 .launchReview dt { color: var(--muted); font-size: 0.73rem; }
-.launchReview dd { margin: 0; color: var(--text-soft); font-size: 0.74rem; font-weight: 650; text-align: right; }
+.launchReview dd { margin: 0; color: var(--text-soft); font-size: 0.74rem; font-weight: 600; text-align: right; }
 .profileContext > button { width: 100%; margin-top: var(--space-sm); }
 
 .profileContext .repoPathNotice {
@@ -2982,7 +3039,7 @@ textarea:focus {
   margin: 0 0 var(--space-md);
 }
 
-.profileContext .repoPathNotice p { margin: 0 0 var(--space-xs); color: var(--muted); font-size: 0.74rem; line-height: 1.55; }
+.profileContext .repoPathNotice p { margin: 0 0 var(--space-xs); color: var(--text-soft); font-size: var(--type-meta); line-height: 1.55; }
 .profileContext .repoPathNotice strong { display: block; margin-bottom: var(--space-xs); color: var(--text-soft); font-size: 0.74rem; }
 
 .authorizationLayout {
@@ -3038,7 +3095,7 @@ textarea:focus {
   align-items: flex-start;
   gap: var(--space-sm);
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: var(--type-meta);
   line-height: 1.5;
 }
 
@@ -3056,7 +3113,7 @@ textarea:focus {
 
 .credentialPrompt > span { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
 .credentialPrompt strong { color: var(--text-soft); font-size: 0.7rem; }
-.credentialPrompt p { margin: 3px 0 0; color: var(--muted); font-size: 0.72rem; line-height: 1.5; }
+.credentialPrompt p { margin: var(--space-2xs) 0 0; color: var(--text-soft); font-size: var(--type-meta); line-height: 1.5; }
 .credentialPrompt .textButton { grid-column: 2; justify-self: start; }
 
 .launchReview {
@@ -3086,15 +3143,25 @@ textarea:focus {
 .reviewOutputs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-md);
+  align-items: start;
+  gap: var(--space-sm);
 }
+
+.reviewOutputs .reportPanel,
+.reviewOutputs .aiPanel {
+  height: auto;
+  box-shadow: none;
+}
+
+.reviewOutputs .reportPanel .contextBadge { border-color: color-mix(in oklch, var(--amber) 34%, var(--border)); background: var(--amber-soft); color: var(--amber); }
+.reviewOutputs .aiPanel .contextBadge { border-color: color-mix(in oklch, var(--blue) 34%, var(--border)); background: var(--blue-soft); color: var(--blue); }
 
 .recentFindingsPreview {
   position: relative;
   min-width: 0;
-  margin-top: var(--space-lg);
+  margin-top: 0;
   border-top: 1px solid var(--border);
-  padding-top: var(--space-md);
+  padding-top: var(--space-xs);
 }
 
 .recentFindingsHeader {
@@ -3107,13 +3174,14 @@ textarea:focus {
 
 .recentFindingsHeader h3 {
   margin: 0;
-  font-size: 1.08rem;
+  font-size: var(--type-subheading);
+  font-weight: var(--weight-semibold);
 }
 
 .recentFindingsHeader p {
-  margin: 3px 0 0;
+  margin: var(--space-2xs) 0 0;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--type-meta);
 }
 
 .recentFindingsTableWrap {
@@ -3296,7 +3364,6 @@ textarea:focus {
   .targetManagementGrid,
   .riskDashboardGrid,
   .intelligenceGrid,
-  .profileDecisionGrid,
   .authorizationLayout,
   .launchReview,
   .runWorkspaceGrid,
@@ -3340,6 +3407,12 @@ textarea:focus {
 
   .boundaryGrid article {
     min-height: 0;
+  }
+}
+
+@media (max-width: 840px) {
+  .profileDecisionGrid {
+    grid-template-columns: 1fr;
   }
 }
 

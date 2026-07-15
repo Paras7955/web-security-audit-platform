@@ -15,7 +15,7 @@ type SceneBox = {
   color: Vec3;
   rotation?: Vec3;
   emissive?: number;
-  geometry?: "cube" | "cylinder";
+  geometry?: "cube" | "cylinder" | "octahedron";
 };
 
 type PulseBinding = {
@@ -54,12 +54,16 @@ void main() {
   vec3 normal = normalize(v_normal);
   vec3 keyLight = normalize(vec3(-0.48, 0.86, 0.38));
   vec3 fillLight = normalize(vec3(0.72, 0.38, 0.58));
+  vec3 viewDirection = normalize(vec3(0.0, 0.34, 1.0));
+  vec3 halfDirection = normalize(keyLight + viewDirection);
   float key = max(dot(normal, keyLight), 0.0);
   float fill = max(dot(normal, fillLight), 0.0);
-  float rim = pow(1.0 - max(dot(normal, normalize(vec3(0.0, 0.35, 1.0))), 0.0), 2.4);
+  float specular = pow(max(dot(normal, halfDirection), 0.0), 30.0);
+  float rim = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.4);
   float topLift = max(normal.y, 0.0) * 0.16;
   float distanceFade = clamp(1.04 - length(v_position.xz) * 0.014, 0.82, 1.0);
-  vec3 lit = u_color * (0.2 + key * 0.72 + fill * 0.18 + rim * 0.18 + topLift + u_emissive);
+  vec3 lit = u_color * (0.18 + key * 0.7 + fill * 0.2 + rim * 0.2 + topLift + u_emissive);
+  lit += vec3(1.0, 0.82, 0.68) * specular * 0.2;
   lit *= distanceFade;
   gl_FragColor = vec4(pow(lit, vec3(0.92)), 1.0);
 }`;
@@ -131,10 +135,12 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
     }
 
     const cubeVertices = createCubeVertices();
-    const cylinderVertices = createCylinderVertices(40);
+    const cylinderVertices = createCylinderVertices(48);
+    const octahedronVertices = createOctahedronVertices();
     const cubeBuffer = gl.createBuffer();
     const cylinderBuffer = gl.createBuffer();
-    if (!cubeBuffer || !cylinderBuffer) {
+    const octahedronBuffer = gl.createBuffer();
+    if (!cubeBuffer || !cylinderBuffer || !octahedronBuffer) {
       gl.deleteProgram(program);
       gl.deleteShader(vertexShader);
       gl.deleteShader(fragmentShader);
@@ -146,6 +152,8 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
     gl.bufferData(gl.ARRAY_BUFFER, cubeVertices, gl.STATIC_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, cylinderBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, cylinderVertices, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, octahedronBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, octahedronVertices, gl.STATIC_DRAW);
     gl.useProgram(program);
 
     const positionLocation = gl.getAttribLocation(program, "a_position");
@@ -176,7 +184,8 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
 
     const drawBox = (box: SceneBox, viewProjection: Float32Array) => {
       const isCylinder = box.geometry === "cylinder";
-      gl.bindBuffer(gl.ARRAY_BUFFER, isCylinder ? cylinderBuffer : cubeBuffer);
+      const isOctahedron = box.geometry === "octahedron";
+      gl.bindBuffer(gl.ARRAY_BUFFER, isCylinder ? cylinderBuffer : isOctahedron ? octahedronBuffer : cubeBuffer);
       gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, stride, 0);
       gl.vertexAttribPointer(normalLocation, 3, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
       let model = modelMatrices.get(box);
@@ -189,7 +198,8 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
       gl.uniformMatrix4fv(modelLocation, false, model);
       gl.uniform3fv(colorLocation, box.color);
       gl.uniform1f(emissiveLocation, box.emissive ?? 0);
-      gl.drawArrays(gl.TRIANGLES, 0, isCylinder ? cylinderVertices.length / 6 : cubeVertices.length / 6);
+      const vertexCount = isCylinder ? cylinderVertices.length / 6 : isOctahedron ? octahedronVertices.length / 6 : cubeVertices.length / 6;
+      gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
     };
 
     const render = (now: number) => {
@@ -214,10 +224,10 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
       const aspect = width / height;
       const compactScene = aspect < 2;
       const camera: Vec3 = compactScene
-        ? [pointer.x * 0.16, 5 + pointer.y * 0.12, 10.8]
-        : [0.35 + pointer.x * 0.2, 4.25 + pointer.y * 0.14, 7.6];
-      const projection = perspectiveMatrix(compactScene ? Math.PI / 4.2 : Math.PI / 7.2, aspect, 0.1, 40);
-      const view = lookAtMatrix(camera, [0.45, -0.1, 0], [0, 1, 0]);
+        ? [pointer.x * 0.14, 3.8 + pointer.y * 0.1, 10.6]
+        : [0.18 + pointer.x * 0.18, 3.15 + pointer.y * 0.12, 8.2];
+      const projection = perspectiveMatrix(compactScene ? Math.PI / 4.4 : Math.PI / 8.5, aspect, 0.1, 40);
+      const view = lookAtMatrix(camera, [0.1, 0.26, 0], [0, 1, 0]);
       const viewProjection = multiplyMatrices(projection, view);
 
       gl.clearColor(0, 0, 0, 0);
@@ -283,6 +293,7 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
       field.removeEventListener("pointerleave", handlePointerLeave);
       gl.deleteBuffer(cubeBuffer);
       gl.deleteBuffer(cylinderBuffer);
+      gl.deleteBuffer(octahedronBuffer);
       gl.deleteProgram(program);
       gl.deleteShader(vertexShader);
       gl.deleteShader(fragmentShader);
@@ -369,6 +380,33 @@ function createCylinderVertices(segments: number) {
   return new Float32Array(data);
 }
 
+function createOctahedronVertices() {
+  const data: number[] = [];
+  const vertices: Vec3[] = [
+    [0, 1, 0],
+    [1, 0, 0],
+    [0, 0, 1],
+    [-1, 0, 0],
+    [0, 0, -1],
+    [0, -1, 0]
+  ];
+  const faces: Array<[number, number, number]> = [
+    [0, 2, 1], [0, 3, 2], [0, 4, 3], [0, 1, 4],
+    [5, 1, 2], [5, 2, 3], [5, 3, 4], [5, 4, 1]
+  ];
+  for (const [firstIndex, secondIndex, thirdIndex] of faces) {
+    const first = vertices[firstIndex];
+    const second = vertices[secondIndex];
+    const third = vertices[thirdIndex];
+    const normal = normalize(cross(
+      [second[0] - first[0], second[1] - first[1], second[2] - first[2]],
+      [third[0] - first[0], third[1] - first[1], third[2] - first[2]]
+    ));
+    data.push(...first, ...normal, ...second, ...normal, ...third, ...normal);
+  }
+  return new Float32Array(data);
+}
+
 function profileRouteLabel(profileId: string) {
   if (profileId === "active-demo") return "Bounded active checks";
   if (profileId === "modern-web-crawl") return "Rendered route crawl";
@@ -376,132 +414,135 @@ function profileRouteLabel(profileId: string) {
   return "Observe only";
 }
 
-function createRouteArchitecture(points: Vec3[], edgeColor: Vec3, topColor: Vec3): SceneBox[] {
-  const boxes: SceneBox[] = [];
-  for (let segmentIndex = 0; segmentIndex < points.length - 1; segmentIndex += 1) {
-    const start = points[segmentIndex];
-    const end = points[segmentIndex + 1];
-    const deltaX = end[0] - start[0];
-    const deltaZ = end[2] - start[2];
-    const distance = Math.hypot(deltaX, deltaZ);
-    const tileCount = Math.max(3, Math.ceil(distance / 0.42));
-    const angle = -Math.atan2(deltaZ, deltaX);
-    const normalX = -deltaZ / distance;
-    const normalZ = deltaX / distance;
+function createRouteTube(start: Vec3, end: Vec3, radius: number, color: Vec3, emissive = 0): SceneBox {
+  const deltaX = end[0] - start[0];
+  const deltaZ = end[2] - start[2];
+  const distance = Math.hypot(deltaX, deltaZ);
+  return {
+    position: [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2, (start[2] + end[2]) / 2],
+    scale: [radius, distance / 2, radius],
+    rotation: [0, -Math.atan2(deltaZ, deltaX), -Math.PI / 2],
+    color,
+    emissive,
+    geometry: "cylinder"
+  };
+}
 
-    for (let tileIndex = 0; tileIndex < tileCount; tileIndex += 1) {
-      const progress = (tileIndex + 0.5) / tileCount;
-      const x = start[0] + deltaX * progress;
-      const y = start[1] + (end[1] - start[1]) * progress;
-      const z = start[2] + deltaZ * progress;
-      const tileHalfLength = distance / tileCount / 2;
-      boxes.push({
-        position: [x, y, z],
-        scale: [tileHalfLength * 0.96, 0.11, 0.29],
-        rotation: [0, angle, 0],
-        color: edgeColor
-      });
-      for (const side of [-1, 1]) {
-        boxes.push({
-          position: [x + normalX * 0.39 * side, y + 0.09, z + normalZ * 0.39 * side],
-          scale: [Math.min(0.14, tileHalfLength * 0.74), 0.15, 0.11],
-          rotation: [0, angle, 0],
-          color: topColor
-        });
-      }
-    }
-  }
-  return boxes;
+function createRoute(points: Vec3[], radius: number, color: Vec3, emissive = 0): SceneBox[] {
+  return points.slice(0, -1).map((point, index) => createRouteTube(point, points[index + 1], radius, color, emissive));
+}
+
+function createShieldBeam(start: [number, number], end: [number, number], z: number, thickness: number, color: Vec3, emissive = 0): SceneBox {
+  const deltaX = end[0] - start[0];
+  const deltaY = end[1] - start[1];
+  return {
+    position: [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2, z],
+    scale: [Math.hypot(deltaX, deltaY) / 2, thickness, thickness],
+    rotation: [0, 0, Math.atan2(deltaY, deltaX)],
+    color,
+    emissive
+  };
 }
 
 function createWebGLScene(lane: number, currentStep: string | null, status: string, lightTheme: boolean): WebGLScene {
   const stage = stageForStep(currentStep, status);
   const warning = status === "completed_with_warnings" || status === "failed";
   const completed = status === "completed";
-  const routeColor: Vec3 = warning ? [0.98, 0.29, 0.055] : [0.94, 0.19, 0.035];
-  const activeColor: Vec3 = warning ? [1, 0.56, 0.14] : [1, 0.39, 0.08];
-  const outcomeColor: Vec3 = completed ? [0.38, 0.78, 0.52] : warning ? [1, 0.56, 0.14] : activeColor;
-  const structure: Vec3 = lightTheme ? [0.36, 0.4, 0.48] : [0.035, 0.052, 0.082];
-  const structureTop: Vec3 = lightTheme ? [0.52, 0.56, 0.64] : [0.105, 0.135, 0.19];
-  const structureEdge: Vec3 = lightTheme ? [0.26, 0.3, 0.38] : [0.065, 0.085, 0.125];
-  const boxes: SceneBox[] = [
-    { position: [-4.82, -0.42, -0.72], scale: [0.66, 0.13, 0.68], color: structureEdge },
-    { position: [-3.45, -0.42, 0.58], scale: [0.66, 0.13, 0.68], color: structureEdge },
-    { position: [-2.15, -0.39, -0.08], scale: [0.68, 0.17, 0.8], color: structureEdge },
-    { position: [-0.35, -0.4, lane], scale: [0.76, 0.16, 0.74], color: structureEdge },
-    { position: [1.5, -0.39, 0.03], scale: [0.72, 0.17, 0.76], color: structureEdge },
-    { position: [4.18, -0.42, 0], scale: [1.68, 0.14, 1.68], color: structureEdge, geometry: "cylinder" },
-    { position: [4.18, -0.22, 0], scale: [1.4, 0.055, 1.4], color: routeColor, emissive: 0.2, geometry: "cylinder" },
-    { position: [4.18, -0.12, 0], scale: [1.08, 0.11, 1.08], color: structure, geometry: "cylinder" }
-  ];
+  const orange: Vec3 = warning ? [1, 0.48, 0.08] : [1, 0.28, 0.035];
+  const orangeBright: Vec3 = warning ? [1, 0.66, 0.16] : [1, 0.48, 0.09];
+  const blue: Vec3 = lightTheme ? [0.08, 0.42, 0.9] : [0.11, 0.54, 1];
+  const yellow: Vec3 = lightTheme ? [0.85, 0.52, 0.04] : [1, 0.72, 0.12];
+  const outcomeColor: Vec3 = completed ? [0.28, 0.78, 0.5] : warning ? yellow : orangeBright;
+  const structure: Vec3 = lightTheme ? [0.33, 0.38, 0.48] : [0.035, 0.055, 0.09];
+  const structureTop: Vec3 = lightTheme ? [0.55, 0.6, 0.69] : [0.12, 0.16, 0.23];
+  const boxes: SceneBox[] = [];
   const pulseBindings: PulseBinding[] = [];
   const routePoints: Vec3[] = [
-    [-4.82, -0.34, -0.72],
-    [-3.45, -0.34, 0.58],
-    [-2.15, -0.31, -0.08],
-    [-0.35, -0.32, lane],
-    [1.5, -0.31, 0.03],
-    [3.28, -0.34, 0]
+    [-4.45, -0.04, -0.72],
+    [-3.25, 0.02, 0.5],
+    [-2.03, 0.05, -0.08],
+    [-0.55, 0.08, lane],
+    [0.92, 0.11, 0.18],
+    [2.52, 0.14, 0]
   ];
-  boxes.push(...createRouteArchitecture(routePoints, structureEdge, structureTop));
 
-  const route: SceneBox[] = [
-    { position: [-4.12, -0.12, -0.18], scale: [0.82, 0.035, 0.075], color: routeColor, rotation: [0, -0.5, 0] },
-    { position: [-2.79, -0.11, 0.24], scale: [0.78, 0.04, 0.075], color: routeColor, rotation: [0, 0.35, 0] },
-    { position: [-1.25, -0.1, lane * 0.5], scale: [0.95, 0.045, 0.075], color: routeColor, rotation: [0, lane * -0.22, 0] },
-    { position: [0.58, -0.1, lane * 0.48], scale: [0.98, 0.045, 0.075], color: routeColor, rotation: [0, lane * 0.2, 0] },
-    { position: [2.58, -0.1, 0], scale: [1.16, 0.045, 0.075], color: routeColor }
-  ];
-  route.forEach((box, index) => {
-    const routeBed: SceneBox = {
-      ...box,
-      position: [box.position[0], box.position[1] - 0.07, box.position[2]],
-      scale: [box.scale[0] * 1.02, box.scale[1] * 2.2, box.scale[2] * 2.3],
-      color: structureTop
+  boxes.push(...createRoute(routePoints, 0.13, structure));
+  const orangeRoute = createRoute(routePoints, 0.052, orange, 0.16);
+  boxes.push(...orangeRoute);
+  const bluePoints = routePoints.map((point, index) => [point[0], point[1] + 0.11, point[2] + 0.42 * (1 - index / (routePoints.length - 1))] as Vec3);
+  const yellowPoints = routePoints.map((point, index) => [point[0], point[1] + 0.06, point[2] - 0.42 * (1 - index / (routePoints.length - 1))] as Vec3);
+  boxes.push(...createRoute(bluePoints, 0.026, blue, 0.12));
+  boxes.push(...createRoute(yellowPoints, 0.022, yellow, 0.12));
+
+  routePoints.slice(0, -1).forEach((point, index) => {
+    const active = index <= stage;
+    const node: SceneBox = {
+      position: [point[0], point[1] + 0.16, point[2]],
+      scale: index === 2 ? [0.3, 0.42, 0.3] : [0.23, 0.31, 0.23],
+      rotation: [0, index * 0.58, 0],
+      color: active ? orangeBright : structureTop,
+      emissive: index === stage ? 0.28 : active ? 0.1 : 0,
+      geometry: "octahedron"
     };
-    const routeSignal: SceneBox = {
-      ...box,
-      position: [box.position[0], box.position[1] + 0.055, box.position[2]],
-      color: index <= stage ? activeColor : routeColor,
-      emissive: index === stage ? 0.28 : 0.12
-    };
-    boxes.push(routeBed, routeSignal);
-    if (index === stage) pulseBindings.push({ box: routeSignal, base: 0.28, amount: 0.22 });
+    boxes.push(node);
+    if (index === stage) pulseBindings.push({ box: node, base: 0.28, amount: 0.22 });
+
+    const blueSatellite: Vec3 = [bluePoints[index][0], bluePoints[index][1] + 0.13, bluePoints[index][2]];
+    const yellowSatellite: Vec3 = [yellowPoints[index][0], yellowPoints[index][1] + 0.11, yellowPoints[index][2]];
+    boxes.push(
+      { position: blueSatellite, scale: [0.095, 0.13, 0.095], color: blue, emissive: 0.12, geometry: "octahedron" },
+      { position: yellowSatellite, scale: [0.075, 0.1, 0.075], color: yellow, emissive: 0.1, geometry: "octahedron" },
+      createRouteTube([point[0], point[1] + 0.08, point[2]], blueSatellite, 0.012, blue, 0.08),
+      createRouteTube([point[0], point[1] + 0.07, point[2]], yellowSatellite, 0.01, yellow, 0.08)
+    );
   });
 
-  const blocks: SceneBox[] = [
-    { position: [-4.82, 0.02, -0.72], scale: [0.36, 0.4, 0.36], color: structureTop },
-    { position: [-4.82, 0.48, -0.72], scale: [0.25, 0.055, 0.25], color: activeColor, emissive: 0.08 },
-    { position: [-3.45, -0.02, 0.58], scale: [0.34, 0.31, 0.34], color: structureTop, geometry: "cylinder" },
-    { position: [-3.45, 0.34, 0.58], scale: [0.37, 0.055, 0.37], color: structureEdge, geometry: "cylinder" },
-    { position: [-2.42, 0.2, -0.08], scale: [0.16, 0.62, 0.5], color: stage === 1 ? activeColor : structureTop, emissive: 0 },
-    { position: [-1.88, 0.2, -0.08], scale: [0.16, 0.62, 0.5], color: stage === 1 ? activeColor : structureTop, emissive: 0 },
-    { position: [-2.15, 0.2, -0.08], scale: [0.16, 0.38, 0.28], color: activeColor, emissive: 0.09 },
-    { position: [-0.35, 0.11, lane], scale: [0.42, 0.48, 0.42], color: stage === 2 ? activeColor : structureTop, emissive: 0 },
-    { position: [1.5, 0.08, 0.03], scale: [0.38, 0.47, 0.4], color: stage === 3 ? activeColor : structureTop, emissive: 0 },
-    { position: [4.18, 0.49, 0], scale: [0.88, 0.68, 0.88], color: structureTop, geometry: "cylinder" },
-    { position: [4.18, 1.18, 0], scale: [0.94, 0.11, 0.94], color: structureEdge, geometry: "cylinder" },
-    { position: [4.18, 1.27, 0], scale: [0.52, 0.085, 0.52], color: stage >= 4 ? outcomeColor : routeColor, emissive: 0.15, geometry: "cylinder" },
-    { position: [4.18, 0.52, -0.86], scale: [0.2, 0.31, 0.065], color: stage >= 4 ? outcomeColor : routeColor, emissive: 0.12 },
-    { position: [3.42, 0.28, 0.54], scale: [0.16, 0.5, 0.16], color: structureTop, geometry: "cylinder" },
-    { position: [4.92, 0.28, 0.54], scale: [0.16, 0.5, 0.16], color: structureTop, geometry: "cylinder" }
+  const shieldPoints: Array<[number, number]> = [
+    [3.82, 1.7],
+    [4.55, 1.34],
+    [4.43, 0.36],
+    [3.82, -0.28],
+    [3.21, 0.36],
+    [3.09, 1.34]
   ];
-  boxes.push(...blocks);
-  if (stage === 1) {
-    pulseBindings.push({ box: blocks[4], base: 0, amount: 0.16 }, { box: blocks[5], base: 0, amount: 0.16 });
+  for (let index = 0; index < shieldPoints.length; index += 1) {
+    const next = shieldPoints[(index + 1) % shieldPoints.length];
+    boxes.push(
+      createShieldBeam(shieldPoints[index], next, 0.08, 0.12, structure),
+      createShieldBeam(shieldPoints[index], next, -0.02, 0.047, stage >= 4 ? outcomeColor : orange, stage >= 4 ? 0.2 : 0.12)
+    );
   }
-  if (stage === 2) pulseBindings.push({ box: blocks[7], base: 0, amount: 0.18 });
-  if (stage === 3) pulseBindings.push({ box: blocks[8], base: 0, amount: 0.18 });
-  pulseBindings.push({ box: blocks[11], base: 0.15, amount: 0.12 });
+  boxes.push(
+    createShieldBeam([2.52, 0.14], [3.82, 0.71], -0.01, 0.055, orangeBright, 0.18),
+    createShieldBeam([3.82, 0.1], [3.82, 1.27], 0, 0.038, blue, 0.12),
+    createShieldBeam([3.48, 0.7], [4.16, 0.7], -0.025, 0.034, yellow, 0.12)
+  );
+  const shieldCore: SceneBox = {
+    position: [3.82, 0.7, -0.08],
+    scale: [0.31, 0.43, 0.22],
+    rotation: [0, Math.PI / 4, 0],
+    color: stage >= 4 ? outcomeColor : orangeBright,
+    emissive: 0.26,
+    geometry: "octahedron"
+  };
+  boxes.push(shieldCore);
+  pulseBindings.push({ box: shieldCore, base: 0.26, amount: 0.18 });
 
-  const terrainPositions: Array<[number, number]> = [
-    [-3.9, -1.45], [-2.82, -1.02], [-1.35, -1.5], [0.65, -1.28], [2.32, -1.08], [4.98, -1.42], [2.9, 1.18], [-1.0, 1.32]
+  const constellation: Array<[Vec3, Vec3]> = [
+    [[-3.8, -0.28, -1.45], blue],
+    [[-2.55, -0.34, 1.32], yellow],
+    [[-1.08, -0.3, -1.27], structureTop],
+    [[0.42, -0.31, 1.18], blue],
+    [[1.76, -0.3, -1.05], yellow],
+    [[2.72, -0.2, 0.94], structureTop]
   ];
-  boxes.push(...terrainPositions.map(([x, z], index) => ({
-    position: [x, -0.48, z] as Vec3,
-    scale: [0.09 + (index % 3) * 0.035, 0.07 + (index % 2) * 0.025, 0.08 + (index % 4) * 0.02] as Vec3,
-    rotation: [0, index * 0.53, 0] as Vec3,
-    color: structureEdge
+  boxes.push(...constellation.map(([position, color], index) => ({
+    position,
+    scale: [0.055 + (index % 2) * 0.025, 0.08 + (index % 3) * 0.018, 0.055 + (index % 2) * 0.025] as Vec3,
+    rotation: [0, index * 0.73, 0] as Vec3,
+    color,
+    emissive: color === structureTop ? 0 : 0.08,
+    geometry: "octahedron" as const
   })));
 
   return { boxes, pulseBindings };
@@ -510,7 +551,10 @@ function createWebGLScene(lane: number, currentStep: string | null, status: stri
 function composeMatrix(position: Vec3, rotation: Vec3, scale: Vec3) {
   return multiplyMatrices(
     translationMatrix(...position),
-    multiplyMatrices(rotationYMatrix(rotation[1]), multiplyMatrices(rotationXMatrix(rotation[0]), scalingMatrix(...scale)))
+    multiplyMatrices(
+      rotationYMatrix(rotation[1]),
+      multiplyMatrices(rotationZMatrix(rotation[2]), multiplyMatrices(rotationXMatrix(rotation[0]), scalingMatrix(...scale)))
+    )
   );
 }
 
@@ -573,6 +617,12 @@ function rotationYMatrix(angle: number) {
   const cosine = Math.cos(angle);
   const sine = Math.sin(angle);
   return new Float32Array([cosine, 0, -sine, 0, 0, 1, 0, 0, sine, 0, cosine, 0, 0, 0, 0, 1]);
+}
+
+function rotationZMatrix(angle: number) {
+  const cosine = Math.cos(angle);
+  const sine = Math.sin(angle);
+  return new Float32Array([cosine, sine, 0, 0, -sine, cosine, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 }
 
 function normalize(vector: Vec3): Vec3 {
