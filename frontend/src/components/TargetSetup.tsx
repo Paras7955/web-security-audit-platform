@@ -82,7 +82,7 @@ export function TargetSetup({
   onActiveViewChange: (view: WorkspaceView) => void;
   onHeroStateChange: (state: { activeProfile: string; currentStep: string | null; status: string }) => void;
 }) {
-  const [auditPhase, setAuditPhase] = useState<AuditPhase>("ready");
+  const [auditPhase, setAuditPhase] = useState<AuditPhase>("profile");
   const [targetUrl, setTargetUrl] = useState("http://juice-shop:3000");
   const [permissionConfirmed, setPermissionConfirmed] = useState(false);
   const [repoPath, setRepoPath] = useState("/app/repositories/security-project");
@@ -1095,13 +1095,15 @@ export function TargetSetup({
 
   return (
     <section className="dashboard" aria-label="ScopeHarbor workspace">
-      <div className="workspaceUtilityBar">
-        <span><AppIcon name={workspaceViews.find((view) => view.id === activeView)?.icon ?? "overview"} size={16} />{workspaceViews.find((view) => view.id === activeView)?.description}</span>
-        <button className="refreshButton" type="button" onClick={refreshWorkspace} disabled={isRefreshing}>
-          <AppIcon name="refresh" size={16} />
-          {isRefreshing ? "Refreshing…" : "Refresh workspace"}
-        </button>
-      </div>
+      {activeView !== "scanning" ? (
+        <div className="workspaceUtilityBar">
+          <span><AppIcon name={workspaceViews.find((view) => view.id === activeView)?.icon ?? "overview"} size={16} />{workspaceViews.find((view) => view.id === activeView)?.description}</span>
+          <button className="refreshButton" type="button" onClick={refreshWorkspace} disabled={isRefreshing}>
+            <AppIcon name="refresh" size={16} />
+            {isRefreshing ? "Refreshing…" : "Refresh workspace"}
+          </button>
+        </div>
+      ) : null}
 
       {bootstrapError ? (
         <div className="statusBanner statusBannerError" role="alert">
@@ -1122,11 +1124,6 @@ export function TargetSetup({
 
         {activeView === "scanning" ? (
           <div className="auditWorkspace">
-            <div className="viewIntro">
-              <div><h2>Run a guided security audit</h2><p>Move from readiness to review without losing sight of scope, safety, or the next decision.</p></div>
-              <span className="safetyPill"><AppIcon name="shield" size={15} /> Public URLs remain blocked</span>
-            </div>
-
             <nav className="auditPhaseTabs" role="tablist" aria-label="Audit phases">
               {auditPhases.map((phase, index) => {
                 const isActive = auditPhase === phase.id;
@@ -1144,7 +1141,7 @@ export function TargetSetup({
                     onClick={() => setAuditPhase(phase.id)}
                     onKeyDown={(event) => handlePhaseKeyDown(event, index)}
                   >
-                    <span className="auditPhaseMarker">{isComplete ? <AppIcon name="check" size={15} /> : <AppIcon name={phase.icon} size={16} />}</span>
+                    <span className="auditPhaseMarker">{isComplete ? <AppIcon name="check" size={15} /> : index + 1}</span>
                     <span><strong>{phase.label}</strong><small>{phase.description}</small></span>
                   </button>
                 );
@@ -1224,6 +1221,29 @@ export function TargetSetup({
                     onAttachRepoPath={updateSelectedTargetRepoPath}
                     onContinue={() => setAuditPhase("authorize")}
                   />
+                  {reviewReady && filteredFindings.length > 0 ? (
+                    <section className="recentFindingsPreview" aria-labelledby="recent-findings-title">
+                      <div className="recentFindingsHeader">
+                        <div><h3 id="recent-findings-title">Recent normalized findings</h3><p>A compact preview from the selected audit. Open Review for full triage and evidence.</p></div>
+                        <button type="button" className="secondaryButton" onClick={() => setAuditPhase("review")}>Review all {filteredFindings.length} <AppIcon name="arrow" size={15} /></button>
+                      </div>
+                      <div className="recentFindingsTableWrap">
+                        <table className="recentFindingsTable">
+                          <thead><tr><th>Finding</th><th>Severity</th><th>Lifecycle</th><th>Source</th></tr></thead>
+                          <tbody>
+                            {filteredFindings.slice(0, 4).map((finding) => (
+                              <tr key={finding.id}>
+                                <td><button type="button" className="findingSelectButton" onClick={() => { setSelectedFindingId(finding.id); setAuditPhase("review"); }}>{finding.title}</button></td>
+                                <td><span className={`severity severity-${finding.severity}`}>{finding.severity}</span></td>
+                                <td><span className="stateBadge">{finding.lifecycle_status.replaceAll("_", " ")}</span></td>
+                                <td>{finding.source_tool}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  ) : null}
                 </div>
               ) : null}
 

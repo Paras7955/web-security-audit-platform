@@ -99,6 +99,7 @@ export function ScanProfileSelector({
                 className={`${scanProfileId === profile.id ? "modeCard modeCardActive" : "modeCard"}${!isAvailable && selectedTarget ? " modeCardUnavailable" : ""}`}
                 onClick={() => onSelectScanProfile(profile.id)}
               >
+                <span className="modeCardIcon"><AppIcon name={profileIcon(profile.id)} size={28} /></span>
                 <span className="modeCardTop">
                   <strong>{profile.label}</strong>
                   <em>{isAvailable ? "Available" : "Unavailable"}</em>
@@ -251,6 +252,13 @@ function profileCapabilities(profile: ScanProfileMetadata) {
   capabilities.push(profile.ai_enabled ? "AI eligible" : "No AI");
   if (profile.mode === "repo") capabilities.push("Offline DB");
   return capabilities;
+}
+
+function profileIcon(profileId: string): "target" | "operations" | "activity" | "intelligence" {
+  if (profileId === "active-demo") return "operations";
+  if (profileId === "modern-web-crawl") return "activity";
+  if (profileId === "repo") return "intelligence";
+  return "target";
 }
 
 function profileGuidance(profile: ScanProfileMetadata) {

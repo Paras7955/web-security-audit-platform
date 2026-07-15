@@ -29,9 +29,11 @@ The release provides:
   explicit safe demo seed, and hardened container defaults.
 - A responsive operator workspace with six global product areas and a guided
   `Ready → Scope → Profile → Authorize → Run → Review` audit path. The approved
-  dark-first visual language uses a restrained orange signal, persistent
-  light/dark themes, reduced-motion-aware native WebGL, target/scan/finding
-  controls, complete finding context, and workspace activity history.
+  dark-first visual language uses a vivid but bounded orange route signal,
+  persistent light/dark themes, a high-density reduced-motion-aware native
+  WebGL security-path scene, compact sortable/paginated finding triage,
+  target/scan/finding controls, complete finding context, and workspace
+  activity history.
 - History-preserving target removal backed by schema `0011`: active scans block
   removal, launch configuration is cleared, and historical evidence remains
   workspace-readable.
@@ -94,10 +96,12 @@ Default host endpoints are frontend `127.0.0.1:3001`, API
   and finding search/filter behavior, and keyboard cancellation of removal.
 - Phase 22 frontend lint, production build, TypeScript, full Impeccable detector,
   keyboard/ARIA review, theme-token contrast checks, and reduced-motion/static
-  code review: passed. Tested token pairs range from 4.83:1 to 17.01:1. The
-  in-app browser backend was unavailable during Phase 22, so the approved probe
-  comparison and mobile/desktop composition review were completed statically;
-  live screenshot and real-device verification remain a post-merge QA action.
+  code review: passed. The approved-probe correction pass also passed lint,
+  production build, the full detector, and diff checks; tested dark/light token
+  pairs range from 5.82:1 to 18.29:1. The in-app browser backend remained
+  unavailable, so probe comparison and mobile/desktop composition review were
+  completed statically; live screenshot and real-device verification remain a
+  post-merge QA action.
 - API, worker, and frontend image builds: passed on the pinned runtime inputs.
 - Compose bootstrap, migrations, health/readiness, loopback bindings, container
   users/capabilities, and hardened service startup: passed. Runtime processes

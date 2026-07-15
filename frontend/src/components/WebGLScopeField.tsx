@@ -15,6 +15,7 @@ type SceneBox = {
   color: Vec3;
   rotation?: Vec3;
   emissive?: number;
+  geometry?: "cube" | "cylinder";
 };
 
 const vertexShaderSource = `
@@ -23,25 +24,33 @@ attribute vec3 a_normal;
 uniform mat4 u_mvp;
 uniform mat4 u_model;
 varying vec3 v_normal;
+varying vec3 v_position;
 
 void main() {
   gl_Position = u_mvp * vec4(a_position, 1.0);
   v_normal = mat3(u_model) * a_normal;
+  v_position = (u_model * vec4(a_position, 1.0)).xyz;
 }`;
 
 const fragmentShaderSource = `
-precision mediump float;
+precision highp float;
 uniform vec3 u_color;
 uniform float u_emissive;
 varying vec3 v_normal;
+varying vec3 v_position;
 
 void main() {
   vec3 normal = normalize(v_normal);
-  vec3 lightDirection = normalize(vec3(-0.35, 0.82, 0.48));
-  float diffuse = max(dot(normal, lightDirection), 0.0);
-  float edge = pow(1.0 - max(normal.z, 0.0), 2.0) * 0.12;
-  vec3 lit = u_color * (0.28 + diffuse * 0.72 + edge + u_emissive);
-  gl_FragColor = vec4(lit, 1.0);
+  vec3 keyLight = normalize(vec3(-0.48, 0.86, 0.38));
+  vec3 fillLight = normalize(vec3(0.72, 0.38, 0.58));
+  float key = max(dot(normal, keyLight), 0.0);
+  float fill = max(dot(normal, fillLight), 0.0);
+  float rim = pow(1.0 - max(dot(normal, normalize(vec3(0.0, 0.35, 1.0))), 0.0), 2.4);
+  float topLift = max(normal.y, 0.0) * 0.16;
+  float distanceFade = clamp(1.04 - length(v_position.xz) * 0.014, 0.82, 1.0);
+  vec3 lit = u_color * (0.2 + key * 0.72 + fill * 0.18 + rim * 0.18 + topLift + u_emissive);
+  lit *= distanceFade;
+  gl_FragColor = vec4(pow(lit, vec3(0.92)), 1.0);
 }`;
 
 const profileLabels: Record<string, string> = {
@@ -75,7 +84,7 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
       alpha: true,
       antialias: true,
       depth: true,
-      powerPreference: "low-power",
+      powerPreference: "high-performance",
       premultipliedAlpha: true
     });
     if (!gl) {
@@ -110,9 +119,11 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
       return;
     }
 
-    const vertices = createCubeVertices();
-    const buffer = gl.createBuffer();
-    if (!buffer) {
+    const cubeVertices = createCubeVertices();
+    const cylinderVertices = createCylinderVertices(40);
+    const cubeBuffer = gl.createBuffer();
+    const cylinderBuffer = gl.createBuffer();
+    if (!cubeBuffer || !cylinderBuffer) {
       gl.deleteProgram(program);
       gl.deleteShader(vertexShader);
       gl.deleteShader(fragmentShader);
@@ -120,8 +131,10 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
       return;
     }
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, cubeBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, cubeVertices, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, cylinderBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, cylinderVertices, gl.STATIC_DRAW);
     gl.useProgram(program);
 
     const positionLocation = gl.getAttribLocation(program, "a_position");
@@ -133,9 +146,7 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
     const stride = 6 * Float32Array.BYTES_PER_ELEMENT;
 
     gl.enableVertexAttribArray(positionLocation);
-    gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, stride, 0);
     gl.enableVertexAttribArray(normalLocation);
-    gl.vertexAttribPointer(normalLocation, 3, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
     gl.enable(gl.CULL_FACE);
@@ -147,17 +158,21 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
     let start = performance.now();
 
     const drawBox = (box: SceneBox, viewProjection: Float32Array) => {
+      const isCylinder = box.geometry === "cylinder";
+      gl.bindBuffer(gl.ARRAY_BUFFER, isCylinder ? cylinderBuffer : cubeBuffer);
+      gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, stride, 0);
+      gl.vertexAttribPointer(normalLocation, 3, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
       const model = composeMatrix(box.position, box.rotation ?? [0, 0, 0], box.scale);
       const mvp = multiplyMatrices(viewProjection, model);
       gl.uniformMatrix4fv(mvpLocation, false, mvp);
       gl.uniformMatrix4fv(modelLocation, false, model);
       gl.uniform3fv(colorLocation, box.color);
       gl.uniform1f(emissiveLocation, box.emissive ?? 0);
-      gl.drawArrays(gl.TRIANGLES, 0, 36);
+      gl.drawArrays(gl.TRIANGLES, 0, isCylinder ? cylinderVertices.length / 6 : cubeVertices.length / 6);
     };
 
     const render = (now: number) => {
-      const ratio = Math.min(window.devicePixelRatio || 1, 1.75);
+      const ratio = Math.min(window.devicePixelRatio || 1, 2.5);
       const width = Math.max(1, Math.floor(canvas.clientWidth * ratio));
       const height = Math.max(1, Math.floor(canvas.clientHeight * ratio));
       if (canvas.width !== width || canvas.height !== height) {
@@ -172,55 +187,71 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
       const stage = stageForStep(currentStep, status);
       const warning = status === "completed_with_warnings" || status === "failed";
       const completed = status === "completed";
-      const routeColor: Vec3 = warning ? [0.96, 0.51, 0.13] : completed ? [0.31, 0.67, 0.47] : [0.82, 0.28, 0.08];
-      const activeColor: Vec3 = warning ? [1, 0.68, 0.28] : completed ? [0.52, 0.86, 0.66] : [1, 0.49, 0.2];
-      const structure: Vec3 = document.documentElement.dataset.theme === "light" ? [0.42, 0.39, 0.35] : [0.12, 0.115, 0.11];
-      const structureTop: Vec3 = document.documentElement.dataset.theme === "light" ? [0.58, 0.54, 0.49] : [0.21, 0.195, 0.18];
+      const routeColor: Vec3 = warning ? [0.96, 0.38, 0.08] : completed ? [0.25, 0.65, 0.43] : [0.92, 0.18, 0.035];
+      const activeColor: Vec3 = warning ? [1, 0.58, 0.16] : completed ? [0.45, 0.88, 0.62] : [1, 0.36, 0.09];
+      const lightTheme = document.documentElement.dataset.theme === "light";
+      const structure: Vec3 = lightTheme ? [0.36, 0.4, 0.48] : [0.035, 0.052, 0.082];
+      const structureTop: Vec3 = lightTheme ? [0.52, 0.56, 0.64] : [0.105, 0.135, 0.19];
+      const structureEdge: Vec3 = lightTheme ? [0.26, 0.3, 0.38] : [0.065, 0.085, 0.125];
       const pointer = pointerRef.current;
-      const camera: Vec3 = [pointer.x * 0.5, 5.45 + pointer.y * 0.25, 10.7];
-      const projection = perspectiveMatrix(Math.PI / 4.2, width / height, 0.1, 40);
-      const view = lookAtMatrix(camera, [0, -0.05, 0], [0, 1, 0]);
+      const camera: Vec3 = [pointer.x * 0.32, 5.2 + pointer.y * 0.2, 10.5];
+      const projection = perspectiveMatrix(Math.PI / 4.35, width / height, 0.1, 40);
+      const view = lookAtMatrix(camera, [0.12, -0.02, 0], [0, 1, 0]);
       const viewProjection = multiplyMatrices(projection, view);
 
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-      for (let index = -6; index <= 6; index += 1) {
-        drawBox({ position: [index * 0.82, -0.56, 0], scale: [0.012, 0.012, 4.4], color: structure, emissive: 0 }, viewProjection);
-      }
-      for (let index = -4; index <= 4; index += 1) {
-        drawBox({ position: [0, -0.56, index * 0.82], scale: [5.45, 0.012, 0.012], color: structure, emissive: 0 }, viewProjection);
-      }
-
       const platforms: SceneBox[] = [
-        { position: [-4.28, -0.34, -0.72], scale: [0.72, 0.16, 0.66], color: structure },
-        { position: [-4.28, -0.34, 0.72], scale: [0.72, 0.16, 0.66], color: structure },
-        { position: [-2.45, -0.28, 0], scale: [0.72, 0.22, 0.92], color: structure },
-        { position: [-0.48, -0.3, lane], scale: [0.92, 0.18, 0.8], color: structure },
-        { position: [1.56, -0.28, 0], scale: [0.76, 0.2, 0.82], color: structure },
-        { position: [3.72, -0.26, 0], scale: [1.02, 0.22, 1.02], color: structure }
+        { position: [-4.82, -0.42, -0.72], scale: [0.66, 0.13, 0.68], color: structureEdge },
+        { position: [-3.45, -0.42, 0.58], scale: [0.66, 0.13, 0.68], color: structureEdge },
+        { position: [-2.15, -0.39, -0.08], scale: [0.68, 0.17, 0.8], color: structureEdge },
+        { position: [-0.35, -0.4, lane], scale: [0.76, 0.16, 0.74], color: structureEdge },
+        { position: [1.5, -0.39, 0.03], scale: [0.72, 0.17, 0.76], color: structureEdge },
+        { position: [3.98, -0.42, 0], scale: [1.48, 0.14, 1.48], color: structureEdge, geometry: "cylinder" },
+        { position: [3.98, -0.22, 0], scale: [1.22, 0.055, 1.22], color: routeColor, emissive: 0.2, geometry: "cylinder" },
+        { position: [3.98, -0.12, 0], scale: [0.94, 0.11, 0.94], color: structure, geometry: "cylinder" }
       ];
       platforms.forEach((box) => drawBox(box, viewProjection));
 
       const route: SceneBox[] = [
-        { position: [-3.68, -0.02, -0.56], scale: [0.72, 0.045, 0.06], color: routeColor, rotation: [0, -0.23, 0] },
-        { position: [-3.68, -0.02, 0.56], scale: [0.72, 0.045, 0.06], color: routeColor, rotation: [0, 0.23, 0] },
-        { position: [-1.47, 0.01, lane * 0.55], scale: [1.12, 0.055, 0.07], color: routeColor, rotation: [0, lane * -0.18, 0] },
-        { position: [0.54, 0.01, lane * 0.48], scale: [1.08, 0.055, 0.07], color: routeColor, rotation: [0, lane * 0.18, 0] },
-        { position: [2.62, 0.01, 0], scale: [1.14, 0.055, 0.07], color: routeColor }
+        { position: [-4.12, -0.12, -0.18], scale: [0.82, 0.035, 0.075], color: routeColor, rotation: [0, -0.5, 0] },
+        { position: [-2.79, -0.11, 0.24], scale: [0.78, 0.04, 0.075], color: routeColor, rotation: [0, 0.35, 0] },
+        { position: [-1.25, -0.1, lane * 0.5], scale: [0.95, 0.045, 0.075], color: routeColor, rotation: [0, lane * -0.22, 0] },
+        { position: [0.58, -0.1, lane * 0.48], scale: [0.98, 0.045, 0.075], color: routeColor, rotation: [0, lane * 0.2, 0] },
+        { position: [2.48, -0.1, 0], scale: [1.06, 0.045, 0.075], color: routeColor }
       ];
-      route.forEach((box, index) => drawBox({ ...box, color: index <= stage ? activeColor : box.color, emissive: index === stage ? 0.22 + pulse * 0.2 : 0.02 }, viewProjection));
+      route.forEach((box, index) => {
+        drawBox({ ...box, scale: [box.scale[0] * 1.02, box.scale[1] * 2.5, box.scale[2] * 2.3], color: structureTop }, viewProjection);
+        drawBox({ ...box, color: index <= stage ? activeColor : box.color, emissive: index === stage ? 0.28 + pulse * 0.22 : 0.08 }, viewProjection);
+      });
 
       const blocks: SceneBox[] = [
-        { position: [-4.28, 0.02, -0.72], scale: [0.27, 0.34, 0.27], color: structureTop },
-        { position: [-4.28, 0.02, 0.72], scale: [0.27, 0.34, 0.27], color: structureTop },
-        { position: [-2.45, 0.14, 0], scale: [0.38, 0.54, 0.52], color: stage === 1 ? activeColor : structureTop, emissive: stage === 1 ? pulse * 0.12 : 0 },
-        { position: [-0.48, 0.12, lane], scale: [0.48, 0.44, 0.42], color: stage === 2 ? activeColor : structureTop, emissive: stage === 2 ? pulse * 0.15 : 0 },
-        { position: [1.56, 0.11, 0], scale: [0.42, 0.4, 0.44], color: stage === 3 ? activeColor : structureTop, emissive: stage === 3 ? pulse * 0.15 : 0 },
-        { position: [3.72, 0.15, 0], scale: [0.62, 0.54, 0.64], color: structureTop },
-        { position: [3.72, 0.25, 0], scale: [0.31, 0.62, 0.32], color: stage >= 4 ? activeColor : routeColor, emissive: stage >= 4 ? 0.18 + pulse * 0.16 : 0.04 }
+        { position: [-4.82, 0.02, -0.72], scale: [0.36, 0.4, 0.36], color: structureTop },
+        { position: [-4.82, 0.48, -0.72], scale: [0.25, 0.055, 0.25], color: activeColor, emissive: 0.08 },
+        { position: [-3.45, -0.02, 0.58], scale: [0.34, 0.31, 0.34], color: structureTop, geometry: "cylinder" },
+        { position: [-3.45, 0.34, 0.58], scale: [0.37, 0.055, 0.37], color: structureEdge, geometry: "cylinder" },
+        { position: [-2.42, 0.2, -0.08], scale: [0.16, 0.62, 0.5], color: stage === 1 ? activeColor : structureTop, emissive: stage === 1 ? pulse * 0.16 : 0 },
+        { position: [-1.88, 0.2, -0.08], scale: [0.16, 0.62, 0.5], color: stage === 1 ? activeColor : structureTop, emissive: stage === 1 ? pulse * 0.16 : 0 },
+        { position: [-2.15, 0.2, -0.08], scale: [0.16, 0.38, 0.28], color: activeColor, emissive: 0.09 },
+        { position: [-0.35, 0.11, lane], scale: [0.42, 0.48, 0.42], color: stage === 2 ? activeColor : structureTop, emissive: stage === 2 ? pulse * 0.18 : 0 },
+        { position: [1.5, 0.08, 0.03], scale: [0.38, 0.47, 0.4], color: stage === 3 ? activeColor : structureTop, emissive: stage === 3 ? pulse * 0.18 : 0 },
+        { position: [3.98, 0.44, 0], scale: [0.72, 0.62, 0.72], color: structureTop, geometry: "cylinder" },
+        { position: [3.98, 1.08, 0], scale: [0.78, 0.1, 0.78], color: structureEdge, geometry: "cylinder" },
+        { position: [3.98, 1.16, 0], scale: [0.42, 0.08, 0.42], color: stage >= 4 ? activeColor : routeColor, emissive: 0.15 + pulse * 0.12, geometry: "cylinder" },
+        { position: [3.98, 0.48, -0.72], scale: [0.18, 0.28, 0.06], color: stage >= 4 ? activeColor : routeColor, emissive: 0.12 }
       ];
       blocks.forEach((box) => drawBox(box, viewProjection));
+
+      const terrain: SceneBox[] = [
+        [-3.9, -1.45], [-2.82, -1.02], [-1.35, -1.5], [0.65, -1.28], [2.32, -1.08], [4.98, -1.42], [2.9, 1.18], [-1.0, 1.32]
+      ].map(([x, z], index) => ({
+        position: [x, -0.48, z] as Vec3,
+        scale: [0.09 + (index % 3) * 0.035, 0.07 + (index % 2) * 0.025, 0.08 + (index % 4) * 0.02] as Vec3,
+        rotation: [0, index * 0.53, 0] as Vec3,
+        color: structureEdge
+      }));
+      terrain.forEach((box) => drawBox(box, viewProjection));
 
       if (visible && !reducedMotion.matches) {
         animationFrame = window.requestAnimationFrame(render);
@@ -264,7 +295,8 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
       document.removeEventListener("visibilitychange", handleVisibility);
       field.removeEventListener("pointermove", handlePointerMove);
       field.removeEventListener("pointerleave", handlePointerLeave);
-      gl.deleteBuffer(buffer);
+      gl.deleteBuffer(cubeBuffer);
+      gl.deleteBuffer(cylinderBuffer);
       gl.deleteProgram(program);
       gl.deleteShader(vertexShader);
       gl.deleteShader(fragmentShader);
@@ -276,13 +308,13 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
     <figure ref={fieldRef} className={fieldClass} aria-label="Authorized audit route from local scope through policy checks and normalized findings">
       <canvas ref={canvasRef} aria-hidden="true" />
       <div className="scopeFieldLabels" aria-hidden="true">
-        <span className="scopeNode scopeNodeSource">Web target<br /><small>Local repository</small></span>
-        <span className="scopeNode scopeNodePolicy">Policy gate</span>
-        <span className="scopeNode scopeNodeProfile">{profileLabels[activeProfile] ?? "Audit profile"}</span>
-        <span className="scopeNode scopeNodeNormalize">Normalize + redact</span>
-        <span className="scopeNode scopeNodeHarbor">Protected harbor</span>
+        <span className="scopeNode scopeNodeWeb">Web target<small>Exact allowlist</small></span>
+        <span className="scopeNode scopeNodeRepo">Local repository<small>Your code</small></span>
+        <span className="scopeNode scopeNodePolicy">Policy gate<small>Rules enforced</small></span>
+        <span className="scopeNode scopeNodeProfile">{profileLabels[activeProfile] ?? "Audit profile"}<small>{profileRouteLabel(activeProfile)}</small></span>
+        <span className="scopeNode scopeNodeNormalize">Normalize + redact<small>Protect sensitive</small></span>
+        <span className="scopeNode scopeNodeHarbor">Protected harbor<small>Your data. Your control.</small></span>
       </div>
-      <figcaption><span className="scopeFieldSignal" /> Scope stays explicit at every step</figcaption>
     </figure>
   );
 }
@@ -325,6 +357,37 @@ function createCubeVertices() {
     }
   }
   return new Float32Array(data);
+}
+
+function createCylinderVertices(segments: number) {
+  const data: number[] = [];
+  for (let index = 0; index < segments; index += 1) {
+    const firstAngle = (index / segments) * Math.PI * 2;
+    const secondAngle = ((index + 1) / segments) * Math.PI * 2;
+    const firstX = Math.cos(firstAngle);
+    const firstZ = Math.sin(firstAngle);
+    const secondX = Math.cos(secondAngle);
+    const secondZ = Math.sin(secondAngle);
+
+    data.push(0, 1, 0, 0, 1, 0, firstX, 1, firstZ, 0, 1, 0, secondX, 1, secondZ, 0, 1, 0);
+    data.push(0, -1, 0, 0, -1, 0, secondX, -1, secondZ, 0, -1, 0, firstX, -1, firstZ, 0, -1, 0);
+    data.push(
+      firstX, -1, firstZ, firstX, 0, firstZ,
+      secondX, -1, secondZ, secondX, 0, secondZ,
+      secondX, 1, secondZ, secondX, 0, secondZ,
+      firstX, -1, firstZ, firstX, 0, firstZ,
+      secondX, 1, secondZ, secondX, 0, secondZ,
+      firstX, 1, firstZ, firstX, 0, firstZ
+    );
+  }
+  return new Float32Array(data);
+}
+
+function profileRouteLabel(profileId: string) {
+  if (profileId === "active-demo") return "Bounded active checks";
+  if (profileId === "modern-web-crawl") return "Rendered route crawl";
+  if (profileId === "repo") return "Offline repository scan";
+  return "Observe only";
 }
 
 function composeMatrix(position: Vec3, rotation: Vec3, scale: Vec3) {

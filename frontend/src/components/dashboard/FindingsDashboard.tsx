@@ -1,8 +1,15 @@
+"use client";
+
+import { useMemo, useState } from "react";
+
 import type { Finding, Tag, Target } from "@/lib/securityAuditApi";
 
 const severityFilters = ["all", "info", "low", "medium", "high", "critical"];
 const lifecycleStatuses = ["open", "confirmed", "in_progress", "resolved", "suppressed", "false_positive"];
 const confidenceFilters = ["all", "confirmed", "high", "medium", "low"];
+const pageSizes = [5, 10, 20];
+
+type FindingSort = "severity-desc" | "severity-asc" | "newest" | "title" | "status";
 
 export const severityRank: Record<string, number> = {
   critical: 5,
@@ -107,6 +114,38 @@ export function FindingsDashboard({
   onSuppressionReasonChange: (reason: string) => void;
   onSuppressFinding: (finding: Finding) => void;
 }) {
+  const [sortBy, setSortBy] = useState<FindingSort>("severity-desc");
+  const [pageSize, setPageSize] = useState(10);
+  const [requestedPage, setRequestedPage] = useState(1);
+  const sortedFindings = useMemo(() => sortFindings(findings, sortBy), [findings, sortBy]);
+  const pageCount = Math.max(1, Math.ceil(sortedFindings.length / pageSize));
+  const currentPage = Math.min(requestedPage, pageCount);
+  const pageStart = (currentPage - 1) * pageSize;
+  const visibleFindings = sortedFindings.slice(pageStart, pageStart + pageSize);
+  const resultStart = sortedFindings.length > 0 ? pageStart + 1 : 0;
+  const resultEnd = Math.min(pageStart + pageSize, sortedFindings.length);
+  const advancedFilterCount = [scannerFilter, owaspFilter, cweFilter, dateAfterFilter, dateBeforeFilter, riskMinFilter, riskMaxFilter].filter(Boolean).length;
+
+  function selectPage(nextPage: number) {
+    const safePage = Math.max(1, Math.min(nextPage, pageCount));
+    setRequestedPage(safePage);
+    const firstFinding = sortedFindings[(safePage - 1) * pageSize];
+    if (firstFinding) onSelectFinding(firstFinding.id);
+  }
+
+  function changeSort(nextSort: FindingSort) {
+    const nextFindings = sortFindings(findings, nextSort);
+    setSortBy(nextSort);
+    setRequestedPage(1);
+    if (nextFindings[0]) onSelectFinding(nextFindings[0].id);
+  }
+
+  function changePageSize(nextPageSize: number) {
+    setPageSize(nextPageSize);
+    setRequestedPage(1);
+    if (sortedFindings[0]) onSelectFinding(sortedFindings[0].id);
+  }
+
   return (
     <div className="findingsLayout">
       <div className="panel findingsPanel">
@@ -183,80 +222,114 @@ export function FindingsDashboard({
           </select>
         </div>
 
-        <div className="filterGrid" aria-label="Advanced finding filters">
-          <label>
-            Scanner
-            <input value={scannerFilter} onChange={(event) => onScannerFilter(event.target.value)} />
-          </label>
-          <label>
-            OWASP
-            <input value={owaspFilter} onChange={(event) => onOwaspFilter(event.target.value)} />
-          </label>
-          <label>
-            CWE
-            <input value={cweFilter} onChange={(event) => onCweFilter(event.target.value)} />
-          </label>
-          <label>
-            From
-            <input type="datetime-local" value={dateAfterFilter} onChange={(event) => onDateAfterFilter(event.target.value)} />
-          </label>
-          <label>
-            To
-            <input type="datetime-local" value={dateBeforeFilter} onChange={(event) => onDateBeforeFilter(event.target.value)} />
-          </label>
-          <label>
-            Risk min
-            <input type="number" min="0" max="100" value={riskMinFilter} onChange={(event) => onRiskMinFilter(event.target.value)} />
-          </label>
-          <label>
-            Risk max
-            <input type="number" min="0" max="100" value={riskMaxFilter} onChange={(event) => onRiskMaxFilter(event.target.value)} />
-          </label>
+        <details className="advancedFindingControls">
+          <summary><span>Advanced filters &amp; tags</span>{advancedFilterCount > 0 ? <span className="activeFilterCount">{advancedFilterCount} active</span> : null}</summary>
+          <div className="filterGrid" aria-label="Advanced finding filters">
+            <label>
+              Scanner
+              <input value={scannerFilter} onChange={(event) => onScannerFilter(event.target.value)} />
+            </label>
+            <label>
+              OWASP
+              <input value={owaspFilter} onChange={(event) => onOwaspFilter(event.target.value)} />
+            </label>
+            <label>
+              CWE
+              <input value={cweFilter} onChange={(event) => onCweFilter(event.target.value)} />
+            </label>
+            <label>
+              From
+              <input type="datetime-local" value={dateAfterFilter} onChange={(event) => onDateAfterFilter(event.target.value)} />
+            </label>
+            <label>
+              To
+              <input type="datetime-local" value={dateBeforeFilter} onChange={(event) => onDateBeforeFilter(event.target.value)} />
+            </label>
+            <label>
+              Risk min
+              <input type="number" min="0" max="100" value={riskMinFilter} onChange={(event) => onRiskMinFilter(event.target.value)} />
+            </label>
+            <label>
+              Risk max
+              <input type="number" min="0" max="100" value={riskMaxFilter} onChange={(event) => onRiskMaxFilter(event.target.value)} />
+            </label>
+          </div>
+
+          <div className="tagManagement">
+            <label className="tagLabelInput"><span className="srOnly">New tag label</span><input value={tagLabel} onChange={(event) => onTagLabelChange(event.target.value)} placeholder="Tag label" /></label>
+            <button type="button" onClick={onCreateTag} disabled={!tagLabel.trim()}>
+              Create tag
+            </button>
+            <select value={tagResourceType} onChange={(event) => onTagResourceTypeChange(event.target.value)} aria-label="Tag resource type">
+              <option value="target">target</option>
+              <option value="scan">scan</option>
+            </select>
+            <button type="button" onClick={onAssignTag} disabled={!tagFilter || !selectedFinding}>
+              Assign tag
+            </button>
+          </div>
+        </details>
+
+        <div className="resultsToolbar">
+          <p aria-live="polite">Showing <strong>{resultStart}–{resultEnd}</strong> of <strong>{sortedFindings.length}</strong></p>
+          <div>
+            <label>
+              Sort
+              <select value={sortBy} onChange={(event) => changeSort(event.target.value as FindingSort)}>
+                <option value="severity-desc">Severity: highest first</option>
+                <option value="severity-asc">Severity: lowest first</option>
+                <option value="newest">Newest first</option>
+                <option value="title">Finding title</option>
+                <option value="status">Lifecycle status</option>
+              </select>
+            </label>
+            <label>
+              Rows
+              <select value={pageSize} onChange={(event) => changePageSize(Number(event.target.value))}>
+                {pageSizes.map((size) => <option value={size} key={size}>{size}</option>)}
+              </select>
+            </label>
+          </div>
         </div>
 
-        <div className="tagManagement">
-          <label className="tagLabelInput"><span className="srOnly">New tag label</span><input value={tagLabel} onChange={(event) => onTagLabelChange(event.target.value)} placeholder="Tag label" /></label>
-          <button type="button" onClick={onCreateTag} disabled={!tagLabel.trim()}>
-            Create Tag
-          </button>
-          <select value={tagResourceType} onChange={(event) => onTagResourceTypeChange(event.target.value)} aria-label="Tag resource type">
-            <option value="target">target</option>
-            <option value="scan">scan</option>
-          </select>
-          <button type="button" onClick={onAssignTag} disabled={!tagFilter || !selectedFinding}>
-            Assign Tag
-          </button>
-        </div>
-
-        {findings.length > 0 ? (
-          <table className="findingsTable">
-            <thead>
-              <tr>
-                <th>Severity</th>
-                <th>Status</th>
-                <th>Finding</th>
-                <th>Tool</th>
-                <th>Location</th>
-              </tr>
-            </thead>
-            <tbody>
-              {findings.map((finding) => (
-                <tr key={finding.id} className={finding.id === selectedFinding?.id ? "findingRowSelected" : undefined}>
-                  <td>
-                    <span className={`severity severity-${finding.severity}`}>{finding.severity}</span>
-                  </td>
-                  <td>
-                    <span className={finding.suppressed ? "stateBadge stateBadgeSuppressed" : "stateBadge"}>
-                      {formatStatus(finding.lifecycle_status)}
-                    </span>
-                  </td>
-                  <td><button type="button" className="findingSelectButton" aria-current={finding.id === selectedFinding?.id ? "true" : undefined} onClick={() => onSelectFinding(finding.id)}>{finding.title}</button></td>
-                  <td>{finding.source_tool}</td>
-                  <td>{finding.affected_url ?? finding.affected_file ?? "global"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {sortedFindings.length > 0 ? (
+          <>
+            <div className="findingsTableViewport">
+              <table className="findingsTable">
+                <thead>
+                  <tr>
+                    <th>Severity</th>
+                    <th>Status</th>
+                    <th>Finding</th>
+                    <th>Tool</th>
+                    <th>Location</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleFindings.map((finding) => (
+                    <tr key={finding.id} className={finding.id === selectedFinding?.id ? "findingRowSelected" : undefined}>
+                      <td>
+                        <span className={`severity severity-${finding.severity}`}>{finding.severity}</span>
+                      </td>
+                      <td>
+                        <span className={finding.suppressed ? "stateBadge stateBadgeSuppressed" : "stateBadge"}>
+                          {formatStatus(finding.lifecycle_status)}
+                        </span>
+                      </td>
+                      <td><button type="button" className="findingSelectButton" aria-current={finding.id === selectedFinding?.id ? "true" : undefined} onClick={() => onSelectFinding(finding.id)}>{finding.title}</button></td>
+                      <td>{finding.source_tool}</td>
+                      <td>{finding.affected_url ?? finding.affected_file ?? "global"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <nav className="resultsPagination" aria-label="Finding result pages">
+              <button type="button" className="secondaryButton" onClick={() => selectPage(currentPage - 1)} disabled={currentPage === 1}>Previous</button>
+              <span>Page <strong>{currentPage}</strong> of <strong>{pageCount}</strong></span>
+              <button type="button" className="secondaryButton" onClick={() => selectPage(currentPage + 1)} disabled={currentPage === pageCount}>Next</button>
+            </nav>
+          </>
         ) : (
           <p className="emptyState">No findings for this scan/filter.</p>
         )}
@@ -377,4 +450,14 @@ function FindingDetail({
 
 function formatStatus(value: string) {
   return value.replaceAll("_", " ");
+}
+
+function sortFindings(findings: Finding[], sortBy: FindingSort) {
+  return [...findings].sort((left, right) => {
+    if (sortBy === "severity-asc") return (severityRank[left.severity] ?? 0) - (severityRank[right.severity] ?? 0);
+    if (sortBy === "newest") return Date.parse(right.created_at) - Date.parse(left.created_at);
+    if (sortBy === "title") return left.title.localeCompare(right.title);
+    if (sortBy === "status") return left.lifecycle_status.localeCompare(right.lifecycle_status) || (severityRank[right.severity] ?? 0) - (severityRank[left.severity] ?? 0);
+    return (severityRank[right.severity] ?? 0) - (severityRank[left.severity] ?? 0);
+  });
 }
