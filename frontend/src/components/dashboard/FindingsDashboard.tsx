@@ -115,7 +115,7 @@ export function FindingsDashboard({
   onSuppressFinding: (finding: Finding) => void;
 }) {
   const [sortBy, setSortBy] = useState<FindingSort>("severity-desc");
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(5);
   const [requestedPage, setRequestedPage] = useState(1);
   const sortedFindings = useMemo(() => sortFindings(findings, sortBy), [findings, sortBy]);
   const pageCount = Math.max(1, Math.ceil(sortedFindings.length / pageSize));
@@ -124,7 +124,22 @@ export function FindingsDashboard({
   const visibleFindings = sortedFindings.slice(pageStart, pageStart + pageSize);
   const resultStart = sortedFindings.length > 0 ? pageStart + 1 : 0;
   const resultEnd = Math.min(pageStart + pageSize, sortedFindings.length);
-  const advancedFilterCount = [scannerFilter, owaspFilter, cweFilter, dateAfterFilter, dateBeforeFilter, riskMinFilter, riskMaxFilter].filter(Boolean).length;
+  const secondaryFilterCount = [
+    findingScope !== "scan",
+    targetFilter,
+    profileFilter,
+    lifecycleFilter !== "all",
+    confidenceFilter !== "all",
+    suppressionFilter !== "all",
+    tagFilter,
+    scannerFilter,
+    owaspFilter,
+    cweFilter,
+    dateAfterFilter,
+    dateBeforeFilter,
+    riskMinFilter,
+    riskMaxFilter
+  ].filter(Boolean).length;
 
   function selectPage(nextPage: number) {
     const safePage = Math.max(1, Math.min(nextPage, pageCount));
@@ -168,108 +183,6 @@ export function FindingsDashboard({
           ))}
         </div>
 
-        <div className="filterBar" aria-label="Finding scope filter">
-          <select value={findingScope} onChange={(event) => onFindingScope(event.target.value)} aria-label="Finding scope">
-            <option value="scan">current scan</option>
-            <option value="workspace">workspace</option>
-          </select>
-          <select value={targetFilter} onChange={(event) => onTargetFilter(event.target.value)} aria-label="Target filter" disabled={findingScope !== "workspace"}>
-            <option value="">all targets</option>
-            {targets.map((target) => (
-              <option value={target.id} key={target.id}>
-                {target.name}
-              </option>
-            ))}
-          </select>
-          <select value={profileFilter} onChange={(event) => onProfileFilter(event.target.value)} aria-label="Scan profile filter" disabled={findingScope !== "workspace"}>
-            <option value="">all profiles</option>
-            {scanProfiles.map((profile) => (
-              <option value={profile.id} key={profile.id}>
-                {profile.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="filterBar" role="group" aria-label="Finding management filters">
-          <select value={lifecycleFilter} onChange={(event) => onLifecycleFilter(event.target.value)} aria-label="Lifecycle filter">
-            <option value="all">all states</option>
-            {lifecycleStatuses.map((item) => (
-              <option value={item} key={item}>
-                {formatStatus(item)}
-              </option>
-            ))}
-          </select>
-          <select value={confidenceFilter} onChange={(event) => onConfidenceFilter(event.target.value)} aria-label="Confidence filter">
-            {confidenceFilters.map((item) => (
-              <option value={item} key={item}>
-                {item === "all" ? "all confidence" : item}
-              </option>
-            ))}
-          </select>
-          <select value={suppressionFilter} onChange={(event) => onSuppressionFilter(event.target.value)} aria-label="Suppression filter">
-            <option value="all">all suppression</option>
-            <option value="active">suppressed</option>
-            <option value="not_suppressed">not suppressed</option>
-          </select>
-          <select value={tagFilter} onChange={(event) => onTagFilter(event.target.value)} aria-label="Tag filter">
-            <option value="">all tags</option>
-            {tags.map((tag) => (
-              <option value={tag.id} key={tag.id}>
-                {tag.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <details className="advancedFindingControls">
-          <summary><span>Advanced filters &amp; tags</span>{advancedFilterCount > 0 ? <span className="activeFilterCount">{advancedFilterCount} active</span> : null}</summary>
-          <div className="filterGrid" aria-label="Advanced finding filters">
-            <label>
-              Scanner
-              <input value={scannerFilter} onChange={(event) => onScannerFilter(event.target.value)} />
-            </label>
-            <label>
-              OWASP
-              <input value={owaspFilter} onChange={(event) => onOwaspFilter(event.target.value)} />
-            </label>
-            <label>
-              CWE
-              <input value={cweFilter} onChange={(event) => onCweFilter(event.target.value)} />
-            </label>
-            <label>
-              From
-              <input type="datetime-local" value={dateAfterFilter} onChange={(event) => onDateAfterFilter(event.target.value)} />
-            </label>
-            <label>
-              To
-              <input type="datetime-local" value={dateBeforeFilter} onChange={(event) => onDateBeforeFilter(event.target.value)} />
-            </label>
-            <label>
-              Risk min
-              <input type="number" min="0" max="100" value={riskMinFilter} onChange={(event) => onRiskMinFilter(event.target.value)} />
-            </label>
-            <label>
-              Risk max
-              <input type="number" min="0" max="100" value={riskMaxFilter} onChange={(event) => onRiskMaxFilter(event.target.value)} />
-            </label>
-          </div>
-
-          <div className="tagManagement">
-            <label className="tagLabelInput"><span className="srOnly">New tag label</span><input value={tagLabel} onChange={(event) => onTagLabelChange(event.target.value)} placeholder="Tag label" /></label>
-            <button type="button" onClick={onCreateTag} disabled={!tagLabel.trim()}>
-              Create tag
-            </button>
-            <select value={tagResourceType} onChange={(event) => onTagResourceTypeChange(event.target.value)} aria-label="Tag resource type">
-              <option value="target">target</option>
-              <option value="scan">scan</option>
-            </select>
-            <button type="button" onClick={onAssignTag} disabled={!tagFilter || !selectedFinding}>
-              Assign tag
-            </button>
-          </div>
-        </details>
-
         <div className="resultsToolbar">
           <p aria-live="polite">Showing <strong>{resultStart}–{resultEnd}</strong> of <strong>{sortedFindings.length}</strong></p>
           <div>
@@ -291,6 +204,40 @@ export function FindingsDashboard({
             </label>
           </div>
         </div>
+
+        <details className="advancedFindingControls">
+          <summary><span>Filters &amp; tags</span>{secondaryFilterCount > 0 ? <span className="activeFilterCount">{secondaryFilterCount} active</span> : <span className="filterSummaryHint">Scope, status, confidence, and more</span>}</summary>
+          <div className="findingFilterSection">
+            <h4>Scope and management</h4>
+            <div className="filterGrid filterGridPrimary" aria-label="Finding scope and management filters">
+              <label>Scope<select value={findingScope} onChange={(event) => onFindingScope(event.target.value)}><option value="scan">Current scan</option><option value="workspace">Workspace</option></select></label>
+              <label>Target<select value={targetFilter} onChange={(event) => onTargetFilter(event.target.value)} disabled={findingScope !== "workspace"}><option value="">All targets</option>{targets.map((target) => <option value={target.id} key={target.id}>{target.name}</option>)}</select></label>
+              <label>Profile<select value={profileFilter} onChange={(event) => onProfileFilter(event.target.value)} disabled={findingScope !== "workspace"}><option value="">All profiles</option>{scanProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.label}</option>)}</select></label>
+              <label>Lifecycle<select value={lifecycleFilter} onChange={(event) => onLifecycleFilter(event.target.value)}><option value="all">All states</option>{lifecycleStatuses.map((item) => <option value={item} key={item}>{formatStatus(item)}</option>)}</select></label>
+              <label>Confidence<select value={confidenceFilter} onChange={(event) => onConfidenceFilter(event.target.value)}>{confidenceFilters.map((item) => <option value={item} key={item}>{item === "all" ? "All confidence" : item}</option>)}</select></label>
+              <label>Suppression<select value={suppressionFilter} onChange={(event) => onSuppressionFilter(event.target.value)}><option value="all">All suppression</option><option value="active">Suppressed</option><option value="not_suppressed">Not suppressed</option></select></label>
+              <label>Tag<select value={tagFilter} onChange={(event) => onTagFilter(event.target.value)}><option value="">All tags</option>{tags.map((tag) => <option value={tag.id} key={tag.id}>{tag.label}</option>)}</select></label>
+            </div>
+          </div>
+          <div className="findingFilterSection">
+            <h4>Evidence detail</h4>
+            <div className="filterGrid" aria-label="Advanced finding filters">
+              <label>Scanner<input value={scannerFilter} onChange={(event) => onScannerFilter(event.target.value)} /></label>
+              <label>OWASP<input value={owaspFilter} onChange={(event) => onOwaspFilter(event.target.value)} /></label>
+              <label>CWE<input value={cweFilter} onChange={(event) => onCweFilter(event.target.value)} /></label>
+              <label>From<input type="datetime-local" value={dateAfterFilter} onChange={(event) => onDateAfterFilter(event.target.value)} /></label>
+              <label>To<input type="datetime-local" value={dateBeforeFilter} onChange={(event) => onDateBeforeFilter(event.target.value)} /></label>
+              <label>Risk min<input type="number" min="0" max="100" value={riskMinFilter} onChange={(event) => onRiskMinFilter(event.target.value)} /></label>
+              <label>Risk max<input type="number" min="0" max="100" value={riskMaxFilter} onChange={(event) => onRiskMaxFilter(event.target.value)} /></label>
+            </div>
+            <div className="tagManagement">
+              <label className="tagLabelInput"><span className="srOnly">New tag label</span><input value={tagLabel} onChange={(event) => onTagLabelChange(event.target.value)} placeholder="Tag label" /></label>
+              <button type="button" onClick={onCreateTag} disabled={!tagLabel.trim()}>Create tag</button>
+              <select value={tagResourceType} onChange={(event) => onTagResourceTypeChange(event.target.value)} aria-label="Tag resource type"><option value="target">Target</option><option value="scan">Scan</option></select>
+              <button type="button" onClick={onAssignTag} disabled={!tagFilter || !selectedFinding}>Assign tag</button>
+            </div>
+          </div>
+        </details>
 
         {sortedFindings.length > 0 ? (
           <>

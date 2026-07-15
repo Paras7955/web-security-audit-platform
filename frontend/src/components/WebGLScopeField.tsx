@@ -187,16 +187,21 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
       const stage = stageForStep(currentStep, status);
       const warning = status === "completed_with_warnings" || status === "failed";
       const completed = status === "completed";
-      const routeColor: Vec3 = warning ? [0.96, 0.38, 0.08] : completed ? [0.25, 0.65, 0.43] : [0.92, 0.18, 0.035];
-      const activeColor: Vec3 = warning ? [1, 0.58, 0.16] : completed ? [0.45, 0.88, 0.62] : [1, 0.36, 0.09];
+      const routeColor: Vec3 = warning ? [0.98, 0.29, 0.055] : [0.94, 0.19, 0.035];
+      const activeColor: Vec3 = warning ? [1, 0.56, 0.14] : [1, 0.39, 0.08];
+      const outcomeColor: Vec3 = completed ? [0.38, 0.78, 0.52] : warning ? [1, 0.56, 0.14] : activeColor;
       const lightTheme = document.documentElement.dataset.theme === "light";
       const structure: Vec3 = lightTheme ? [0.36, 0.4, 0.48] : [0.035, 0.052, 0.082];
       const structureTop: Vec3 = lightTheme ? [0.52, 0.56, 0.64] : [0.105, 0.135, 0.19];
       const structureEdge: Vec3 = lightTheme ? [0.26, 0.3, 0.38] : [0.065, 0.085, 0.125];
       const pointer = pointerRef.current;
-      const camera: Vec3 = [pointer.x * 0.32, 5.2 + pointer.y * 0.2, 10.5];
-      const projection = perspectiveMatrix(Math.PI / 4.35, width / height, 0.1, 40);
-      const view = lookAtMatrix(camera, [0.12, -0.02, 0], [0, 1, 0]);
+      const aspect = width / height;
+      const compactScene = aspect < 2;
+      const camera: Vec3 = compactScene
+        ? [pointer.x * 0.16, 5 + pointer.y * 0.12, 10.8]
+        : [0.35 + pointer.x * 0.2, 4.25 + pointer.y * 0.14, 7.6];
+      const projection = perspectiveMatrix(compactScene ? Math.PI / 4.2 : Math.PI / 7.2, aspect, 0.1, 40);
+      const view = lookAtMatrix(camera, [0.45, -0.1, 0], [0, 1, 0]);
       const viewProjection = multiplyMatrices(projection, view);
 
       gl.clearColor(0, 0, 0, 0);
@@ -208,22 +213,42 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
         { position: [-2.15, -0.39, -0.08], scale: [0.68, 0.17, 0.8], color: structureEdge },
         { position: [-0.35, -0.4, lane], scale: [0.76, 0.16, 0.74], color: structureEdge },
         { position: [1.5, -0.39, 0.03], scale: [0.72, 0.17, 0.76], color: structureEdge },
-        { position: [3.98, -0.42, 0], scale: [1.48, 0.14, 1.48], color: structureEdge, geometry: "cylinder" },
-        { position: [3.98, -0.22, 0], scale: [1.22, 0.055, 1.22], color: routeColor, emissive: 0.2, geometry: "cylinder" },
-        { position: [3.98, -0.12, 0], scale: [0.94, 0.11, 0.94], color: structure, geometry: "cylinder" }
+        { position: [4.18, -0.42, 0], scale: [1.68, 0.14, 1.68], color: structureEdge, geometry: "cylinder" },
+        { position: [4.18, -0.22, 0], scale: [1.4, 0.055, 1.4], color: routeColor, emissive: 0.2, geometry: "cylinder" },
+        { position: [4.18, -0.12, 0], scale: [1.08, 0.11, 1.08], color: structure, geometry: "cylinder" }
       ];
       platforms.forEach((box) => drawBox(box, viewProjection));
+
+      const routePoints: Vec3[] = [
+        [-4.82, -0.34, -0.72],
+        [-3.45, -0.34, 0.58],
+        [-2.15, -0.31, -0.08],
+        [-0.35, -0.32, lane],
+        [1.5, -0.31, 0.03],
+        [3.28, -0.34, 0]
+      ];
+      createRouteArchitecture(routePoints, structureEdge, structureTop).forEach((box) => drawBox(box, viewProjection));
 
       const route: SceneBox[] = [
         { position: [-4.12, -0.12, -0.18], scale: [0.82, 0.035, 0.075], color: routeColor, rotation: [0, -0.5, 0] },
         { position: [-2.79, -0.11, 0.24], scale: [0.78, 0.04, 0.075], color: routeColor, rotation: [0, 0.35, 0] },
         { position: [-1.25, -0.1, lane * 0.5], scale: [0.95, 0.045, 0.075], color: routeColor, rotation: [0, lane * -0.22, 0] },
         { position: [0.58, -0.1, lane * 0.48], scale: [0.98, 0.045, 0.075], color: routeColor, rotation: [0, lane * 0.2, 0] },
-        { position: [2.48, -0.1, 0], scale: [1.06, 0.045, 0.075], color: routeColor }
+        { position: [2.58, -0.1, 0], scale: [1.16, 0.045, 0.075], color: routeColor }
       ];
       route.forEach((box, index) => {
-        drawBox({ ...box, scale: [box.scale[0] * 1.02, box.scale[1] * 2.5, box.scale[2] * 2.3], color: structureTop }, viewProjection);
-        drawBox({ ...box, color: index <= stage ? activeColor : box.color, emissive: index === stage ? 0.28 + pulse * 0.22 : 0.08 }, viewProjection);
+        drawBox({
+          ...box,
+          position: [box.position[0], box.position[1] - 0.07, box.position[2]],
+          scale: [box.scale[0] * 1.02, box.scale[1] * 2.2, box.scale[2] * 2.3],
+          color: structureTop
+        }, viewProjection);
+        drawBox({
+          ...box,
+          position: [box.position[0], box.position[1] + 0.055, box.position[2]],
+          color: index <= stage ? activeColor : box.color,
+          emissive: index === stage ? 0.28 + pulse * 0.22 : 0.12
+        }, viewProjection);
       });
 
       const blocks: SceneBox[] = [
@@ -236,10 +261,12 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
         { position: [-2.15, 0.2, -0.08], scale: [0.16, 0.38, 0.28], color: activeColor, emissive: 0.09 },
         { position: [-0.35, 0.11, lane], scale: [0.42, 0.48, 0.42], color: stage === 2 ? activeColor : structureTop, emissive: stage === 2 ? pulse * 0.18 : 0 },
         { position: [1.5, 0.08, 0.03], scale: [0.38, 0.47, 0.4], color: stage === 3 ? activeColor : structureTop, emissive: stage === 3 ? pulse * 0.18 : 0 },
-        { position: [3.98, 0.44, 0], scale: [0.72, 0.62, 0.72], color: structureTop, geometry: "cylinder" },
-        { position: [3.98, 1.08, 0], scale: [0.78, 0.1, 0.78], color: structureEdge, geometry: "cylinder" },
-        { position: [3.98, 1.16, 0], scale: [0.42, 0.08, 0.42], color: stage >= 4 ? activeColor : routeColor, emissive: 0.15 + pulse * 0.12, geometry: "cylinder" },
-        { position: [3.98, 0.48, -0.72], scale: [0.18, 0.28, 0.06], color: stage >= 4 ? activeColor : routeColor, emissive: 0.12 }
+        { position: [4.18, 0.49, 0], scale: [0.88, 0.68, 0.88], color: structureTop, geometry: "cylinder" },
+        { position: [4.18, 1.18, 0], scale: [0.94, 0.11, 0.94], color: structureEdge, geometry: "cylinder" },
+        { position: [4.18, 1.27, 0], scale: [0.52, 0.085, 0.52], color: stage >= 4 ? outcomeColor : routeColor, emissive: 0.15 + pulse * 0.12, geometry: "cylinder" },
+        { position: [4.18, 0.52, -0.86], scale: [0.2, 0.31, 0.065], color: stage >= 4 ? outcomeColor : routeColor, emissive: 0.12 },
+        { position: [3.42, 0.28, 0.54], scale: [0.16, 0.5, 0.16], color: structureTop, geometry: "cylinder" },
+        { position: [4.92, 0.28, 0.54], scale: [0.16, 0.5, 0.16], color: structureTop, geometry: "cylinder" }
       ];
       blocks.forEach((box) => drawBox(box, viewProjection));
 
@@ -388,6 +415,44 @@ function profileRouteLabel(profileId: string) {
   if (profileId === "modern-web-crawl") return "Rendered route crawl";
   if (profileId === "repo") return "Offline repository scan";
   return "Observe only";
+}
+
+function createRouteArchitecture(points: Vec3[], edgeColor: Vec3, topColor: Vec3): SceneBox[] {
+  const boxes: SceneBox[] = [];
+  for (let segmentIndex = 0; segmentIndex < points.length - 1; segmentIndex += 1) {
+    const start = points[segmentIndex];
+    const end = points[segmentIndex + 1];
+    const deltaX = end[0] - start[0];
+    const deltaZ = end[2] - start[2];
+    const distance = Math.hypot(deltaX, deltaZ);
+    const tileCount = Math.max(3, Math.ceil(distance / 0.42));
+    const angle = -Math.atan2(deltaZ, deltaX);
+    const normalX = -deltaZ / distance;
+    const normalZ = deltaX / distance;
+
+    for (let tileIndex = 0; tileIndex < tileCount; tileIndex += 1) {
+      const progress = (tileIndex + 0.5) / tileCount;
+      const x = start[0] + deltaX * progress;
+      const y = start[1] + (end[1] - start[1]) * progress;
+      const z = start[2] + deltaZ * progress;
+      const tileHalfLength = distance / tileCount / 2;
+      boxes.push({
+        position: [x, y, z],
+        scale: [tileHalfLength * 0.96, 0.11, 0.29],
+        rotation: [0, angle, 0],
+        color: edgeColor
+      });
+      for (const side of [-1, 1]) {
+        boxes.push({
+          position: [x + normalX * 0.39 * side, y + 0.09, z + normalZ * 0.39 * side],
+          scale: [Math.min(0.14, tileHalfLength * 0.74), 0.15, 0.11],
+          rotation: [0, angle, 0],
+          color: topColor
+        });
+      }
+    }
+  }
+  return boxes;
 }
 
 function composeMatrix(position: Vec3, rotation: Vec3, scale: Vec3) {

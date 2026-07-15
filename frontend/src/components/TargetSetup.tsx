@@ -146,6 +146,8 @@ export function TargetSetup({
   const [isCancellingScan, setIsCancellingScan] = useState(false);
   const selectedScanIdRef = useRef("");
   const selectedTargetIdRef = useRef("");
+  const auditPhaseTabsRef = useRef<HTMLElement>(null);
+  const activeAuditPhaseRef = useRef<HTMLButtonElement>(null);
 
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
   const selectedScan = scanHistory.find((scan) => scan.id === selectedScanId) ?? null;
@@ -200,6 +202,24 @@ export function TargetSetup({
   useEffect(() => {
     selectedTargetIdRef.current = selectedTargetId;
   }, [selectedTargetId]);
+
+  useEffect(() => {
+    const centerActivePhase = () => {
+      const tabs = auditPhaseTabsRef.current;
+      const activeTab = activeAuditPhaseRef.current;
+      if (!tabs || !activeTab) {
+        return;
+      }
+      const targetLeft = activeTab.offsetLeft - (tabs.clientWidth - activeTab.offsetWidth) / 2;
+      tabs.scrollTo({
+        left: Math.max(0, targetLeft),
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"
+      });
+    };
+    centerActivePhase();
+    window.addEventListener("resize", centerActivePhase);
+    return () => window.removeEventListener("resize", centerActivePhase);
+  }, [auditPhase]);
 
   useEffect(() => {
     const scanDrivesHero = activeView === "scanning" && (auditPhase === "run" || auditPhase === "review");
@@ -772,7 +792,10 @@ export function TargetSetup({
       }
       setFindings(body);
       setSelectedFindingId((current) => {
-        return body.some((finding) => finding.id === current) ? current : body[0]?.id ?? "";
+        const firstBySeverity = [...body].sort(
+          (left, right) => (severityRank[right.severity] ?? 0) - (severityRank[left.severity] ?? 0)
+        )[0];
+        return body.some((finding) => finding.id === current) ? current : firstBySeverity?.id ?? "";
       });
     } catch {
       if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
@@ -1124,13 +1147,14 @@ export function TargetSetup({
 
         {activeView === "scanning" ? (
           <div className="auditWorkspace">
-            <nav className="auditPhaseTabs" role="tablist" aria-label="Audit phases">
+            <nav ref={auditPhaseTabsRef} className="auditPhaseTabs" role="tablist" aria-label="Audit phases">
               {auditPhases.map((phase, index) => {
                 const isActive = auditPhase === phase.id;
                 const isComplete = phaseComplete[phase.id] && !isActive;
                 const isPriority = phase.id === "profile" || phase.id === "review";
                 return (
                   <button
+                    ref={isActive ? activeAuditPhaseRef : undefined}
                     key={phase.id}
                     type="button"
                     role="tab"
@@ -1152,7 +1176,7 @@ export function TargetSetup({
               {auditPhase === "ready" ? (
                 <div className="auditPhaseContent">
                   <div className="phaseHeading">
-                    <div><span>Before you scope an audit</span><h3>Confirm the local platform is ready</h3><p>The database, worker, queue, scanner dependencies, and artifact storage must be visible before launch.</p></div>
+                    <div><span>Before you scope an audit</span><h2>Confirm the local platform is ready</h2><p>The database, worker, queue, scanner dependencies, and artifact storage must be visible before launch.</p></div>
                     <span className={platformReady ? "readinessState readinessStateReady" : "readinessState"}><span className="statusDot" />{platformReady ? "Ready to audit" : "Needs attention"}</span>
                   </div>
                   <OpsHealthPanel health={platformHealth} message={opsMessage} onRefresh={loadPlatformHealth} />
@@ -1167,7 +1191,7 @@ export function TargetSetup({
 
               {auditPhase === "scope" ? (
                 <div className="auditPhaseContent">
-                  <div className="phaseHeading"><div><span>Authorized scope</span><h3>Choose a saved target or validate a new one</h3><p>Every audit starts from an exact allowlist entry. A local repository path remains attached to its saved target.</p></div></div>
+                  <div className="phaseHeading"><div><span>Authorized scope</span><h2>Choose a saved target or validate a new one</h2><p>Every audit starts from an exact allowlist entry. A local repository path remains attached to its saved target.</p></div></div>
                   <div className="targetManagementGrid">
                     <TargetLibrary
                       targets={targets}
@@ -1284,7 +1308,7 @@ export function TargetSetup({
               {auditPhase === "review" ? (
                 <div className="auditPhaseContent auditPhaseContentPriority">
                   <div className="phaseHeading reviewPhaseHeading">
-                    <div><span>Normalized evidence</span><h3>Turn scanner output into decisions</h3><p>Triage lifecycle, suppression, and tags here, then generate sanitized reports or bounded explanations when the profile supports them.</p></div>
+                    <div><span>Normalized evidence</span><h2>Turn scanner output into decisions</h2><p>Triage lifecycle, suppression, and tags here, then generate sanitized reports or bounded explanations when the profile supports them.</p></div>
                     <div className="viewToolbarActions">
                       <label className="searchField"><AppIcon name="search" size={17} /><span className="srOnly">Search loaded findings</span><input value={findingSearchQuery} onChange={(event) => setFindingSearchQuery(event.target.value)} placeholder="Search finding, tool, URL, CWE…" /></label>
                       <button type="button" className="secondaryButton" onClick={resetFindingFilters}>Reset filters</button>

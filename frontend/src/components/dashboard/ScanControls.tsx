@@ -72,7 +72,7 @@ export function ScanProfileSelector({
     <div className="profileWorkspace">
       <div className="profileSelectorHeader">
         <div>
-          <h3>Choose how to audit this target</h3>
+          <h2>Choose how to audit this target</h2>
           <p>Each profile uses a different bounded tool path. Availability is enforced by the selected target.</p>
         </div>
         <label className="selectLabel compactSelect">
@@ -105,23 +105,22 @@ export function ScanProfileSelector({
                   <em>{isAvailable ? "Available" : "Unavailable"}</em>
                 </span>
                 <span>{profile.description}</span>
-                <span className="profileMeta">{capabilities.map((capability) => <small key={capability}>{capability}</small>)}</span>
+                <span className="profileMeta">{capabilities.join(" · ")}</span>
               </button>
             );
           })}
         </div>
 
         <aside className="profileContext" aria-live="polite">
-          <span className="profileContextIcon"><AppIcon name={selectedProfile.mode === "repo" ? "intelligence" : "scan"} size={20} /></span>
-          <p className="panelKicker">Selected profile</p>
-          <h3>{selectedProfile.label}</h3>
-          <p>{profileGuidance(selectedProfile)}</p>
-          <dl>
-            <div><dt>Target eligibility</dt><dd>{selectedTargetSupportsProfile ? "Allowed" : "Not allowed"}</dd></div>
-            <div><dt>Reports</dt><dd>{selectedProfile.reports_enabled ? "Available" : "Not generated"}</dd></div>
-            <div><dt>AI explanation</dt><dd>{selectedProfile.ai_enabled ? "Available" : "Not sent"}</dd></div>
-            <div><dt>Credentials</dt><dd>{selectedProfile.mode === "passive" ? "Optional" : "Never used"}</dd></div>
-          </dl>
+          <div className="profileContextHeading">
+            <span className="profileContextIcon"><AppIcon name={selectedProfile.mode === "repo" ? "intelligence" : "scan"} size={20} /></span>
+            <div><span>Selected profile</span><h3>{selectedProfile.label}</h3></div>
+          </div>
+          <ul className="profileAssuranceList">
+            <li><AppIcon name="shield" size={17} /><span><strong>Guarded eligibility</strong><small>{selectedTargetSupportsProfile ? "Allowed for the selected target" : "Not allowed for the selected target"}</small></span></li>
+            <li><AppIcon name="intelligence" size={17} /><span><strong>Sanitized outputs</strong><small>{selectedProfile.reports_enabled ? `Reports${selectedProfile.ai_enabled ? " and explanations" : ""} available` : "No reports or explanations"}</small></span></li>
+            <li><AppIcon name="credential" size={17} /><span><strong>Credential boundary</strong><small>{selectedProfile.mode === "passive" ? "Optional guarded credential" : "Credentials are never used"}</small></span></li>
+          </ul>
           {selectedProfile.requires_repo_path ? (
             <div className="repoPathNotice">
               <p>Repository scans stage bounded regular files only. ScopeHarbor never clones, builds, installs, runs hooks, or executes repository code.</p>
@@ -164,7 +163,7 @@ export function ScanAuthorization({
     <div className="authorizationLayout">
       <section className="authorizationChecklist">
         <div className="panelHeader">
-          <div><p className="panelKicker">Explicit permission</p><h3>Confirm the audit boundary</h3></div>
+          <div><p className="panelKicker">Explicit permission</p><h2>Confirm the audit boundary</h2></div>
           <span className="contextBadge">Required</span>
         </div>
         <p>ScopeHarbor records these confirmations with the scan request. They do not broaden the backend allowlist.</p>
@@ -230,7 +229,7 @@ export function ScanLaunchPanel({
     <section className="launchReview">
       <div>
         <p className="panelKicker">Launch review</p>
-        <h3>{profile.label} is ready to queue</h3>
+        <h2>{profile.label} is ready to queue</h2>
         <p>Review the exact target and profile once more. The worker will revalidate workspace, target, and policy context before any tool runs.</p>
       </div>
       <dl>
@@ -259,13 +258,6 @@ function profileIcon(profileId: string): "target" | "operations" | "activity" | 
   if (profileId === "modern-web-crawl") return "activity";
   if (profileId === "repo") return "intelligence";
   return "target";
-}
-
-function profileGuidance(profile: ScanProfileMetadata) {
-  if (profile.mode === "passive") return "The fastest high-level web review: guarded crawl, passive checks, normalization, reports, and optional bounded explanations.";
-  if (profile.mode === "active_demo") return "Adds bounded ZAP active testing after the passive path. Available only for explicitly configured local demo targets.";
-  if (profile.mode === "modern_web_crawl") return "Uses the bounded Client Spider to reach modern rendered routes. Findings remain local and are not sent to reports or AI.";
-  return "Scans an attached local repository with pinned Gitleaks and the operator-updated offline OSV database.";
 }
 
 export function ScanHistory({
