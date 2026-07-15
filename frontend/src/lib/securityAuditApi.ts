@@ -149,6 +149,15 @@ export type PlatformHealth = {
   artifact_root: HealthComponent;
 };
 
+export type AuditLogEntry = {
+  id: string;
+  event_type: string;
+  resource_type: string | null;
+  resource_id: string | null;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+};
+
 export type RiskScore = {
   id: string;
   target_id: string;
@@ -257,4 +266,25 @@ export async function readJson<T>(response: Response, fallbackMessage: string): 
 
 export async function readPage<Item>(response: Response, fallbackMessage: string): Promise<CursorPage<Item>> {
   return readJson<CursorPage<Item>>(response, fallbackMessage);
+}
+
+export async function readAllPages<Item>(endpoint: string, fallbackMessage: string): Promise<Item[]> {
+  const items: Item[] = [];
+  let cursor: string | null = null;
+
+  for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
+    const url = new URL(endpoint);
+    url.searchParams.set("limit", "200");
+    if (cursor) {
+      url.searchParams.set("cursor", cursor);
+    }
+    const page = await readPage<Item>(await apiFetch(url), fallbackMessage);
+    items.push(...page.items);
+    if (!page.next_cursor) {
+      return items;
+    }
+    cursor = page.next_cursor;
+  }
+
+  throw new Error(`${fallbackMessage} The collection exceeded the client paging safety limit.`);
 }

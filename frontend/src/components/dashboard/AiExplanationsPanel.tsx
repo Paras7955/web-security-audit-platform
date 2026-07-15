@@ -59,6 +59,8 @@ export function AiExplanationsPanel({ explanation, message }: { explanation: AiE
                     <small>{item.owasp_mapping}</small>
                   </div>
                   <p>{item.summary}</p>
+                  <h4>Why it matters</h4>
+                  <p>{item.why_it_matters}</p>
                   <h4>Recommended action</h4>
                   <p>{item.recommended_action}</p>
                   <h4>Limitations</h4>

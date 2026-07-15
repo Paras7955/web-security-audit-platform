@@ -240,7 +240,7 @@ export function FindingsDashboard({
             </thead>
             <tbody>
               {findings.map((finding) => (
-                <tr key={finding.id} onClick={() => onSelectFinding(finding.id)}>
+                <tr key={finding.id} className={finding.id === selectedFinding?.id ? "findingRowSelected" : undefined}>
                   <td>
                     <span className={`severity severity-${finding.severity}`}>{finding.severity}</span>
                   </td>
@@ -249,7 +249,7 @@ export function FindingsDashboard({
                       {formatStatus(finding.lifecycle_status)}
                     </span>
                   </td>
-                  <td>{finding.title}</td>
+                  <td><button type="button" className="findingSelectButton" aria-current={finding.id === selectedFinding?.id ? "true" : undefined} onClick={() => onSelectFinding(finding.id)}>{finding.title}</button></td>
                   <td>{finding.source_tool}</td>
                   <td>{finding.affected_url ?? finding.affected_file ?? "global"}</td>
                 </tr>
@@ -362,8 +362,14 @@ function FindingDetail({
       <h4>Evidence</h4>
       <pre>{finding.evidence ?? "No evidence snippet stored."}</pre>
 
+      <h4>Reproduction</h4>
+      <p>{finding.reproduction_steps ?? "No safe reproduction steps were provided by this scanner."}</p>
+
       <h4>Remediation</h4>
-      <p>{finding.remediation ?? "Remediation guidance is added in later reporting phases."}</p>
+      <p>{finding.remediation ?? "No remediation guidance was provided for this finding."}</p>
+
+      <h4>False-positive notes</h4>
+      <p>{finding.false_positive_notes ?? "No false-positive guidance was provided. Validate the affected behavior before changing lifecycle state."}</p>
     </div>
   );
 }

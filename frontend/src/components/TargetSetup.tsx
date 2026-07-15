@@ -7,6 +7,7 @@ import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, use
 import { AppIcon } from "@/components/AppIcon";
 import { ConfirmActionDialog } from "@/components/ConfirmActionDialog";
 import { AiExplanationsPanel } from "@/components/dashboard/AiExplanationsPanel";
+import { AuditLogPanel } from "@/components/dashboard/AuditLogPanel";
 import { AuthProfilesPanel } from "@/components/dashboard/AuthProfilesPanel";
 import { FindingsDashboard, severityRank } from "@/components/dashboard/FindingsDashboard";
 import { OpsHealthPanel } from "@/components/dashboard/OpsHealthPanel";
@@ -29,6 +30,7 @@ import { TargetLibrary } from "@/components/dashboard/TargetLibrary";
 import { WorkspaceOverview } from "@/components/dashboard/WorkspaceOverview";
 import {
   AiExplanation,
+  AuditLogEntry,
   AuthProfile,
   DashboardOverview,
   Finding,
@@ -44,6 +46,7 @@ import {
   apiBaseUrl,
   apiOrigin,
   apiFetch,
+  readAllPages,
   readJson,
   readPage
 } from "@/lib/securityAuditApi";
@@ -105,6 +108,7 @@ export function TargetSetup({
   const [targetDashboard, setTargetDashboard] = useState<TargetDashboard | null>(null);
   const [scanComparison, setScanComparison] = useState<ScanComparison | null>(null);
   const [platformHealth, setPlatformHealth] = useState<PlatformHealth | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [baselineScanId, setBaselineScanId] = useState("");
   const [comparisonScanId, setComparisonScanId] = useState("");
   const [selectedFindingId, setSelectedFindingId] = useState("");
@@ -279,7 +283,7 @@ export function TargetSetup({
 
   async function loadInitialData() {
     setBootstrapError("");
-    const results = await Promise.allSettled([loadTargets(), loadAuthProfiles(), loadScanHistory(), loadDashboardOverview(), loadTags(), loadPlatformHealth()]);
+    const results = await Promise.allSettled([loadTargets(), loadAuthProfiles(), loadScanHistory(), loadDashboardOverview(), loadTags(), loadPlatformHealth(), loadAuditLogs()]);
     const failed = results.find((result) => result.status === "rejected");
     if (failed?.status === "rejected") {
       const error = failed.reason;
@@ -626,11 +630,10 @@ export function TargetSetup({
   }
 
   async function loadTargets(preferredTargetId?: string) {
-    const response = await apiFetch(`${apiBaseUrl}/targets?limit=200`);
-    const page = await readPage<Target>(response, "Target list load failed.");
-    setTargets(page.items);
+    const items = await readAllPages<Target>(`${apiBaseUrl}/targets`, "Target list load failed.");
+    setTargets(items);
     const requestedTargetId = preferredTargetId ?? selectedTargetId;
-    const nextTargetId = page.items.some((target) => target.id === requestedTargetId) ? requestedTargetId : page.items[0]?.id ?? "";
+    const nextTargetId = items.some((target) => target.id === requestedTargetId) ? requestedTargetId : items[0]?.id ?? "";
     setSelectedTargetId(nextTargetId);
     setBootstrapError("");
   }
@@ -652,6 +655,15 @@ export function TargetSetup({
     } catch (error) {
       setPlatformHealth(null);
       setOpsMessage(error instanceof Error ? error.message : "Platform health load failed.");
+    }
+  }
+
+  async function loadAuditLogs() {
+    try {
+      setAuditLogs(await readAllPages<AuditLogEntry>(`${apiBaseUrl}/audit-logs`, "Workspace activity could not be loaded."));
+    } catch (error) {
+      setAuditLogs([]);
+      setOpsMessage(error instanceof Error ? error.message : "Workspace activity could not be loaded.");
     }
   }
 
@@ -725,29 +737,26 @@ export function TargetSetup({
   }
 
   async function loadAuthProfiles(preferredAuthProfileId?: string) {
-    const response = await apiFetch(`${apiBaseUrl}/auth-profiles?limit=200`);
-    const page = await readPage<AuthProfile>(response, "Auth profile list load failed.");
-    setAuthProfiles(page.items);
+    const items = await readAllPages<AuthProfile>(`${apiBaseUrl}/auth-profiles`, "Auth profile list load failed.");
+    setAuthProfiles(items);
     const requestedProfileId = preferredAuthProfileId ?? selectedAuthProfileId;
-    const nextProfileId = page.items.some((profile) => profile.id === requestedProfileId) ? requestedProfileId : page.items[0]?.id ?? "";
+    const nextProfileId = items.some((profile) => profile.id === requestedProfileId) ? requestedProfileId : items[0]?.id ?? "";
     setSelectedAuthProfileId(nextProfileId);
     setBootstrapError("");
   }
 
   async function loadScanHistory(preferredScanId?: string) {
-    const response = await apiFetch(`${apiBaseUrl}/scans?limit=200`);
-    const page = await readPage<Scan>(response, "Scan history load failed.");
-    setScanHistory(page.items);
+    const items = await readAllPages<Scan>(`${apiBaseUrl}/scans`, "Scan history load failed.");
+    setScanHistory(items);
     const requestedScanId = preferredScanId ?? selectedScanId;
-    const nextScanId = page.items.some((scan) => scan.id === requestedScanId) ? requestedScanId : page.items[0]?.id ?? "";
+    const nextScanId = items.some((scan) => scan.id === requestedScanId) ? requestedScanId : items[0]?.id ?? "";
     setSelectedScanId(nextScanId);
     setBootstrapError("");
   }
 
   async function loadTags(preferredTagId?: string) {
-    const response = await apiFetch(`${apiBaseUrl}/tags?limit=200`);
-    const page = await readPage<Tag>(response, "Tag list load failed.");
-    setTags(page.items);
+    const items = await readAllPages<Tag>(`${apiBaseUrl}/tags`, "Tag list load failed.");
+    setTags(items);
     setTagFilter(preferredTagId ?? tagFilter);
     setBootstrapError("");
   }
@@ -757,15 +766,7 @@ export function TargetSetup({
       const params = findingFilterParams();
       const query = params.toString();
       const endpoint = findingScope === "workspace" ? `${apiBaseUrl}/findings` : `${apiBaseUrl}/scans/${scanId}/findings`;
-      const response = await apiFetch(`${endpoint}${query ? `?${query}` : ""}`);
-      if (!response.ok) {
-        if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
-          return;
-        }
-        setFindings([]);
-        return;
-      }
-      const body = ((await response.json()) as { items: Finding[] }).items;
+      const body = await readAllPages<Finding>(`${endpoint}${query ? `?${query}` : ""}`, "Findings could not be loaded.");
       if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
         return;
       }
@@ -923,15 +924,7 @@ export function TargetSetup({
 
   async function loadReports(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
     try {
-      const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}/reports?limit=200`);
-      if (!response.ok) {
-        if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
-          return;
-        }
-        setReports([]);
-        return;
-      }
-      const body = ((await response.json()) as { items: ReportArtifact[] }).items;
+      const body = await readAllPages<ReportArtifact>(`${apiBaseUrl}/scans/${scanId}/reports`, "Reports could not be loaded.");
       if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
         return;
       }
@@ -947,12 +940,11 @@ export function TargetSetup({
 
   async function loadToolRuns(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
     try {
-      const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}/tool-runs?limit=200`);
-      const page = await readPage<ScannerToolRun>(response, "Scanner receipts could not be loaded.");
+      const items = await readAllPages<ScannerToolRun>(`${apiBaseUrl}/scans/${scanId}/tool-runs`, "Scanner receipts could not be loaded.");
       if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
         return;
       }
-      setToolRuns(page.items);
+      setToolRuns(items);
     } catch {
       if (!options.onlyIfSelected || selectedScanIdRef.current === scanId) {
         setToolRuns([]);
@@ -1373,13 +1365,14 @@ export function TargetSetup({
 
         {activeView === "operations" ? (
           <div className="operationsWorkspace">
-            <div className="viewIntro"><div><p className="panelKicker">Local platform</p><h3>Operations & readiness</h3><p>Confirm the worker, database, artifacts, queue, and scanner dependencies before running an audit.</p></div></div>
+            <div className="viewIntro"><div><h2>Operations & readiness</h2><p>Confirm the worker, database, artifacts, queue, and scanner dependencies, then inspect the workspace activity trail.</p></div></div>
             <OpsHealthPanel health={platformHealth} message={opsMessage} onRefresh={loadPlatformHealth} />
-            <div className="boundaryGrid">
+            <div className="operationsBoundaryList">
               <article><AppIcon name="target" /><strong>Exact target scope</strong><p>Only explicitly configured Docker-service targets can be launched.</p></article>
               <article><AppIcon name="shield" /><strong>Safe persistence</strong><p>URLs and evidence are sanitized before database, report, or AI boundaries.</p></article>
               <article><AppIcon name="operations" /><strong>Local ownership</strong><p>Workspace records and generated artifacts stay isolated inside this deployment.</p></article>
             </div>
+            <AuditLogPanel entries={auditLogs} onRefresh={loadAuditLogs} />
           </div>
         ) : null}
       </div>
@@ -1469,7 +1462,7 @@ function dateTimeLocalToIso(value: string) {
 }
 
 function explanationSignature(item: AiExplanation["explanations"][number]): string {
-  return [item.summary, item.recommended_action, item.owasp_mapping, item.limitations].map(normalizeExplanationText).join("|");
+  return [item.summary, item.why_it_matters, item.recommended_action, item.owasp_mapping, item.limitations].map(normalizeExplanationText).join("|");
 }
 
 function normalizeExplanationText(value: string): string {

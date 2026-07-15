@@ -90,6 +90,10 @@ export function TargetForm({
               <dt>Redirect Cap</dt>
               <dd>{validation.max_redirects}</dd>
             </div>
+            <div>
+              <dt>Target Class</dt>
+              <dd>{validation.local_demo ? "Local demo" : "Allowlisted service"}</dd>
+            </div>
           </dl>
         </div>
       ) : null}
