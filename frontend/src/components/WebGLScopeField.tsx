@@ -18,6 +18,17 @@ type SceneBox = {
   geometry?: "cube" | "cylinder";
 };
 
+type PulseBinding = {
+  box: SceneBox;
+  base: number;
+  amount: number;
+};
+
+type WebGLScene = {
+  boxes: SceneBox[];
+  pulseBindings: PulseBinding[];
+};
+
 const vertexShaderSource = `
 attribute vec3 a_position;
 attribute vec3 a_normal;
@@ -157,17 +168,24 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
     let visible = !document.hidden;
     let intersecting = true;
     let start = performance.now();
-    let routeArchitectureKey = "";
-    let routeArchitecture: SceneBox[] = [];
+    let sceneKey = "";
+    let scene: WebGLScene | null = null;
+    const modelMatrices = new WeakMap<SceneBox, Float32Array>();
+    const mvpScratch = new Float32Array(16);
+    const lane = profileLanes[activeProfile] ?? profileLanes["passive-web"];
 
     const drawBox = (box: SceneBox, viewProjection: Float32Array) => {
       const isCylinder = box.geometry === "cylinder";
       gl.bindBuffer(gl.ARRAY_BUFFER, isCylinder ? cylinderBuffer : cubeBuffer);
       gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, stride, 0);
       gl.vertexAttribPointer(normalLocation, 3, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
-      const model = composeMatrix(box.position, box.rotation ?? [0, 0, 0], box.scale);
-      const mvp = multiplyMatrices(viewProjection, model);
-      gl.uniformMatrix4fv(mvpLocation, false, mvp);
+      let model = modelMatrices.get(box);
+      if (!model) {
+        model = composeMatrix(box.position, box.rotation ?? [0, 0, 0], box.scale);
+        modelMatrices.set(box, model);
+      }
+      multiplyMatricesInto(viewProjection, model, mvpScratch);
+      gl.uniformMatrix4fv(mvpLocation, false, mvpScratch);
       gl.uniformMatrix4fv(modelLocation, false, model);
       gl.uniform3fv(colorLocation, box.color);
       gl.uniform1f(emissiveLocation, box.emissive ?? 0);
@@ -186,29 +204,11 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
 
       const elapsed = reducedMotion.matches ? 1.25 : (now - start) / 1000;
       const pulse = 0.5 + Math.sin(elapsed * 2.15) * 0.5;
-      const lane = profileLanes[activeProfile] ?? profileLanes["passive-web"];
-      const stage = stageForStep(currentStep, status);
-      const warning = status === "completed_with_warnings" || status === "failed";
-      const completed = status === "completed";
-      const routeColor: Vec3 = warning ? [0.98, 0.29, 0.055] : [0.94, 0.19, 0.035];
-      const activeColor: Vec3 = warning ? [1, 0.56, 0.14] : [1, 0.39, 0.08];
-      const outcomeColor: Vec3 = completed ? [0.38, 0.78, 0.52] : warning ? [1, 0.56, 0.14] : activeColor;
       const lightTheme = document.documentElement.dataset.theme === "light";
-      const structure: Vec3 = lightTheme ? [0.36, 0.4, 0.48] : [0.035, 0.052, 0.082];
-      const structureTop: Vec3 = lightTheme ? [0.52, 0.56, 0.64] : [0.105, 0.135, 0.19];
-      const structureEdge: Vec3 = lightTheme ? [0.26, 0.3, 0.38] : [0.065, 0.085, 0.125];
-      const nextRouteArchitectureKey = lightTheme ? "light" : "dark";
-      if (routeArchitectureKey !== nextRouteArchitectureKey) {
-        const routePoints: Vec3[] = [
-          [-4.82, -0.34, -0.72],
-          [-3.45, -0.34, 0.58],
-          [-2.15, -0.31, -0.08],
-          [-0.35, -0.32, lane],
-          [1.5, -0.31, 0.03],
-          [3.28, -0.34, 0]
-        ];
-        routeArchitecture = createRouteArchitecture(routePoints, structureEdge, structureTop);
-        routeArchitectureKey = nextRouteArchitectureKey;
+      const nextSceneKey = lightTheme ? "light" : "dark";
+      if (!scene || sceneKey !== nextSceneKey) {
+        scene = createWebGLScene(lane, currentStep, status, lightTheme);
+        sceneKey = nextSceneKey;
       }
       const pointer = pointerRef.current;
       const aspect = width / height;
@@ -222,71 +222,10 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
 
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-      const platforms: SceneBox[] = [
-        { position: [-4.82, -0.42, -0.72], scale: [0.66, 0.13, 0.68], color: structureEdge },
-        { position: [-3.45, -0.42, 0.58], scale: [0.66, 0.13, 0.68], color: structureEdge },
-        { position: [-2.15, -0.39, -0.08], scale: [0.68, 0.17, 0.8], color: structureEdge },
-        { position: [-0.35, -0.4, lane], scale: [0.76, 0.16, 0.74], color: structureEdge },
-        { position: [1.5, -0.39, 0.03], scale: [0.72, 0.17, 0.76], color: structureEdge },
-        { position: [4.18, -0.42, 0], scale: [1.68, 0.14, 1.68], color: structureEdge, geometry: "cylinder" },
-        { position: [4.18, -0.22, 0], scale: [1.4, 0.055, 1.4], color: routeColor, emissive: 0.2, geometry: "cylinder" },
-        { position: [4.18, -0.12, 0], scale: [1.08, 0.11, 1.08], color: structure, geometry: "cylinder" }
-      ];
-      platforms.forEach((box) => drawBox(box, viewProjection));
-
-      routeArchitecture.forEach((box) => drawBox(box, viewProjection));
-
-      const route: SceneBox[] = [
-        { position: [-4.12, -0.12, -0.18], scale: [0.82, 0.035, 0.075], color: routeColor, rotation: [0, -0.5, 0] },
-        { position: [-2.79, -0.11, 0.24], scale: [0.78, 0.04, 0.075], color: routeColor, rotation: [0, 0.35, 0] },
-        { position: [-1.25, -0.1, lane * 0.5], scale: [0.95, 0.045, 0.075], color: routeColor, rotation: [0, lane * -0.22, 0] },
-        { position: [0.58, -0.1, lane * 0.48], scale: [0.98, 0.045, 0.075], color: routeColor, rotation: [0, lane * 0.2, 0] },
-        { position: [2.58, -0.1, 0], scale: [1.16, 0.045, 0.075], color: routeColor }
-      ];
-      route.forEach((box, index) => {
-        drawBox({
-          ...box,
-          position: [box.position[0], box.position[1] - 0.07, box.position[2]],
-          scale: [box.scale[0] * 1.02, box.scale[1] * 2.2, box.scale[2] * 2.3],
-          color: structureTop
-        }, viewProjection);
-        drawBox({
-          ...box,
-          position: [box.position[0], box.position[1] + 0.055, box.position[2]],
-          color: index <= stage ? activeColor : box.color,
-          emissive: index === stage ? 0.28 + pulse * 0.22 : 0.12
-        }, viewProjection);
-      });
-
-      const blocks: SceneBox[] = [
-        { position: [-4.82, 0.02, -0.72], scale: [0.36, 0.4, 0.36], color: structureTop },
-        { position: [-4.82, 0.48, -0.72], scale: [0.25, 0.055, 0.25], color: activeColor, emissive: 0.08 },
-        { position: [-3.45, -0.02, 0.58], scale: [0.34, 0.31, 0.34], color: structureTop, geometry: "cylinder" },
-        { position: [-3.45, 0.34, 0.58], scale: [0.37, 0.055, 0.37], color: structureEdge, geometry: "cylinder" },
-        { position: [-2.42, 0.2, -0.08], scale: [0.16, 0.62, 0.5], color: stage === 1 ? activeColor : structureTop, emissive: stage === 1 ? pulse * 0.16 : 0 },
-        { position: [-1.88, 0.2, -0.08], scale: [0.16, 0.62, 0.5], color: stage === 1 ? activeColor : structureTop, emissive: stage === 1 ? pulse * 0.16 : 0 },
-        { position: [-2.15, 0.2, -0.08], scale: [0.16, 0.38, 0.28], color: activeColor, emissive: 0.09 },
-        { position: [-0.35, 0.11, lane], scale: [0.42, 0.48, 0.42], color: stage === 2 ? activeColor : structureTop, emissive: stage === 2 ? pulse * 0.18 : 0 },
-        { position: [1.5, 0.08, 0.03], scale: [0.38, 0.47, 0.4], color: stage === 3 ? activeColor : structureTop, emissive: stage === 3 ? pulse * 0.18 : 0 },
-        { position: [4.18, 0.49, 0], scale: [0.88, 0.68, 0.88], color: structureTop, geometry: "cylinder" },
-        { position: [4.18, 1.18, 0], scale: [0.94, 0.11, 0.94], color: structureEdge, geometry: "cylinder" },
-        { position: [4.18, 1.27, 0], scale: [0.52, 0.085, 0.52], color: stage >= 4 ? outcomeColor : routeColor, emissive: 0.15 + pulse * 0.12, geometry: "cylinder" },
-        { position: [4.18, 0.52, -0.86], scale: [0.2, 0.31, 0.065], color: stage >= 4 ? outcomeColor : routeColor, emissive: 0.12 },
-        { position: [3.42, 0.28, 0.54], scale: [0.16, 0.5, 0.16], color: structureTop, geometry: "cylinder" },
-        { position: [4.92, 0.28, 0.54], scale: [0.16, 0.5, 0.16], color: structureTop, geometry: "cylinder" }
-      ];
-      blocks.forEach((box) => drawBox(box, viewProjection));
-
-      const terrain: SceneBox[] = [
-        [-3.9, -1.45], [-2.82, -1.02], [-1.35, -1.5], [0.65, -1.28], [2.32, -1.08], [4.98, -1.42], [2.9, 1.18], [-1.0, 1.32]
-      ].map(([x, z], index) => ({
-        position: [x, -0.48, z] as Vec3,
-        scale: [0.09 + (index % 3) * 0.035, 0.07 + (index % 2) * 0.025, 0.08 + (index % 4) * 0.02] as Vec3,
-        rotation: [0, index * 0.53, 0] as Vec3,
-        color: structureEdge
-      }));
-      terrain.forEach((box) => drawBox(box, viewProjection));
+      for (const binding of scene.pulseBindings) {
+        binding.box.emissive = binding.base + pulse * binding.amount;
+      }
+      for (const box of scene.boxes) drawBox(box, viewProjection);
 
       if (visible && intersecting && !reducedMotion.matches) {
         animationFrame = window.requestAnimationFrame(render);
@@ -475,6 +414,99 @@ function createRouteArchitecture(points: Vec3[], edgeColor: Vec3, topColor: Vec3
   return boxes;
 }
 
+function createWebGLScene(lane: number, currentStep: string | null, status: string, lightTheme: boolean): WebGLScene {
+  const stage = stageForStep(currentStep, status);
+  const warning = status === "completed_with_warnings" || status === "failed";
+  const completed = status === "completed";
+  const routeColor: Vec3 = warning ? [0.98, 0.29, 0.055] : [0.94, 0.19, 0.035];
+  const activeColor: Vec3 = warning ? [1, 0.56, 0.14] : [1, 0.39, 0.08];
+  const outcomeColor: Vec3 = completed ? [0.38, 0.78, 0.52] : warning ? [1, 0.56, 0.14] : activeColor;
+  const structure: Vec3 = lightTheme ? [0.36, 0.4, 0.48] : [0.035, 0.052, 0.082];
+  const structureTop: Vec3 = lightTheme ? [0.52, 0.56, 0.64] : [0.105, 0.135, 0.19];
+  const structureEdge: Vec3 = lightTheme ? [0.26, 0.3, 0.38] : [0.065, 0.085, 0.125];
+  const boxes: SceneBox[] = [
+    { position: [-4.82, -0.42, -0.72], scale: [0.66, 0.13, 0.68], color: structureEdge },
+    { position: [-3.45, -0.42, 0.58], scale: [0.66, 0.13, 0.68], color: structureEdge },
+    { position: [-2.15, -0.39, -0.08], scale: [0.68, 0.17, 0.8], color: structureEdge },
+    { position: [-0.35, -0.4, lane], scale: [0.76, 0.16, 0.74], color: structureEdge },
+    { position: [1.5, -0.39, 0.03], scale: [0.72, 0.17, 0.76], color: structureEdge },
+    { position: [4.18, -0.42, 0], scale: [1.68, 0.14, 1.68], color: structureEdge, geometry: "cylinder" },
+    { position: [4.18, -0.22, 0], scale: [1.4, 0.055, 1.4], color: routeColor, emissive: 0.2, geometry: "cylinder" },
+    { position: [4.18, -0.12, 0], scale: [1.08, 0.11, 1.08], color: structure, geometry: "cylinder" }
+  ];
+  const pulseBindings: PulseBinding[] = [];
+  const routePoints: Vec3[] = [
+    [-4.82, -0.34, -0.72],
+    [-3.45, -0.34, 0.58],
+    [-2.15, -0.31, -0.08],
+    [-0.35, -0.32, lane],
+    [1.5, -0.31, 0.03],
+    [3.28, -0.34, 0]
+  ];
+  boxes.push(...createRouteArchitecture(routePoints, structureEdge, structureTop));
+
+  const route: SceneBox[] = [
+    { position: [-4.12, -0.12, -0.18], scale: [0.82, 0.035, 0.075], color: routeColor, rotation: [0, -0.5, 0] },
+    { position: [-2.79, -0.11, 0.24], scale: [0.78, 0.04, 0.075], color: routeColor, rotation: [0, 0.35, 0] },
+    { position: [-1.25, -0.1, lane * 0.5], scale: [0.95, 0.045, 0.075], color: routeColor, rotation: [0, lane * -0.22, 0] },
+    { position: [0.58, -0.1, lane * 0.48], scale: [0.98, 0.045, 0.075], color: routeColor, rotation: [0, lane * 0.2, 0] },
+    { position: [2.58, -0.1, 0], scale: [1.16, 0.045, 0.075], color: routeColor }
+  ];
+  route.forEach((box, index) => {
+    const routeBed: SceneBox = {
+      ...box,
+      position: [box.position[0], box.position[1] - 0.07, box.position[2]],
+      scale: [box.scale[0] * 1.02, box.scale[1] * 2.2, box.scale[2] * 2.3],
+      color: structureTop
+    };
+    const routeSignal: SceneBox = {
+      ...box,
+      position: [box.position[0], box.position[1] + 0.055, box.position[2]],
+      color: index <= stage ? activeColor : routeColor,
+      emissive: index === stage ? 0.28 : 0.12
+    };
+    boxes.push(routeBed, routeSignal);
+    if (index === stage) pulseBindings.push({ box: routeSignal, base: 0.28, amount: 0.22 });
+  });
+
+  const blocks: SceneBox[] = [
+    { position: [-4.82, 0.02, -0.72], scale: [0.36, 0.4, 0.36], color: structureTop },
+    { position: [-4.82, 0.48, -0.72], scale: [0.25, 0.055, 0.25], color: activeColor, emissive: 0.08 },
+    { position: [-3.45, -0.02, 0.58], scale: [0.34, 0.31, 0.34], color: structureTop, geometry: "cylinder" },
+    { position: [-3.45, 0.34, 0.58], scale: [0.37, 0.055, 0.37], color: structureEdge, geometry: "cylinder" },
+    { position: [-2.42, 0.2, -0.08], scale: [0.16, 0.62, 0.5], color: stage === 1 ? activeColor : structureTop, emissive: 0 },
+    { position: [-1.88, 0.2, -0.08], scale: [0.16, 0.62, 0.5], color: stage === 1 ? activeColor : structureTop, emissive: 0 },
+    { position: [-2.15, 0.2, -0.08], scale: [0.16, 0.38, 0.28], color: activeColor, emissive: 0.09 },
+    { position: [-0.35, 0.11, lane], scale: [0.42, 0.48, 0.42], color: stage === 2 ? activeColor : structureTop, emissive: 0 },
+    { position: [1.5, 0.08, 0.03], scale: [0.38, 0.47, 0.4], color: stage === 3 ? activeColor : structureTop, emissive: 0 },
+    { position: [4.18, 0.49, 0], scale: [0.88, 0.68, 0.88], color: structureTop, geometry: "cylinder" },
+    { position: [4.18, 1.18, 0], scale: [0.94, 0.11, 0.94], color: structureEdge, geometry: "cylinder" },
+    { position: [4.18, 1.27, 0], scale: [0.52, 0.085, 0.52], color: stage >= 4 ? outcomeColor : routeColor, emissive: 0.15, geometry: "cylinder" },
+    { position: [4.18, 0.52, -0.86], scale: [0.2, 0.31, 0.065], color: stage >= 4 ? outcomeColor : routeColor, emissive: 0.12 },
+    { position: [3.42, 0.28, 0.54], scale: [0.16, 0.5, 0.16], color: structureTop, geometry: "cylinder" },
+    { position: [4.92, 0.28, 0.54], scale: [0.16, 0.5, 0.16], color: structureTop, geometry: "cylinder" }
+  ];
+  boxes.push(...blocks);
+  if (stage === 1) {
+    pulseBindings.push({ box: blocks[4], base: 0, amount: 0.16 }, { box: blocks[5], base: 0, amount: 0.16 });
+  }
+  if (stage === 2) pulseBindings.push({ box: blocks[7], base: 0, amount: 0.18 });
+  if (stage === 3) pulseBindings.push({ box: blocks[8], base: 0, amount: 0.18 });
+  pulseBindings.push({ box: blocks[11], base: 0.15, amount: 0.12 });
+
+  const terrainPositions: Array<[number, number]> = [
+    [-3.9, -1.45], [-2.82, -1.02], [-1.35, -1.5], [0.65, -1.28], [2.32, -1.08], [4.98, -1.42], [2.9, 1.18], [-1.0, 1.32]
+  ];
+  boxes.push(...terrainPositions.map(([x, z], index) => ({
+    position: [x, -0.48, z] as Vec3,
+    scale: [0.09 + (index % 3) * 0.035, 0.07 + (index % 2) * 0.025, 0.08 + (index % 4) * 0.02] as Vec3,
+    rotation: [0, index * 0.53, 0] as Vec3,
+    color: structureEdge
+  })));
+
+  return { boxes, pulseBindings };
+}
+
 function composeMatrix(position: Vec3, rotation: Vec3, scale: Vec3) {
   return multiplyMatrices(
     translationMatrix(...position),
@@ -484,6 +516,10 @@ function composeMatrix(position: Vec3, rotation: Vec3, scale: Vec3) {
 
 function multiplyMatrices(left: Float32Array, right: Float32Array) {
   const result = new Float32Array(16);
+  return multiplyMatricesInto(left, right, result);
+}
+
+function multiplyMatricesInto(left: Float32Array, right: Float32Array, result: Float32Array) {
   for (let column = 0; column < 4; column += 1) {
     for (let row = 0; row < 4; row += 1) {
       let value = 0;
