@@ -3,9 +3,10 @@
 ## Current state
 
 ScopeHarbor — Local AppSec Audit Platform is at version `1.0.0`. V1 phases
-1–19, the approved Phase 20 public-readiness program, and the approved Phase 21
-operator-workspace redesign are complete. Any new development is post-1.0 scope
-and requires explicit approval.
+1–19, the approved Phase 20 public-readiness program, the approved Phase 21
+operator-workspace redesign, and the approved Phase 22 design-language and
+guided-audit redesign are complete. Any new development is post-1.0 scope and
+requires explicit approval.
 
 The release provides:
 
@@ -26,9 +27,11 @@ The release provides:
 - Encrypted passive-client auth profiles with rotation and revocation, worker
   leases, schema/legacy cleanup migrations, dry-run-first maintenance, an
   explicit safe demo seed, and hardened container defaults.
-- A responsive six-tab operator workspace with persistent light/dark themes,
-  reduced-motion-aware native WebGL, target and scan search/filter controls,
-  finding search/reset, and clear readiness/activity views.
+- A responsive operator workspace with six global product areas and a guided
+  `Ready → Scope → Profile → Authorize → Run → Review` audit path. The approved
+  dark-first visual language uses a restrained orange signal, persistent
+  light/dark themes, reduced-motion-aware native WebGL, target/scan/finding
+  controls, complete finding context, and workspace activity history.
 - History-preserving target removal backed by schema `0011`: active scans block
   removal, launch configuration is cleared, and historical evidence remains
   workspace-readable.
@@ -68,7 +71,7 @@ Read `SECURITY.md` and `docs/THREAT_MODEL.md` before changing a trust boundary.
 | Reports and AI | `backend/app/reports/`, `backend/app/ai/` | Safe downstream projections |
 | Operations | `backend/app/ops/`, `backend/app/maintenance.py` | Audit, health, limits, and maintenance |
 | Public contract | `shared/contracts.json` | Profiles, acknowledgements, limits, and version |
-| Operator UI | `frontend/src/components/`, `frontend/src/app/globals.css` | Tabbed local workspace, themes, and visualization |
+| Operator UI | `frontend/src/components/`, `frontend/src/app/globals.css` | Global workspace areas, guided audit phases, themes, and state-aware visualization |
 | Runtime | `docker-compose.yml`, `backend/Dockerfile`, `frontend/Dockerfile` | Hardened local deployment |
 
 Default host endpoints are frontend `127.0.0.1:3001`, API
@@ -89,6 +92,12 @@ Default host endpoints are frontend `127.0.0.1:3001`, API
 - Frontend lint and production build: passed. Live seeded-data QA covered every
   workspace tab, both themes, theme persistence, WebGL rendering, target/scan
   and finding search/filter behavior, and keyboard cancellation of removal.
+- Phase 22 frontend lint, production build, TypeScript, full Impeccable detector,
+  keyboard/ARIA review, theme-token contrast checks, and reduced-motion/static
+  code review: passed. Tested token pairs range from 4.83:1 to 17.01:1. The
+  in-app browser backend was unavailable during Phase 22, so the approved probe
+  comparison and mobile/desktop composition review were completed statically;
+  live screenshot and real-device verification remain a post-merge QA action.
 - API, worker, and frontend image builds: passed on the pinned runtime inputs.
 - Compose bootstrap, migrations, health/readiness, loopback bindings, container
   users/capabilities, and hardened service startup: passed. Runtime processes
@@ -137,6 +146,10 @@ maintenance, seed, key rotation, and upgrade procedures.
 - Arbitrary public/cloud scanning, SaaS/RBAC administration, authenticated
   browser workflows, business-logic automation, Semgrep/full SAST, Nuclei, and
   PDF export remain out of scope unless explicitly approved.
+- `PRODUCT.md` captures the confirmed product strategy. `DESIGN.md` remains
+  intentionally deferred; run `$impeccable document` after the Phase 22 branch
+  is merged if the implemented tokens and components should be captured as the
+  reusable visual-system contract.
 
 Do not infer prior decisions that are absent from `AGENTS.md`, this handoff,
 `README.md`, or `SECURITY.md`; ask when a missing decision would change scope or

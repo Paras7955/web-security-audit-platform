@@ -87,7 +87,7 @@ export function ScanProfileSelector({
       </div>
 
       <div className="profileDecisionGrid">
-        <div className="modeGrid" aria-label="Audit profile choices">
+        <div className="modeGrid" role="group" aria-label="Audit profile choices">
           {SCAN_PROFILES.map((profile) => {
             const isAvailable = selectedTarget?.available_scan_profile_ids.includes(profile.id) ?? false;
             const capabilities = profileCapabilities(profile);
@@ -368,7 +368,7 @@ export function ScanProgress({
           {scan.cancellation_requested_at ? "Cancellation Requested" : "Cancel Scan"}
         </button>
       </div>
-      <div className="progressTrack" aria-label="Scan progress">
+      <div className="progressTrack" role="progressbar" aria-label="Scan progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={displayedProgress}>
         <span style={{ width: `${displayedProgress}%` }} />
       </div>
       <dl className="scanMeta">
@@ -385,7 +385,7 @@ export function ScanProgress({
           <dd>{displayedProgress}%</dd>
         </div>
       </dl>
-      <p>{scan.status_message}</p>
+      <p role="status">{scan.status_message}</p>
       {scan.cancellation_requested_at ? <p className="formMessage">Cancellation requested. Worker will stop at a safe checkpoint.</p> : null}
       {scan.failure ? <p className="errorText">{scan.failure.message} ({scan.failure.code})</p> : null}
       {toolRuns.length > 0 ? (

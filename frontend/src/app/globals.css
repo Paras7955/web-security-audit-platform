@@ -11,12 +11,13 @@
   --text: oklch(94% 0.012 72);
   --text-soft: oklch(80% 0.012 72);
   --muted: oklch(65% 0.014 68);
-  --faint: oklch(52% 0.014 68);
+  --faint: oklch(60% 0.014 68);
   --border: oklch(72% 0.02 68 / 0.16);
   --border-strong: oklch(72% 0.02 68 / 0.29);
   --accent: oklch(61% 0.17 45);
   --accent-strong: oklch(72% 0.16 48);
   --accent-deep: oklch(49% 0.16 42);
+  --action: oklch(72% 0.16 48);
   --accent-soft: oklch(64% 0.17 45 / 0.13);
   --blue: oklch(71% 0.055 240);
   --blue-soft: oklch(71% 0.055 240 / 0.12);
@@ -57,12 +58,13 @@
   --text: oklch(24% 0.018 60);
   --text-soft: oklch(39% 0.018 60);
   --muted: oklch(49% 0.016 60);
-  --faint: oklch(58% 0.014 60);
+  --faint: oklch(48% 0.014 60);
   --border: oklch(35% 0.02 60 / 0.14);
   --border-strong: oklch(35% 0.02 60 / 0.25);
-  --accent: oklch(54% 0.18 43);
-  --accent-strong: oklch(62% 0.18 46);
-  --accent-deep: oklch(46% 0.16 41);
+  --accent: oklch(48% 0.18 43);
+  --accent-strong: oklch(54% 0.18 46);
+  --accent-deep: oklch(41% 0.16 41);
+  --action: oklch(62% 0.18 46);
   --accent-soft: oklch(61% 0.17 45 / 0.11);
   --blue: oklch(50% 0.075 240);
   --blue-soft: oklch(50% 0.075 240 / 0.1);
@@ -129,7 +131,7 @@ select:focus-visible,
 textarea:focus-visible,
 a:focus-visible,
 [role="tabpanel"]:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--blue) 42%, transparent);
+  outline: 3px solid var(--accent-strong);
   outline-offset: 2px;
 }
 
@@ -410,7 +412,7 @@ strong {
   gap: var(--space-xs);
   border: 0;
   border-radius: var(--radius-sm);
-  background: var(--accent-strong);
+  background: var(--action);
   color: oklch(18% 0.035 45);
   font-size: 0.82rem;
   font-weight: 760;
@@ -419,7 +421,7 @@ strong {
 }
 
 .primaryAction:hover {
-  background: color-mix(in oklch, var(--accent-strong) 88%, white);
+  background: color-mix(in oklch, var(--action) 88%, white);
   transform: translateY(-1px);
 }
 
@@ -548,26 +550,8 @@ strong {
   gap: 20px;
 }
 
-.workspaceHeader {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-}
-
-.workspaceHeader h2 {
-  margin: 0;
-  font-size: clamp(1.55rem, 2.6vw, 2.15rem);
-  line-height: 1.2;
-}
-
-.workspaceHeader > div > p:last-child {
-  margin: 7px 0 0;
-  color: var(--muted);
-}
-
 .refreshButton,
-button:not(.workspaceTab, .primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .findingSelectButton, .quietDangerButton, .iconButton, .textButton, .modeCard) {
+button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .findingSelectButton, .quietDangerButton, .iconButton, .textButton, .modeCard) {
   display: inline-flex;
   min-height: 39px;
   align-items: center;
@@ -575,7 +559,7 @@ button:not(.workspaceTab, .primaryAction, .primaryNavItem, .auditPhaseTab, .targ
   gap: 8px;
   border: 1px solid color-mix(in oklch, var(--accent-deep) 64%, var(--border));
   border-radius: var(--radius-sm);
-  background: var(--accent-strong);
+  background: var(--action);
   box-shadow: none;
   color: oklch(18% 0.035 45);
   font-size: 0.78rem;
@@ -585,15 +569,15 @@ button:not(.workspaceTab, .primaryAction, .primaryNavItem, .auditPhaseTab, .targ
 }
 
 :root[data-theme="light"] .refreshButton,
-:root[data-theme="light"] button:not(.workspaceTab, .primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .findingSelectButton, .quietDangerButton, .iconButton, .textButton, .modeCard) {
+:root[data-theme="light"] button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .findingSelectButton, .quietDangerButton, .iconButton, .textButton, .modeCard) {
   color: oklch(18% 0.035 45);
 }
 
 .refreshButton:hover:not(:disabled),
-button:not(.workspaceTab, .primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .findingSelectButton, .quietDangerButton, .iconButton, .textButton, .modeCard):hover:not(:disabled) {
+button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .findingSelectButton, .quietDangerButton, .iconButton, .textButton, .modeCard):hover:not(:disabled) {
   transform: translateY(-1px);
   border-color: var(--accent);
-  background: color-mix(in oklch, var(--accent-strong) 88%, white);
+  background: color-mix(in oklch, var(--action) 88%, white);
 }
 
 button.secondaryButton,
@@ -631,72 +615,6 @@ button.dangerButton,
   color: var(--danger);
 }
 
-.workspaceTabs {
-  position: sticky;
-  top: 10px;
-  z-index: 15;
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 5px;
-  border: 1px solid var(--border);
-  border-radius: 15px;
-  background: color-mix(in srgb, var(--bg-elevated) 87%, transparent);
-  box-shadow: var(--shadow-soft);
-  padding: 6px;
-  backdrop-filter: blur(18px);
-}
-
-.workspaceTab {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 9px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--muted);
-  padding: 10px 11px;
-  text-align: left;
-  transition: color 150ms ease, background 150ms ease, border-color 150ms ease, transform 150ms ease;
-}
-
-.workspaceTab:hover {
-  background: var(--surface-soft);
-  color: var(--text-soft);
-  transform: translateY(-1px);
-}
-
-.workspaceTab > span {
-  display: grid;
-  min-width: 0;
-}
-
-.workspaceTab strong {
-  overflow: hidden;
-  font-size: 0.76rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workspaceTab small {
-  overflow: hidden;
-  color: var(--faint);
-  font-size: 0.61rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workspaceTabActive {
-  border-color: var(--border);
-  background: var(--surface-raised);
-  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.1);
-  color: var(--accent);
-}
-
-.workspaceTabActive small {
-  color: var(--muted);
-}
-
 .workspaceTabPanel {
   min-width: 0;
   animation: panel-enter 220ms ease both;
@@ -731,7 +649,6 @@ button.dangerButton,
 }
 
 .overviewWorkspace,
-.scanningWorkspace,
 .auditWorkspace,
 .findingsWorkspace,
 .intelligenceWorkspace,
@@ -882,7 +799,6 @@ button.dangerButton,
 
 .overviewSplit,
 .targetManagementGrid,
-.scanWorkspaceGrid,
 .riskDashboardGrid,
 .intelligenceGrid {
   display: grid;
@@ -892,7 +808,6 @@ button.dangerButton,
 }
 
 .targetManagementGrid,
-.scanWorkspaceGrid,
 .riskDashboardGrid,
 .intelligenceGrid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1131,7 +1046,7 @@ tbody tr:last-child td {
 
 .findingSelectButton {
   width: 100%;
-  min-height: 38px;
+  min-height: 44px;
   border: 0;
   background: transparent;
   color: var(--text);
@@ -1157,7 +1072,8 @@ tbody tr:last-child td {
   font-size: 1.35rem;
 }
 
-.viewIntro h2 {
+.viewIntro h2,
+.viewToolbar h2 {
   margin: 0;
   font-size: 1.55rem;
   font-weight: 720;
@@ -1169,6 +1085,13 @@ tbody tr:last-child td {
   max-width: 680px;
   margin: 5px 0 0;
   color: var(--muted);
+}
+
+.viewToolbar > div:first-child > p {
+  max-width: 680px;
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
 }
 
 .safetyPill {
@@ -1287,7 +1210,7 @@ tbody tr:last-child td {
   place-items: center;
   border-radius: 50%;
   background: var(--accent);
-  color: #031511;
+  color: oklch(18% 0.035 45);
 }
 
 .quietDangerButton {
@@ -1667,7 +1590,7 @@ textarea:focus {
   right: 0;
   left: 0;
   height: 2px;
-  background: linear-gradient(90deg, var(--accent), var(--blue), var(--violet));
+  background: var(--accent);
   content: "";
 }
 
@@ -1771,6 +1694,15 @@ textarea:focus {
   padding-top: 3px;
 }
 
+.tagLabelInput {
+  min-width: 145px;
+  flex: 1 1 145px;
+}
+
+.tagLabelInput input {
+  width: 100%;
+}
+
 .findingsLayout {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(330px, 0.55fr);
@@ -1798,8 +1730,8 @@ textarea:focus {
   padding: 4px 7px;
 }
 
-.severity-critical { color: #ff4f70; }
-.severity-high { color: #ff8068; }
+.severity-critical { color: var(--danger); }
+.severity-high { color: color-mix(in oklch, var(--danger) 72%, var(--accent-strong)); }
 .severity-medium { color: var(--amber); }
 .severity-low { color: var(--blue); }
 .severity-info { color: var(--muted); }
@@ -1907,7 +1839,7 @@ textarea:focus {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--blue), var(--violet));
+  background: var(--accent-strong);
 }
 
 .compactTable {
@@ -2678,7 +2610,7 @@ textarea:focus {
   z-index: 100;
   display: grid;
   place-items: center;
-  background: rgba(2, 5, 10, 0.72);
+  background: oklch(4% 0.01 65 / 0.78);
   padding: 20px;
   backdrop-filter: blur(10px);
   animation: fade-in 150ms ease both;
@@ -2692,7 +2624,7 @@ textarea:focus {
   border: 1px solid var(--border-strong);
   border-radius: 17px;
   background: var(--surface-solid);
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+  box-shadow: 0 6px 8px oklch(0% 0 0 / 0.38);
   padding: 23px;
   animation: dialog-enter 180ms ease both;
 }
@@ -2743,27 +2675,7 @@ textarea:focus {
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes dialog-enter { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
-::-webkit-scrollbar {
-  width: 9px;
-  height: 9px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 99px;
-  background: color-mix(in srgb, var(--muted) 38%, transparent);
-  background-clip: padding-box;
-}
-
 @media (max-width: 1180px) {
-  .workspaceTabs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .metricGrid,
   .riskMetricGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2833,7 +2745,6 @@ textarea:focus {
 
   .overviewSplit,
   .targetManagementGrid,
-  .scanWorkspaceGrid,
   .riskDashboardGrid,
   .intelligenceGrid,
   .profileDecisionGrid,
@@ -2936,7 +2847,6 @@ textarea:focus {
     padding-top: 27px;
   }
 
-  .workspaceHeader,
   .viewIntro,
   .viewToolbar,
   .phaseHeading,
@@ -2956,25 +2866,6 @@ textarea:focus {
 
   .workspaceUtilityBar {
     justify-content: flex-end;
-  }
-
-  .workspaceTabs {
-    top: 6px;
-    display: flex;
-    overflow-x: auto;
-    scroll-snap-type: x proximity;
-  }
-
-  .workspaceTab {
-    min-width: 52px;
-    flex: 1 0 52px;
-    justify-content: center;
-    scroll-snap-align: start;
-    padding: 10px;
-  }
-
-  .workspaceTab > span {
-    display: none;
   }
 
   .metricGrid,
@@ -3082,6 +2973,38 @@ textarea:focus {
 
   .dialogActions {
     grid-column: 1;
+  }
+
+  .auditPhaseTab small,
+  .scopeNode,
+  .contextBadge,
+  .statusPill,
+  .stateBadge,
+  .severity,
+  .panelKicker {
+    font-size: 0.72rem;
+  }
+}
+
+@media (pointer: coarse) {
+  button,
+  input:not([type="checkbox"]),
+  select,
+  textarea,
+  .targetSelect,
+  .scanRow,
+  .textButton {
+    min-height: 44px;
+  }
+
+  .filterButton {
+    min-height: 44px !important;
+  }
+
+  .iconButton,
+  .quietDangerButton {
+    width: 44px;
+    height: 44px;
   }
 }
 

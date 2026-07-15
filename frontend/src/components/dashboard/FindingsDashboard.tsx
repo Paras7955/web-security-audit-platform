@@ -115,11 +115,12 @@ export function FindingsDashboard({
           <span className="contextBadge">{findings.length}</span>
         </div>
 
-        <div className="filterBar" role="tablist" aria-label="Severity filter">
+        <div className="filterBar" role="group" aria-label="Severity filter">
           {severityFilters.map((severity) => (
             <button
               key={severity}
               type="button"
+              aria-pressed={severityFilter === severity}
               className={severityFilter === severity ? "filterButton filterButtonActive" : "filterButton"}
               onClick={() => onSeverityFilter(severity)}
             >
@@ -151,7 +152,7 @@ export function FindingsDashboard({
           </select>
         </div>
 
-        <div className="filterBar" role="tablist" aria-label="Finding management filter">
+        <div className="filterBar" role="group" aria-label="Finding management filters">
           <select value={lifecycleFilter} onChange={(event) => onLifecycleFilter(event.target.value)} aria-label="Lifecycle filter">
             <option value="all">all states</option>
             {lifecycleStatuses.map((item) => (
@@ -214,7 +215,7 @@ export function FindingsDashboard({
         </div>
 
         <div className="tagManagement">
-          <input value={tagLabel} onChange={(event) => onTagLabelChange(event.target.value)} placeholder="Tag label" />
+          <label className="tagLabelInput"><span className="srOnly">New tag label</span><input value={tagLabel} onChange={(event) => onTagLabelChange(event.target.value)} placeholder="Tag label" /></label>
           <button type="button" onClick={onCreateTag} disabled={!tagLabel.trim()}>
             Create Tag
           </button>

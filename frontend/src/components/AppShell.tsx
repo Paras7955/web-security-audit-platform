@@ -29,7 +29,7 @@ export function AppShell() {
   return (
     <main className="appShell">
       <header className="appTopbar">
-        <a className="brandLockup" href="#workspace-console" aria-label="ScopeHarbor workspace home">
+        <a className="brandLockup" href="#workspace-console" aria-label="ScopeHarbor workspace home" onClick={(event) => { event.preventDefault(); navigateTo("overview"); }}>
           <ScopeHarborMark />
           <span>
             <strong>ScopeHarbor</strong>

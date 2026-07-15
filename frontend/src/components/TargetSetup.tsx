@@ -1137,6 +1137,7 @@ export function TargetSetup({
                     key={phase.id}
                     type="button"
                     role="tab"
+                    id={`audit-phase-${phase.id}`}
                     aria-selected={isActive}
                     aria-controls="audit-phase-panel"
                     className={`auditPhaseTab${isActive ? " auditPhaseTabActive" : ""}${isComplete ? " auditPhaseTabComplete" : ""}${isPriority ? " auditPhaseTabPriority" : ""}`}
@@ -1150,7 +1151,7 @@ export function TargetSetup({
               })}
             </nav>
 
-            <div id="audit-phase-panel" className="auditPhasePanel" role="tabpanel" tabIndex={0}>
+            <div id="audit-phase-panel" className="auditPhasePanel" role="tabpanel" aria-labelledby={`audit-phase-${auditPhase}`} tabIndex={0}>
               {auditPhase === "ready" ? (
                 <div className="auditPhaseContent">
                   <div className="phaseHeading">
@@ -1283,7 +1284,7 @@ export function TargetSetup({
         {activeView === "findings" ? (
           <div className="findingsWorkspace">
             <div className="viewToolbar">
-              <div><p className="panelKicker">Normalized evidence</p><h3>Finding triage</h3></div>
+              <div><h2>Finding triage</h2><p>Filter normalized evidence, update lifecycle state, and keep remediation decisions attached to the finding.</p></div>
               <div className="viewToolbarActions">
                 <label className="searchField">
                   <AppIcon name="search" size={17} />
@@ -1299,7 +1300,7 @@ export function TargetSetup({
 
         {activeView === "intelligence" ? (
           <div className="intelligenceWorkspace">
-            <div className="viewIntro"><div><p className="panelKicker">Decision support</p><h3>Risk intelligence</h3><p>Compare security posture, generate sanitized reports, and review bounded explanations.</p></div></div>
+            <div className="viewIntro"><div><h2>Risk intelligence</h2><p>Compare security posture, generate sanitized reports, and review bounded explanations.</p></div></div>
             <RiskDashboardPanel
               overview={dashboardOverview}
               targetDashboard={targetDashboard}
@@ -1332,7 +1333,7 @@ export function TargetSetup({
         {activeView === "credentials" ? (
           <div className="credentialWorkspace">
             <div className="viewIntro">
-              <div><p className="panelKicker">Encrypted target access</p><h3>Credential profiles</h3><p>Manage target-application secrets used only by guarded passive requests. Secret values never return through the API.</p></div>
+              <div><h2>Credential profiles</h2><p>Manage target-application secrets used only by guarded passive requests. Secret values never return through the API.</p></div>
               <span className="safetyPill"><AppIcon name="credential" size={15} /> Fernet encrypted</span>
             </div>
             <AuthProfilesPanel
@@ -1384,6 +1385,7 @@ export function TargetSetup({
           description="The target will disappear from your active list and its attached credential and repository path will be cleared."
           note="Scan, finding, report, and audit history will be preserved."
           confirmLabel="Remove target"
+          cancelLabel="Keep target"
           busyLabel="Removing…"
           icon="trash"
           isBusy={isBusy}
@@ -1399,6 +1401,7 @@ export function TargetSetup({
           description="The encrypted secret will be erased and this profile will be detached from every target."
           note="Historical metadata and existing scan snapshots remain unchanged."
           confirmLabel="Revoke profile"
+          cancelLabel="Keep profile"
           busyLabel="Revoking…"
           icon="credential"
           isBusy={isBusy}

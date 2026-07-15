@@ -21,6 +21,7 @@ export function WorkspaceOverview({
 
   return (
     <div className="overviewWorkspace">
+      <div className="viewIntro"><div><h2>Workspace overview</h2><p>See current risk, platform readiness, authorized scope, and the latest audit activity at a glance.</p></div></div>
       <section className="metricGrid" aria-label="Workspace metrics">
         <MetricCard icon="target" label="Saved targets" value={overview?.targets_count ?? "—"} detail="Exact allowlist only" tone="cyan" />
         <MetricCard icon="scan" label="Total scans" value={overview?.scans_count ?? "—"} detail={`${overview?.completed_scans_count ?? 0} completed`} tone="blue" />
