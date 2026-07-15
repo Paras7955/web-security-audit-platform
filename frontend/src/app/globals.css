@@ -1358,7 +1358,6 @@ textarea:focus {
 .inlineAction,
 .toolRunPanel,
 .comparisonSummary,
-.aiFinding,
 .changeList {
   margin-top: 14px;
   border: 1px solid var(--border);
@@ -1968,7 +1967,6 @@ textarea:focus {
 }
 
 .findingDetail h4,
-.aiFinding h4,
 .changeList h4,
 .toolRunPanel h4 {
   margin: 17px 0 7px;
@@ -2184,19 +2182,79 @@ textarea:focus {
   color: var(--text-soft);
 }
 
+.aiExecutiveSummary {
+  margin: 0;
+  color: var(--text-soft) !important;
+  font-size: 0.9rem !important;
+  line-height: 1.55 !important;
+  text-wrap: pretty;
+}
+
+.aiContextDetails {
+  margin-top: var(--space-sm);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.aiContextDetails > summary,
+.aiOverflowDetails > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  cursor: pointer;
+  color: var(--text-soft);
+  font-size: var(--type-meta);
+  font-weight: 700;
+  list-style: none;
+}
+
+.aiContextDetails > summary::-webkit-details-marker,
+.aiFindingSummary::-webkit-details-marker,
+.aiOverflowDetails > summary::-webkit-details-marker {
+  display: none;
+}
+
+.aiContextDetails > summary::after,
+.aiOverflowDetails > summary::after {
+  color: var(--accent-strong);
+  content: "+";
+  font-size: var(--type-subheading);
+  font-weight: 500;
+}
+
+.aiContextDetails[open] > summary::after,
+.aiOverflowDetails[open] > summary::after {
+  content: "−";
+}
+
+.aiContextBody {
+  padding-bottom: var(--space-sm);
+}
+
+.aiContextBody > p {
+  margin: var(--space-sm) 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
 .aiGroupList {
-  grid-template-columns: repeat(2, 1fr);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .aiGroupList li {
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: center;
+  gap: 7px;
   margin: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--surface-soft);
-  padding: 9px;
+  padding: 6px 9px;
 }
 
 .aiGroupList strong,
@@ -2208,35 +2266,129 @@ textarea:focus {
   color: var(--muted);
 }
 
+.aiExplanationSection {
+  margin-top: var(--space-md);
+}
+
+.aiExplanationHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.aiExplanationHeading h4 {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: var(--type-meta);
+}
+
+.aiExplanationHeading span {
+  color: var(--muted);
+  font-size: var(--type-caption);
+  font-variant-numeric: tabular-nums;
+}
+
 .aiFindingGrid {
-  display: grid;
-  gap: 9px;
-  margin-top: 14px;
+  margin-top: var(--space-xs);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .aiFinding {
   margin: 0;
 }
 
-.aiFindingHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+.aiFinding + .aiFinding,
+.aiOverflowDetails {
+  border-top: 1px solid var(--border);
 }
 
-.aiFindingHeader strong,
-.aiFindingHeader small {
+.aiFindingSummary {
+  min-height: 56px;
+  display: grid;
+  grid-template-columns: minmax(112px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+  list-style: none;
+  padding: 9px 2px;
+}
+
+.aiFindingSummary::after {
+  color: var(--accent-strong);
+  content: "+";
+  font-size: var(--type-subheading);
+  font-weight: 500;
+}
+
+.aiFinding[open] > .aiFindingSummary::after {
+  content: "−";
+}
+
+.aiFindingRank {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.aiFindingRank strong,
+.aiFindingRank small {
   font-size: 0.74rem;
 }
 
-.aiFindingHeader small,
-.aiFinding p {
+.aiFindingRank small {
   color: var(--muted);
 }
 
-.aiFinding p {
-  margin-bottom: 8px;
-  font-size: 0.76rem;
+.aiFindingSummary > span:nth-child(2) {
+  overflow-wrap: anywhere;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.aiFindingBody {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm) var(--space-md);
+  padding: 0 28px var(--space-md) 2px;
+}
+
+.aiFindingBody section {
+  min-width: 0;
+}
+
+.aiFindingBody h5 {
+  margin: 0 0 5px;
+  color: var(--text-soft);
+  font-size: var(--type-caption);
+}
+
+.aiFindingBody p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.aiFindingLimitations {
+  grid-column: 1 / -1;
+}
+
+.aiOverflowDetails > summary {
+  padding-inline: 2px;
+}
+
+.aiOverflowDetails[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.aiOverflowList .aiFinding + .aiFinding {
+  border-top: 1px solid var(--border);
 }
 
 .authProfileAttach {
@@ -3406,9 +3558,34 @@ textarea:focus {
     grid-column: 2 / -1;
   }
 
-  .aiMeta,
-  .aiGroupList {
+  .aiMeta {
     grid-template-columns: 1fr;
+  }
+
+  .aiFindingSummary {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px var(--space-sm);
+  }
+
+  .aiFindingRank {
+    grid-column: 1;
+  }
+
+  .aiFindingSummary > span:nth-child(2) {
+    grid-column: 1 / -1;
+  }
+
+  .aiFindingSummary::after {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .aiFindingBody {
+    grid-template-columns: 1fr;
+  }
+
+  .aiFindingLimitations {
+    grid-column: auto;
   }
 
   .reportList li {
