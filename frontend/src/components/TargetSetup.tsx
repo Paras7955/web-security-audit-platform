@@ -64,13 +64,13 @@ export type WorkspaceView = (typeof workspaceViews)[number]["id"];
 
 type AuditPhase = "ready" | "scope" | "profile" | "authorize" | "run" | "review";
 
-const auditPhases: Array<{ id: AuditPhase; label: string; description: string; icon: "operations" | "target" | "scan" | "shield" | "activity" | "finding" }> = [
-  { id: "ready", label: "Ready", description: "Platform check", icon: "operations" },
-  { id: "scope", label: "Scope", description: "Approved target", icon: "target" },
-  { id: "profile", label: "Profile", description: "Audit approach", icon: "scan" },
-  { id: "authorize", label: "Authorize", description: "Confirm boundaries", icon: "shield" },
-  { id: "run", label: "Run", description: "Launch & monitor", icon: "activity" },
-  { id: "review", label: "Review", description: "Findings & reports", icon: "finding" }
+const auditPhases: Array<{ id: AuditPhase; label: string; icon: "operations" | "target" | "scan" | "shield" | "activity" | "finding" }> = [
+  { id: "ready", label: "Ready", icon: "operations" },
+  { id: "scope", label: "Scope", icon: "target" },
+  { id: "profile", label: "Profile", icon: "scan" },
+  { id: "authorize", label: "Authorize", icon: "shield" },
+  { id: "run", label: "Run", icon: "activity" },
+  { id: "review", label: "Review", icon: "finding" }
 ];
 
 export function TargetSetup({
@@ -1151,7 +1151,7 @@ export function TargetSetup({
               {auditPhases.map((phase, index) => {
                 const isActive = auditPhase === phase.id;
                 const isComplete = phaseComplete[phase.id] && !isActive;
-                const isPriority = phase.id === "profile" || phase.id === "review";
+                const phaseState = isActive ? "In progress" : isComplete ? "Complete" : "Pending";
                 return (
                   <button
                     ref={isActive ? activeAuditPhaseRef : undefined}
@@ -1162,12 +1162,12 @@ export function TargetSetup({
                     aria-selected={isActive}
                     aria-controls="audit-phase-panel"
                     tabIndex={isActive ? 0 : -1}
-                    className={`auditPhaseTab auditPhaseTab-${phase.id}${isActive ? " auditPhaseTabActive" : ""}${isComplete ? " auditPhaseTabComplete" : ""}${isPriority ? " auditPhaseTabPriority" : ""}`}
+                    className={`auditPhaseTab${isActive ? " auditPhaseTabActive" : ""}${isComplete ? " auditPhaseTabComplete" : ""}`}
                     onClick={() => setAuditPhase(phase.id)}
                     onKeyDown={(event) => handlePhaseKeyDown(event, index)}
                   >
                     <span className="auditPhaseMarker">{isComplete ? <AppIcon name="check" size={15} /> : index + 1}</span>
-                    <span><strong>{phase.label}</strong><small>{phase.description}</small></span>
+                    <span><strong>{phase.label}</strong><small>{phaseState}</small></span>
                   </button>
                 );
               })}

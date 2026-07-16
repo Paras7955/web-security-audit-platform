@@ -24,8 +24,8 @@
   --accent-soft: oklch(64% 0.205 37 / 0.14);
   --blue: oklch(72% 0.14 251);
   --blue-soft: oklch(72% 0.14 251 / 0.12);
-  --violet: oklch(73% 0.08 278);
-  --violet-soft: oklch(73% 0.08 278 / 0.1);
+  --violet: oklch(69% 0.17 286);
+  --violet-soft: oklch(69% 0.17 286 / 0.1);
   --amber: oklch(80% 0.15 78);
   --amber-soft: oklch(80% 0.15 78 / 0.13);
   --danger: oklch(70% 0.18 25);
@@ -33,13 +33,13 @@
   --success: oklch(76% 0.12 157);
   --shadow: 0 4px 8px oklch(2% 0.02 250 / 0.34);
   --shadow-soft: 0 2px 6px oklch(2% 0.02 250 / 0.26);
-  --hero-glow: oklch(63% 0.21 36 / 0.23);
+  --hero-glow: oklch(62% 0.16 286 / 0.12);
   --brand-mark-glow: oklch(61% 0.17 45 / 0.24);
   --modal-scrim: oklch(4% 0.01 65 / 0.78);
   --dialog-shadow: 0 6px 8px oklch(0% 0 0 / 0.38);
   --input: oklch(11.8% 0.026 252);
   --body-gradient-start: oklch(13% 0.032 252);
-  --body-glow-secondary: oklch(51% 0.12 252 / 0.12);
+  --body-glow-secondary: oklch(51% 0.08 252 / 0.07);
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --weight-regular: 400;
@@ -88,8 +88,8 @@
   --accent-soft: oklch(61% 0.2 37 / 0.11);
   --blue: oklch(50% 0.075 240);
   --blue-soft: oklch(50% 0.075 240 / 0.1);
-  --violet: oklch(54% 0.05 65);
-  --violet-soft: oklch(54% 0.05 65 / 0.09);
+  --violet: oklch(52% 0.15 286);
+  --violet-soft: oklch(52% 0.15 286 / 0.08);
   --amber: oklch(55% 0.15 72);
   --amber-soft: oklch(65% 0.15 72 / 0.1);
   --danger: oklch(53% 0.19 25);
@@ -97,7 +97,7 @@
   --success: oklch(49% 0.12 157);
   --shadow: 0 4px 8px oklch(30% 0.02 60 / 0.1);
   --shadow-soft: 0 2px 6px oklch(30% 0.02 60 / 0.08);
-  --hero-glow: oklch(57% 0.18 42 / 0.1);
+  --hero-glow: oklch(57% 0.13 286 / 0.08);
   --input: oklch(100% 0 0 / 0.92);
   --body-gradient-start: oklch(93.5% 0.012 250);
   --body-glow-secondary: oklch(61% 0.09 252 / 0.08);
@@ -116,7 +116,7 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
-    radial-gradient(circle at 72% -10%, var(--hero-glow), transparent 34rem),
+    radial-gradient(circle at 74% -8%, var(--hero-glow), transparent 32rem),
     radial-gradient(circle at 42% 6%, var(--body-glow-secondary), transparent 30rem),
     linear-gradient(180deg, var(--body-gradient-start), var(--bg) 33rem),
     var(--bg);
@@ -349,8 +349,8 @@ h4 {
 .commandHero {
   position: relative;
   display: grid;
-  min-height: 276px;
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  min-height: 286px;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
   align-items: center;
   gap: 0;
   overflow: hidden;
@@ -369,7 +369,7 @@ h4 {
 .commandHeroCopy {
   position: relative;
   z-index: 2;
-  max-width: 260px;
+  max-width: 360px;
   padding: 32px 8px 28px;
 }
 
@@ -396,9 +396,9 @@ h4 {
 }
 
 .commandHero h1 {
-  max-width: 260px;
+  max-width: 340px;
   margin: 0;
-  font-size: var(--type-display);
+  font-size: clamp(1.75rem, 2.25vw, 2.35rem);
   font-weight: var(--weight-bold);
   line-height: 1.15;
   letter-spacing: -0.028em;
@@ -406,8 +406,8 @@ h4 {
 }
 
 .heroSummary {
-  max-width: 250px;
-  margin: 5px 0 0;
+  max-width: 320px;
+  margin: 12px 0 0;
   color: var(--text-soft);
   font-size: 0.88rem;
   line-height: 1.5;
@@ -454,33 +454,29 @@ h4 {
 
 .safetyStrip {
   display: grid;
-  gap: 12px;
-  margin: 24px 0 0;
+  gap: 10px;
+  margin: var(--space-lg) 0 0;
   padding: 0;
 }
 
 .safetyStrip li {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   margin: 0;
   color: var(--text-soft);
   font-size: 0.82rem;
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   list-style: none;
-  padding: 0;
 }
 
 .safetyStrip svg {
-  color: var(--accent-strong);
+  color: var(--muted);
 }
-
-.safetyStrip li:nth-child(2) svg { color: var(--blue); }
-.safetyStrip li:nth-child(3) svg { color: var(--amber); }
 
 .scopeField {
   position: relative;
-  min-height: 276px;
+  min-height: 286px;
   margin: 0;
   overflow: hidden;
   isolation: isolate;
@@ -491,13 +487,10 @@ h4 {
   top: 50%;
   left: 50%;
   z-index: -1;
-  width: 620px;
-  height: 260px;
+  width: min(760px, 94%);
+  height: 250px;
   border-radius: 999px;
-  background:
-    radial-gradient(circle at 78% 34%, var(--blue-soft), transparent 28%),
-    radial-gradient(circle at 26% 72%, var(--amber-soft), transparent 22%),
-    radial-gradient(ellipse, var(--hero-glow), transparent 68%);
+  background: radial-gradient(ellipse, var(--hero-glow), transparent 68%);
   content: "";
   filter: blur(28px);
   transform: translate(-50%, -50%);
@@ -505,74 +498,21 @@ h4 {
 
 .scopeField canvas {
   width: 100%;
-  height: 276px;
+  height: 286px;
   touch-action: pan-y;
 }
 
 .scopeFieldFallback {
-  background: linear-gradient(165deg, transparent 34%, var(--accent-soft) 34.5% 35.5%, transparent 36% 62%, var(--surface-soft) 62.5% 63.5%, transparent 64%);
+  background: radial-gradient(circle at 70% 48%, var(--violet-soft), transparent 34%);
 }
 
-.scopeFieldLabels {
+.scopeShieldFallback {
   position: absolute;
   inset: 0;
-  pointer-events: none;
-}
-
-.scopeNode {
-  position: absolute;
   display: grid;
-  gap: 1px;
-  color: var(--text);
-  font-size: var(--type-meta);
-  padding-left: var(--space-sm);
-  font-weight: var(--weight-semibold);
-  line-height: 1.25;
-  text-shadow: 0 1px 5px var(--bg), 0 0 14px var(--bg);
-}
-
-.scopeNode::before {
-  position: absolute;
-  top: 0.42em;
-  left: 0;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--node-accent, var(--accent-strong));
-  box-shadow: 0 0 10px var(--node-accent, var(--accent-strong));
-  content: "";
-}
-
-.scopeNode small {
-  color: var(--muted);
-  font-size: var(--type-caption);
-  font-weight: var(--weight-regular);
-}
-
-.scopeNodeWeb { --node-accent: var(--blue); left: 4%; top: 31%; }
-.scopeNodeRepo { --node-accent: var(--amber); left: 19%; top: 27%; }
-.scopeNodePolicy { --node-accent: var(--blue); left: 34%; top: 12%; }
-.scopeNodeProfile { --node-accent: var(--accent-strong); left: 50%; top: 13%; }
-.scopeNodeNormalize { --node-accent: var(--amber); left: 67%; top: 18%; }
-.scopeNodeHarbor { --node-accent: var(--accent-strong); right: 5%; top: 2%; }
-
-.scopeField figcaption {
-  position: absolute;
-  right: 1%;
-  bottom: 3%;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  color: var(--faint);
-  font-size: 0.65rem;
-  font-weight: 600;
-}
-
-.scopeFieldSignal {
-  width: 24px;
-  height: 1px;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
+  place-items: center;
+  color: var(--violet);
+  filter: drop-shadow(0 18px 32px color-mix(in oklch, var(--violet) 28%, transparent));
 }
 
 .workspaceConsole {
@@ -881,12 +821,10 @@ button.dangerButton,
   display: flex;
   align-items: center;
   gap: 8px;
-  overflow: hidden;
+  overflow-wrap: anywhere;
   color: var(--text-soft);
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .focusTargetUrl svg {
@@ -2561,40 +2499,31 @@ textarea:focus {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0;
-  border: 1px solid var(--border);
-  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   background: color-mix(in oklch, var(--bg-elevated) 96%, transparent);
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
   padding: 0;
 }
 
 .auditPhaseTab {
-  --phase-color: var(--accent-strong);
-  --phase-soft: var(--accent-soft);
   position: relative;
   display: flex;
   min-width: 0;
-  min-height: 56px;
+  min-height: 58px;
   align-items: center;
   gap: var(--space-xs);
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--muted);
   padding: 8px 14px;
   text-align: left;
-  transition: color 180ms var(--ease-out), background 180ms var(--ease-out), border-color 180ms var(--ease-out);
+  transition: color 180ms var(--ease-out), background 180ms var(--ease-out);
 }
 
-.auditPhaseTab-ready,
-.auditPhaseTab-scope { --phase-color: var(--blue); --phase-soft: var(--blue-soft); }
-.auditPhaseTab-profile,
-.auditPhaseTab-run { --phase-color: var(--accent-strong); --phase-soft: var(--accent-soft); }
-.auditPhaseTab-authorize,
-.auditPhaseTab-review { --phase-color: var(--amber); --phase-soft: var(--amber-soft); }
-
 .auditPhaseTab + .auditPhaseTab {
-  border-left-color: var(--border);
+  border-left: 1px solid var(--border);
 }
 
 .auditPhaseTab:hover {
@@ -2609,9 +2538,7 @@ textarea:focus {
 
 .auditPhaseTab strong,
 .auditPhaseTab small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.3;
 }
 
 .auditPhaseTab strong {
@@ -2625,22 +2552,19 @@ textarea:focus {
 }
 
 .auditPhaseMarker {
-  display: grid;
-  width: 25px;
-  height: 25px;
+  display: inline-grid;
+  width: 18px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 50%;
-  background: var(--surface-hover);
+  background: transparent;
+  color: var(--faint);
   font-size: 0.72rem;
   font-weight: var(--weight-semibold);
 }
 
 .auditPhaseTabActive {
-  border-color: transparent;
-  border-bottom-color: var(--phase-color);
-  background: color-mix(in oklch, var(--phase-soft) 64%, transparent);
-  color: var(--phase-color);
+  background: var(--surface-soft);
+  color: var(--text);
 }
 
 .auditPhaseTabActive::before {
@@ -2649,7 +2573,7 @@ textarea:focus {
   bottom: -1px;
   left: 0;
   height: 2px;
-  background: var(--phase-color);
+  background: var(--accent);
   content: "";
 }
 
@@ -2658,25 +2582,13 @@ textarea:focus {
 }
 
 .auditPhaseTabActive .auditPhaseMarker {
-  background: color-mix(in oklch, var(--phase-color) 22%, transparent);
-  color: var(--phase-color);
+  background: transparent;
+  color: var(--accent-strong);
 }
 
 .auditPhaseTabComplete .auditPhaseMarker {
-  background: color-mix(in oklch, var(--success) 16%, transparent);
+  background: transparent;
   color: var(--success);
-}
-
-.auditPhaseTabPriority:not(.auditPhaseTabActive)::after {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--phase-color);
-  content: "";
-  opacity: 0.8;
 }
 
 .auditPhasePanel {
@@ -2692,7 +2604,7 @@ textarea:focus {
 
 .auditPhaseContentPriority {
   border-top: 0;
-  padding-top: var(--space-md);
+  padding-top: var(--space-sm);
 }
 
 .phaseHeading {
@@ -2710,7 +2622,7 @@ textarea:focus {
 .phaseHeading > div:first-child > span {
   display: block;
   margin-bottom: var(--space-2xs);
-  color: var(--amber);
+  color: var(--muted);
   font-size: 0.76rem;
   font-weight: 700;
 }
@@ -2750,20 +2662,16 @@ textarea:focus {
 
 .readinessState {
   display: inline-flex;
-  min-height: 32px;
   align-items: center;
   gap: var(--space-xs);
-  border: 1px solid color-mix(in oklch, var(--amber) 34%, var(--border));
-  border-radius: 999px;
-  background: var(--amber-soft);
   color: var(--amber);
   font-size: 0.7rem;
   font-weight: 700;
-  padding: 6px 10px;
+  padding: 4px 0;
 }
 
 .readinessState .statusDot { background: var(--amber); }
-.readinessStateReady { border-color: color-mix(in oklch, var(--success) 34%, var(--border)); background: color-mix(in oklch, var(--success) 11%, transparent); color: var(--success); }
+.readinessStateReady { color: var(--success); }
 .readinessStateReady .statusDot { background: var(--success); }
 
 .boundaryStrip {
@@ -2783,10 +2691,7 @@ textarea:focus {
   font-size: 0.7rem;
 }
 
-.boundaryStrip svg { color: var(--accent); }
-.boundaryStrip span:nth-child(1) svg { color: var(--blue); }
-.boundaryStrip span:nth-child(2) svg { color: var(--amber); }
-.boundaryStrip span:nth-child(3) svg { color: var(--accent-strong); }
+.boundaryStrip svg { color: var(--muted); }
 .boundaryStrip strong { color: var(--text-soft); }
 
 .phaseFooter {
@@ -2830,50 +2735,57 @@ textarea:focus {
   flex: 0 0 auto;
 }
 
+.compactSelectMeta {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--faint);
+  font-size: var(--type-caption);
+  font-weight: var(--weight-regular);
+}
+
 .profileDecisionGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(330px, 390px);
-  gap: var(--space-md);
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(310px, 360px);
+  gap: 0;
+  align-items: stretch;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .profileDecisionGrid .modeGrid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   align-content: start;
-  gap: var(--space-sm);
+  gap: 0;
   margin: 0;
 }
 
 .profileDecisionGrid .modeCard {
   grid-template-columns: auto minmax(0, 1fr) !important;
   grid-template-rows: auto auto auto !important;
-  min-height: 148px !important;
+  min-height: 156px !important;
   align-content: start !important;
-  gap: var(--space-xs) !important;
-  border-radius: var(--radius-md) !important;
-  padding: var(--space-sm) !important;
+  gap: 6px var(--space-sm) !important;
+  border: 0 !important;
+  border-right: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: var(--space-md) !important;
 }
 
 .modeCardIcon {
   display: grid !important;
-  width: 46px;
-  height: 46px;
+  width: 28px;
+  height: 28px;
   grid-row: 1 / 4;
   place-items: center;
   margin: 0 !important;
-  border-radius: 10px;
-  background: var(--profile-soft);
-  color: var(--profile-color) !important;
+  background: transparent;
+  color: var(--muted) !important;
 }
 
-.modeCard-passive-web { --profile-color: var(--accent-strong); --profile-soft: var(--accent-soft); }
-.modeCard-active-demo { --profile-color: var(--blue); --profile-soft: var(--blue-soft); }
-.modeCard-modern-web-crawl { --profile-color: var(--amber); --profile-soft: var(--amber-soft); }
-.modeCard-repo { --profile-color: var(--violet); --profile-soft: var(--violet-soft); }
-
 .modeCardActive .modeCardIcon {
-  background: var(--profile-soft);
-  color: var(--profile-color) !important;
+  background: transparent;
+  color: var(--accent-strong) !important;
 }
 
 .profileDecisionGrid .modeCard > span:not(.modeCardIcon) {
@@ -2881,32 +2793,29 @@ textarea:focus {
 }
 
 .profileDecisionGrid .modeCard .modeCardTop + span {
-  display: -webkit-box;
-  overflow: hidden;
   color: var(--text-soft);
   font-size: var(--type-meta);
   line-height: 1.45;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .modeCardActive {
-  border-color: var(--profile-color) !important;
-  background: color-mix(in oklch, var(--profile-soft) 86%, var(--surface)) !important;
+  background: var(--surface-soft) !important;
+  box-shadow: inset 0 -2px var(--accent) !important;
   color: var(--text) !important;
 }
 
 .modeCardUnavailable:not(.modeCardActive) {
-  opacity: 0.62;
+  opacity: 1;
 }
 
 .modeCardTop {
   display: flex !important;
   width: 100%;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-sm);
   margin: 0 !important;
+  flex-wrap: wrap;
 }
 
 .modeCardTop strong {
@@ -2916,12 +2825,13 @@ textarea:focus {
 }
 
 .modeCardTop em {
-  color: var(--success);
+  color: var(--muted);
   font-size: 0.7rem;
   font-style: normal;
   font-weight: 700;
 }
 
+.modeCardActive .modeCardTop em { color: var(--accent-strong); }
 .modeCardUnavailable .modeCardTop em { color: var(--faint); }
 
 .profileMeta {
@@ -2935,18 +2845,18 @@ textarea:focus {
 .profileContext,
 .authorizationChecklist,
 .launchReview {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  box-shadow: var(--shadow-soft);
-  padding: 18px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: var(--space-lg);
 }
 
 .profileContext {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: var(--space-md);
+  border-left: 1px solid var(--border);
 }
 
 .profileContextHeading {
@@ -2965,18 +2875,13 @@ textarea:focus {
 
 .profileContextIcon {
   display: grid;
-  width: 38px;
-  height: 38px;
+  width: 24px;
+  height: 24px;
   place-items: center;
   flex: 0 0 auto;
-  border-radius: 9px;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+  background: transparent;
+  color: var(--muted);
 }
-
-.profileContext-active-demo .profileContextIcon { background: var(--blue-soft); color: var(--blue); }
-.profileContext-modern-web-crawl .profileContextIcon { background: var(--amber-soft); color: var(--amber); }
-.profileContext-repo .profileContextIcon { background: var(--violet-soft); color: var(--violet); }
 
 .profileAssuranceList {
   display: grid;
@@ -2991,14 +2896,10 @@ textarea:focus {
   align-items: center;
   gap: var(--space-sm);
   border-top: 1px solid var(--border);
-  color: var(--accent-strong);
+  color: var(--muted);
   list-style: none;
   padding: var(--space-2xs) 0;
 }
-
-.profileAssuranceList li:nth-child(1) { color: var(--blue); }
-.profileAssuranceList li:nth-child(2) { color: var(--amber); }
-.profileAssuranceList li:nth-child(3) { color: var(--accent-strong); }
 
 .profileAssuranceList li > span {
   display: grid;
@@ -3012,7 +2913,6 @@ textarea:focus {
   color: var(--text-soft);
   font-size: var(--type-caption);
   font-weight: var(--weight-semibold);
-  white-space: nowrap;
 }
 
 .profileAssuranceList small {
@@ -3037,6 +2937,11 @@ textarea:focus {
 .profileContext .repoPathNotice {
   width: 100%;
   margin: 0 0 var(--space-md);
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  padding: var(--space-sm) 0 0;
 }
 
 .profileContext .repoPathNotice p { margin: 0 0 var(--space-xs); color: var(--text-soft); font-size: var(--type-meta); line-height: 1.55; }
@@ -3045,41 +2950,67 @@ textarea:focus {
 .authorizationLayout {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
-  gap: var(--space-lg);
-  align-items: start;
+  gap: 0;
+  align-items: stretch;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .authorizationSummary {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-xs);
+  gap: 0;
   margin: var(--space-lg) 0 var(--space-md);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .authorizationSummary span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-soft);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--text-soft);
   font-size: 0.74rem;
-  padding: 6px 9px;
+  padding: 9px 12px 9px 0;
 }
 
-.authorizationSummary svg { color: var(--accent); }
+.authorizationSummary span + span {
+  margin-left: var(--space-sm);
+  border-left: 1px solid var(--border);
+  padding-left: var(--space-sm);
+}
+
+.authorizationSummary svg { color: var(--muted); }
 
 .acknowledgementList {
   display: grid;
-  gap: var(--space-xs);
+  gap: 0;
   margin-bottom: var(--space-md);
+}
+
+.auditPhasePanel .acknowledgementList .checkboxRow {
+  min-height: 44px;
+  align-items: center;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  padding: var(--space-sm) 0;
+}
+
+.auditPhasePanel .acknowledgementList .checkboxRow:last-child {
+  border-bottom: 1px solid var(--border);
 }
 
 .authorizationChecklist > button { margin-top: var(--space-md); }
 
 .boundarySummary {
-  padding: var(--space-lg) var(--space-sm) var(--space-lg) var(--space-lg);
+  border-left: 1px solid var(--border);
+  padding: var(--space-lg);
 }
 
 .boundarySummary > ul {
@@ -3111,7 +3042,7 @@ textarea:focus {
   padding-top: var(--space-md);
 }
 
-.credentialPrompt > span { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
+.credentialPrompt > span { display: grid; width: 24px; height: 24px; place-items: center; background: transparent; color: var(--muted); }
 .credentialPrompt strong { color: var(--text-soft); font-size: 0.7rem; }
 .credentialPrompt p { margin: var(--space-2xs) 0 0; color: var(--text-soft); font-size: var(--type-meta); line-height: 1.5; }
 .credentialPrompt .textButton { grid-column: 2; justify-self: start; }
@@ -3121,10 +3052,12 @@ textarea:focus {
   grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.85fr) auto;
   align-items: center;
   gap: var(--space-xl);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .launchReview dl { margin: 0; }
-.launchReview > button { white-space: nowrap; }
+.launchReview > button { max-width: 100%; }
 .launchReview > .formMessage { grid-column: 1 / -1; margin: 0; }
 
 .runWorkspaceGrid {
@@ -3153,8 +3086,13 @@ textarea:focus {
   box-shadow: none;
 }
 
-.reviewOutputs .reportPanel .contextBadge { border-color: color-mix(in oklch, var(--amber) 34%, var(--border)); background: var(--amber-soft); color: var(--amber); }
-.reviewOutputs .aiPanel .contextBadge { border-color: color-mix(in oklch, var(--blue) 34%, var(--border)); background: var(--blue-soft); color: var(--blue); }
+.reviewOutputs .contextBadge {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+}
 
 .recentFindingsPreview {
   position: relative;
@@ -3186,9 +3124,10 @@ textarea:focus {
 
 .recentFindingsTableWrap {
   overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
 }
 
 .recentFindingsTable {
@@ -3203,6 +3142,126 @@ textarea:focus {
 .recentFindingsTable th:first-child,
 .recentFindingsTable td:first-child {
   width: 48%;
+}
+
+.auditPhasePanel :is(.panel, .scanPanel, .opsPanel, .reportPanel, .aiPanel) {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.auditPhasePanel .opsPanel {
+  border-right: 0;
+  border-left: 0;
+}
+
+.auditPhasePanel .targetManagementGrid,
+.auditPhasePanel .runWorkspaceGrid,
+.auditPhasePanel .findingsLayout,
+.auditPhasePanel .reviewOutputs {
+  gap: 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.auditPhasePanel .targetManagementGrid > .panel,
+.auditPhasePanel .runWorkspaceGrid > :is(.panel, .scanPanel, .richEmptyState),
+.auditPhasePanel .findingsLayout > .panel,
+.auditPhasePanel .reviewOutputs > :is(.reportPanel, .aiPanel) {
+  border: 0;
+  background: transparent;
+}
+
+.auditPhasePanel .targetManagementGrid > .panel + .panel,
+.auditPhasePanel .runWorkspaceGrid > * + *,
+.auditPhasePanel .findingsLayout > .panel + .panel,
+.auditPhasePanel .reviewOutputs > * + * {
+  border-left: 1px solid var(--border);
+}
+
+.auditPhasePanel .contextBadge {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+}
+
+.auditPhasePanel .targetList,
+.auditPhasePanel .scanTimeline {
+  gap: 0;
+}
+
+.auditPhasePanel .targetListItem,
+.auditPhasePanel .scanRow {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.auditPhasePanel .targetListItem:first-child,
+.auditPhasePanel .scanTimeline li:first-child .scanRow {
+  border-top: 1px solid var(--border);
+}
+
+.auditPhasePanel .targetListItemSelected,
+.auditPhasePanel .scanRowSelected {
+  background: var(--surface-soft);
+}
+
+.auditPhasePanel .targetGlyph {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.auditPhasePanel .targetCapabilities {
+  gap: 0;
+}
+
+.auditPhasePanel .targetCapabilities em {
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.auditPhasePanel .targetCapabilities em + em::before {
+  margin: 0 5px;
+  color: var(--faint);
+  content: "·";
+}
+
+.scanRow strong,
+.scanRow small,
+.opsList small,
+.targetIdentity strong,
+.targetIdentity small {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.filterSummaryHint {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.reportList li strong,
+.reportList li span,
+.launchReview dd,
+.recentFindingsTable td,
+.findingSelectButton {
+  overflow-wrap: anywhere;
+}
+
+.aiExecutiveSummary,
+.aiContextBody > p {
+  max-width: 70ch;
 }
 
 .modalBackdrop {
@@ -3298,6 +3357,10 @@ textarea:focus {
   .profileDecisionGrid .modeGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .profileDecisionGrid .modeCard:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border) !important;
+  }
 }
 
 @media (max-width: 1100px) {
@@ -3350,16 +3413,6 @@ textarea:focus {
     height: 260px;
   }
 
-  .scopeNodeRepo,
-  .scopeNodeNormalize {
-    display: none;
-  }
-
-  .scopeNodeWeb { left: 3%; }
-  .scopeNodePolicy { left: 31%; }
-  .scopeNodeProfile { left: 53%; }
-  .scopeNodeHarbor { right: 2%; }
-
   .overviewSplit,
   .targetManagementGrid,
   .riskDashboardGrid,
@@ -3374,6 +3427,14 @@ textarea:focus {
   .launchReview > button {
     grid-column: auto;
     justify-self: start;
+  }
+
+  .auditPhasePanel .targetManagementGrid > .panel + .panel,
+  .auditPhasePanel .runWorkspaceGrid > * + *,
+  .auditPhasePanel .findingsLayout > .panel + .panel,
+  .auditPhasePanel .reviewOutputs > * + * {
+    border-top: 1px solid var(--border);
+    border-left: 0;
   }
 
   .auditPhaseTabs {
@@ -3413,6 +3474,16 @@ textarea:focus {
 @media (max-width: 840px) {
   .profileDecisionGrid {
     grid-template-columns: 1fr;
+  }
+
+  .profileContext {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .boundarySummary {
+    border-top: 1px solid var(--border);
+    border-left: 0;
   }
 }
 
@@ -3458,17 +3529,6 @@ textarea:focus {
   .scopeField canvas {
     height: 220px;
   }
-
-  .scopeNodePolicy,
-  .scopeNodeRepo,
-  .scopeNodeNormalize,
-  .scopeNodeWeb,
-  .scopeField figcaption {
-    display: none;
-  }
-
-  .scopeNodeProfile { left: 4%; top: 34%; max-width: 45%; }
-  .scopeNodeHarbor { right: 2%; top: 2%; }
 
   .workspaceConsole {
     padding-top: 27px;
@@ -3535,13 +3595,14 @@ textarea:focus {
     grid-auto-columns: minmax(280px, 86%);
     grid-auto-flow: column;
     overflow-x: auto;
-    padding-bottom: var(--space-xs);
+    padding-bottom: 0;
     scroll-padding-inline: 0;
     scroll-snap-type: x mandatory;
   }
 
   .profileDecisionGrid .modeCard {
-    min-height: 138px !important;
+    min-height: 150px !important;
+    border-bottom: 0 !important;
     scroll-snap-align: start;
   }
 

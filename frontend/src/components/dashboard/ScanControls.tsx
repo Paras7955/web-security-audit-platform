@@ -80,9 +80,10 @@ export function ScanProfileSelector({
           <select value={selectedTargetId} onChange={(event) => onSelectTarget(event.target.value)}>
             <option value="">No saved targets</option>
             {targets.map((target) => (
-              <option key={target.id} value={target.id}>{target.name} — {target.base_url}</option>
+              <option key={target.id} value={target.id}>{target.name}</option>
             ))}
           </select>
+          {selectedTarget ? <small className="compactSelectMeta">{selectedTarget.base_url}</small> : null}
         </label>
       </div>
 
@@ -96,22 +97,22 @@ export function ScanProfileSelector({
                 key={profile.id}
                 type="button"
                 aria-pressed={scanProfileId === profile.id}
-                className={`modeCard modeCard-${profile.id}${scanProfileId === profile.id ? " modeCardActive" : ""}${!isAvailable && selectedTarget ? " modeCardUnavailable" : ""}`}
+                className={`modeCard${scanProfileId === profile.id ? " modeCardActive" : ""}${!isAvailable && selectedTarget ? " modeCardUnavailable" : ""}`}
                 onClick={() => onSelectScanProfile(profile.id)}
               >
                 <span className="modeCardIcon"><AppIcon name={profileIcon(profile.id)} size={28} /></span>
                 <span className="modeCardTop">
                   <strong>{profile.label}</strong>
-                  <em>{isAvailable ? "Available" : "Unavailable"}</em>
+                  <em>{scanProfileId === profile.id ? "Selected" : isAvailable ? "Available" : "Unavailable"}</em>
                 </span>
-                <span>{profile.description}</span>
+                <span>{profileDecisionCopy(profile.id)}</span>
                 <span className="profileMeta">{capabilities.join(" · ")}</span>
               </button>
             );
           })}
         </div>
 
-        <aside className={`profileContext profileContext-${selectedProfile.id}`} aria-live="polite">
+        <aside className="profileContext" aria-live="polite">
           <div className="profileContextHeading">
             <span className="profileContextIcon"><AppIcon name={selectedProfile.mode === "repo" ? "intelligence" : "scan"} size={20} /></span>
             <div><span>Selected profile</span><h3>{selectedProfile.label}</h3></div>
@@ -247,10 +248,17 @@ export function ScanLaunchPanel({
 }
 
 function profileCapabilities(profile: ScanProfileMetadata) {
-  const capabilities = [profile.local_demo_only ? "Local demo" : "Allowlisted", profile.reports_enabled ? "Reports" : "No reports"];
-  capabilities.push(profile.ai_enabled ? "AI eligible" : "No AI");
-  if (profile.mode === "repo") capabilities.push("Offline DB");
+  const capabilities = [profile.local_demo_only ? "Local demo" : profile.mode === "repo" ? "Offline" : "Allowlisted"];
+  if (profile.reports_enabled) capabilities.push(profile.ai_enabled ? "Reports + AI" : "Reports");
+  else capabilities.push("No reports");
   return capabilities;
+}
+
+function profileDecisionCopy(profileId: string): string {
+  if (profileId === "active-demo") return "Bounded ZAP testing for local demos.";
+  if (profileId === "modern-web-crawl") return "Client Spider crawl for local demos.";
+  if (profileId === "repo") return "Gitleaks and offline OSV; code is never run.";
+  return "Passive checks for allowlisted targets.";
 }
 
 function profileIcon(profileId: string): "target" | "operations" | "activity" | "intelligence" {

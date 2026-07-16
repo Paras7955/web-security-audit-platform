@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import * as THREE from "three";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+import { AppIcon } from "@/components/AppIcon";
 
 type WebGLScopeFieldProps = {
   activeProfile?: string;
@@ -8,251 +12,143 @@ type WebGLScopeFieldProps = {
   status?: string;
 };
 
-type Vec3 = [number, number, number];
-type SceneBox = {
-  position: Vec3;
-  scale: Vec3;
-  color: Vec3;
-  rotation?: Vec3;
-  emissive?: number;
-  geometry?: "cube" | "cylinder" | "octahedron";
+const profileTilt: Record<string, number> = {
+  "passive-web": -0.035,
+  "active-demo": 0.025,
+  "modern-web-crawl": 0.045,
+  repo: -0.015
 };
 
-type PulseBinding = {
-  box: SceneBox;
-  base: number;
-  amount: number;
-};
-
-type WebGLScene = {
-  boxes: SceneBox[];
-  pulseBindings: PulseBinding[];
-};
-
-const vertexShaderSource = `
-attribute vec3 a_position;
-attribute vec3 a_normal;
-uniform mat4 u_mvp;
-uniform mat4 u_model;
-varying vec3 v_normal;
-varying vec3 v_position;
-
-void main() {
-  gl_Position = u_mvp * vec4(a_position, 1.0);
-  v_normal = mat3(u_model) * a_normal;
-  v_position = (u_model * vec4(a_position, 1.0)).xyz;
-}`;
-
-const fragmentShaderSource = `
-precision highp float;
-uniform vec3 u_color;
-uniform float u_emissive;
-varying vec3 v_normal;
-varying vec3 v_position;
-
-void main() {
-  vec3 normal = normalize(v_normal);
-  vec3 keyLight = normalize(vec3(-0.48, 0.86, 0.38));
-  vec3 fillLight = normalize(vec3(0.72, 0.38, 0.58));
-  vec3 viewDirection = normalize(vec3(0.0, 0.34, 1.0));
-  vec3 halfDirection = normalize(keyLight + viewDirection);
-  float key = max(dot(normal, keyLight), 0.0);
-  float fill = max(dot(normal, fillLight), 0.0);
-  float specular = pow(max(dot(normal, halfDirection), 0.0), 30.0);
-  float rim = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.4);
-  float topLift = max(normal.y, 0.0) * 0.16;
-  float distanceFade = clamp(1.04 - length(v_position.xz) * 0.014, 0.82, 1.0);
-  vec3 lit = u_color * (0.18 + key * 0.7 + fill * 0.2 + rim * 0.2 + topLift + u_emissive);
-  lit += vec3(1.0, 0.82, 0.68) * specular * 0.2;
-  lit *= distanceFade;
-  gl_FragColor = vec4(pow(lit, vec3(0.92)), 1.0);
-}`;
-
-const profileLabels: Record<string, string> = {
-  "passive-web": "Passive web",
-  "active-demo": "Active demo",
-  "modern-web-crawl": "Modern web crawl",
-  repo: "Repository"
-};
-
-const profileLanes: Record<string, number> = {
-  "passive-web": -0.48,
-  "active-demo": -0.15,
-  "modern-web-crawl": 0.18,
-  repo: 0.5
-};
-
-export function WebGLScopeField({ activeProfile = "passive-web", currentStep = null, status = "ready" }: WebGLScopeFieldProps) {
+export function WebGLScopeField({
+  activeProfile = "passive-web",
+  currentStep = null,
+  status = "ready"
+}: WebGLScopeFieldProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fieldRef = useRef<HTMLElement>(null);
   const pointerRef = useRef({ x: 0, y: 0 });
+  const stateRef = useRef({ activeProfile, currentStep, status });
   const [available, setAvailable] = useState(true);
+
+  useEffect(() => {
+    stateRef.current = { activeProfile, currentStep, status };
+  }, [activeProfile, currentStep, status]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const field = fieldRef.current;
-    if (!canvas || !field) {
+    if (!canvas || !field) return;
+
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        canvas,
+        alpha: true,
+        antialias: true,
+        powerPreference: "high-performance",
+        premultipliedAlpha: true
+      });
+    } catch {
+      window.setTimeout(() => setAvailable(false), 0);
       return;
     }
 
-    const gl = canvas.getContext("webgl", {
-      alpha: true,
-      antialias: true,
-      depth: true,
-      powerPreference: "high-performance",
-      premultipliedAlpha: true
-    });
-    if (!gl) {
-      setAvailable(false);
-      return;
-    }
+    renderer.setClearColor(0x000000, 0);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.06;
 
-    const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
-    const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
-    if (!vertexShader || !fragmentShader) {
-      if (vertexShader) gl.deleteShader(vertexShader);
-      if (fragmentShader) gl.deleteShader(fragmentShader);
-      setAvailable(false);
-      return;
-    }
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 30);
+    camera.position.set(0.15, 0.12, 7.4);
 
-    const program = gl.createProgram();
-    if (!program) {
-      gl.deleteShader(vertexShader);
-      gl.deleteShader(fragmentShader);
-      setAvailable(false);
-      return;
-    }
-    gl.attachShader(program, vertexShader);
-    gl.attachShader(program, fragmentShader);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      gl.deleteProgram(program);
-      gl.deleteShader(vertexShader);
-      gl.deleteShader(fragmentShader);
-      setAvailable(false);
-      return;
-    }
+    const environmentScene = new RoomEnvironment();
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    const environmentTarget = pmremGenerator.fromScene(environmentScene, 0.04);
+    scene.environment = environmentTarget.texture;
+    environmentScene.dispose();
+    pmremGenerator.dispose();
 
-    const cubeVertices = createCubeVertices();
-    const cylinderVertices = createCylinderVertices(48);
-    const octahedronVertices = createOctahedronVertices();
-    const cubeBuffer = gl.createBuffer();
-    const cylinderBuffer = gl.createBuffer();
-    const octahedronBuffer = gl.createBuffer();
-    if (!cubeBuffer || !cylinderBuffer || !octahedronBuffer) {
-      gl.deleteProgram(program);
-      gl.deleteShader(vertexShader);
-      gl.deleteShader(fragmentShader);
-      setAvailable(false);
-      return;
-    }
+    const composition = createShieldComposition();
+    scene.add(composition.root);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, cubeBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, cubeVertices, gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, cylinderBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, cylinderVertices, gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, octahedronBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, octahedronVertices, gl.STATIC_DRAW);
-    gl.useProgram(program);
-
-    const positionLocation = gl.getAttribLocation(program, "a_position");
-    const normalLocation = gl.getAttribLocation(program, "a_normal");
-    const mvpLocation = gl.getUniformLocation(program, "u_mvp");
-    const modelLocation = gl.getUniformLocation(program, "u_model");
-    const colorLocation = gl.getUniformLocation(program, "u_color");
-    const emissiveLocation = gl.getUniformLocation(program, "u_emissive");
-    const stride = 6 * Float32Array.BYTES_PER_ELEMENT;
-
-    gl.enableVertexAttribArray(positionLocation);
-    gl.enableVertexAttribArray(normalLocation);
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
-    gl.enable(gl.CULL_FACE);
-    gl.cullFace(gl.BACK);
+    const ambient = new THREE.HemisphereLight(0xdde8ff, 0x080711, 1.35);
+    const key = new THREE.DirectionalLight(0xf4f6ff, 3.5);
+    key.position.set(-3.2, 4.8, 5.5);
+    const rim = new THREE.PointLight(0x7257ff, 22, 8, 1.8);
+    rim.position.set(2.6, 0.3, 2.7);
+    const edge = new THREE.PointLight(0x8d75ff, 12, 6, 2);
+    edge.position.set(0.4, -1.6, 1.2);
+    scene.add(ambient, key, rim, edge);
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let animationFrame = 0;
+    let frame = 0;
     let visible = !document.hidden;
     let intersecting = true;
+    let width = 1;
+    let height = 1;
     let start = performance.now();
-    let sceneKey = "";
-    let scene: WebGLScene | null = null;
-    const modelMatrices = new WeakMap<SceneBox, Float32Array>();
-    const mvpScratch = new Float32Array(16);
-    const lane = profileLanes[activeProfile] ?? profileLanes["passive-web"];
 
-    const drawBox = (box: SceneBox, viewProjection: Float32Array) => {
-      const isCylinder = box.geometry === "cylinder";
-      const isOctahedron = box.geometry === "octahedron";
-      gl.bindBuffer(gl.ARRAY_BUFFER, isCylinder ? cylinderBuffer : isOctahedron ? octahedronBuffer : cubeBuffer);
-      gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, stride, 0);
-      gl.vertexAttribPointer(normalLocation, 3, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
-      let model = modelMatrices.get(box);
-      if (!model) {
-        model = composeMatrix(box.position, box.rotation ?? [0, 0, 0], box.scale);
-        modelMatrices.set(box, model);
-      }
-      multiplyMatricesInto(viewProjection, model, mvpScratch);
-      gl.uniformMatrix4fv(mvpLocation, false, mvpScratch);
-      gl.uniformMatrix4fv(modelLocation, false, model);
-      gl.uniform3fv(colorLocation, box.color);
-      gl.uniform1f(emissiveLocation, box.emissive ?? 0);
-      const vertexCount = isCylinder ? cylinderVertices.length / 6 : isOctahedron ? octahedronVertices.length / 6 : cubeVertices.length / 6;
-      gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+    const resize = () => {
+      const nextWidth = Math.max(1, Math.floor(field.clientWidth));
+      const nextHeight = Math.max(1, Math.floor(field.clientHeight));
+      if (nextWidth === width && nextHeight === height) return;
+      width = nextWidth;
+      height = nextHeight;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      composition.root.scale.setScalar(camera.aspect < 2 ? 0.82 : 1);
+      composition.root.position.x = camera.aspect < 2 ? 0.36 : 0.18;
+    };
+
+    const updateTheme = () => {
+      const lightTheme = document.documentElement.dataset.theme === "light";
+      composition.outerMaterial.color.set(lightTheme ? 0x596173 : 0x252936);
+      composition.innerMaterial.color.set(lightTheme ? 0x27243f : 0x12131f);
+      composition.networkMaterial.color.set(lightTheme ? 0x5b48c6 : 0x6d5cf0);
+      composition.pointMaterial.color.set(lightTheme ? 0x6659b8 : 0xb8afff);
+      renderer.toneMappingExposure = lightTheme ? 0.96 : 1.06;
     };
 
     const render = (now: number) => {
-      const ratio = Math.min(window.devicePixelRatio || 1, 2.5);
-      const width = Math.max(1, Math.floor(canvas.clientWidth * ratio));
-      const height = Math.max(1, Math.floor(canvas.clientHeight * ratio));
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-        gl.viewport(0, 0, width, height);
-      }
-
-      const elapsed = reducedMotion.matches ? 1.25 : (now - start) / 1000;
-      const pulse = 0.5 + Math.sin(elapsed * 2.15) * 0.5;
-      const lightTheme = document.documentElement.dataset.theme === "light";
-      const nextSceneKey = lightTheme ? "light" : "dark";
-      if (!scene || sceneKey !== nextSceneKey) {
-        scene = createWebGLScene(lane, currentStep, status, lightTheme);
-        sceneKey = nextSceneKey;
-      }
+      const elapsed = reducedMotion.matches ? 1.4 : (now - start) / 1000;
       const pointer = pointerRef.current;
-      const aspect = width / height;
-      const compactScene = aspect < 2;
-      const camera: Vec3 = compactScene
-        ? [pointer.x * 0.14, 3.8 + pointer.y * 0.1, 10.6]
-        : [0.18 + pointer.x * 0.18, 3.15 + pointer.y * 0.12, 8.2];
-      const projection = perspectiveMatrix(compactScene ? Math.PI / 4.4 : Math.PI / 8.5, aspect, 0.1, 40);
-      const view = lookAtMatrix(camera, [0.1, 0.26, 0], [0, 1, 0]);
-      const viewProjection = multiplyMatrices(projection, view);
+      const heroState = stateRef.current;
+      const idleYaw = profileTilt[heroState.activeProfile] ?? 0;
 
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      for (const binding of scene.pulseBindings) {
-        binding.box.emissive = binding.base + pulse * binding.amount;
-      }
-      for (const box of scene.boxes) drawBox(box, viewProjection);
+      composition.shield.rotation.y = idleYaw + pointer.x * 0.085 + Math.sin(elapsed * 0.42) * 0.018;
+      composition.shield.rotation.x = -0.025 - pointer.y * 0.045 + Math.sin(elapsed * 0.35) * 0.008;
+      composition.shield.position.y = Math.sin(elapsed * 0.72) * 0.025;
+      composition.emblem.rotation.z = Math.sin(elapsed * 0.3) * 0.025;
+      composition.network.rotation.y = pointer.x * 0.018;
+      composition.network.position.y = pointer.y * -0.025;
+      composition.glowMaterial.opacity = 0.08 + Math.sin(elapsed * 0.9) * 0.018;
+      composition.emblemMaterial.emissiveIntensity =
+        heroState.status === "running" || heroState.currentStep ? 2.25 + Math.sin(elapsed * 1.3) * 0.18 : 2.05;
 
+      renderer.render(scene, camera);
       if (visible && intersecting && !reducedMotion.matches) {
-        animationFrame = window.requestAnimationFrame(render);
+        frame = window.requestAnimationFrame(render);
       }
     };
 
     const restart = () => {
-      window.cancelAnimationFrame(animationFrame);
+      window.cancelAnimationFrame(frame);
       if (!visible || !intersecting) return;
       start = performance.now();
       render(start);
     };
-    const handleVisibility = () => {
-      visible = !document.hidden;
-      if (visible && intersecting) restart();
-      else window.cancelAnimationFrame(animationFrame);
+    const handleResize = () => {
+      resize();
+      restart();
     };
+    const handleThemeChange = () => {
+      updateTheme();
+      restart();
+    };
+
     const handlePointerMove = (event: PointerEvent) => {
       const rect = field.getBoundingClientRect();
       pointerRef.current = {
@@ -263,377 +159,274 @@ export function WebGLScopeField({ activeProfile = "passive-web", currentStep = n
     const handlePointerLeave = () => {
       pointerRef.current = { x: 0, y: 0 };
     };
-    const themeObserver = new MutationObserver(restart);
-    const intersectionObserver = "IntersectionObserver" in window
-      ? new IntersectionObserver(([entry]) => {
-          const nextIntersecting = entry.isIntersecting;
-          if (nextIntersecting === intersecting) return;
-          intersecting = nextIntersecting;
-          if (intersecting && visible) restart();
-          else window.cancelAnimationFrame(animationFrame);
-        })
-      : null;
+    const handleVisibility = () => {
+      visible = !document.hidden;
+      if (visible && intersecting) restart();
+      else window.cancelAnimationFrame(frame);
+    };
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      setAvailable(false);
+    };
+
+    const resizeObserver = new ResizeObserver(handleResize);
+    const themeObserver = new MutationObserver(handleThemeChange);
+    const intersectionObserver = new IntersectionObserver(([entry]) => {
+      intersecting = entry.isIntersecting;
+      if (intersecting && visible) restart();
+      else window.cancelAnimationFrame(frame);
+    });
+
+    resizeObserver.observe(field);
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    intersectionObserver?.observe(field);
+    intersectionObserver.observe(field);
     reducedMotion.addEventListener("change", restart);
-    window.addEventListener("resize", restart);
     document.addEventListener("visibilitychange", handleVisibility);
     field.addEventListener("pointermove", handlePointerMove);
     field.addEventListener("pointerleave", handlePointerLeave);
+    canvas.addEventListener("webglcontextlost", handleContextLost);
+    resize();
+    updateTheme();
     render(start);
 
     return () => {
-      window.cancelAnimationFrame(animationFrame);
+      window.cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
       themeObserver.disconnect();
-      intersectionObserver?.disconnect();
+      intersectionObserver.disconnect();
       reducedMotion.removeEventListener("change", restart);
-      window.removeEventListener("resize", restart);
       document.removeEventListener("visibilitychange", handleVisibility);
       field.removeEventListener("pointermove", handlePointerMove);
       field.removeEventListener("pointerleave", handlePointerLeave);
-      gl.deleteBuffer(cubeBuffer);
-      gl.deleteBuffer(cylinderBuffer);
-      gl.deleteBuffer(octahedronBuffer);
-      gl.deleteProgram(program);
-      gl.deleteShader(vertexShader);
-      gl.deleteShader(fragmentShader);
+      canvas.removeEventListener("webglcontextlost", handleContextLost);
+      composition.root.traverse((object) => {
+        if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments || object instanceof THREE.Points) {
+          object.geometry.dispose();
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          materials.forEach((material) => material.dispose());
+        }
+      });
+      environmentTarget.dispose();
+      renderer.dispose();
+      renderer.forceContextLoss();
     };
-  }, [activeProfile, currentStep, status]);
+  }, []);
 
-  const fieldClass = available ? "scopeField" : "scopeField scopeFieldFallback";
   return (
-    <figure ref={fieldRef} className={fieldClass} aria-label="Authorized audit route from local scope through policy checks and normalized findings">
+    <figure
+      ref={fieldRef}
+      className={available ? "scopeField" : "scopeField scopeFieldFallback"}
+      aria-label="Faceted shield protecting a local application security network"
+    >
       <canvas ref={canvasRef} aria-hidden="true" />
-      <div className="scopeFieldLabels" aria-hidden="true">
-        <span className="scopeNode scopeNodeWeb">Web target<small>Exact allowlist</small></span>
-        <span className="scopeNode scopeNodeRepo">Local repository<small>Your code</small></span>
-        <span className="scopeNode scopeNodePolicy">Policy gate<small>Rules enforced</small></span>
-        <span className="scopeNode scopeNodeProfile">{profileLabels[activeProfile] ?? "Audit profile"}<small>{profileRouteLabel(activeProfile)}</small></span>
-        <span className="scopeNode scopeNodeNormalize">Normalize + redact<small>Protect sensitive</small></span>
-        <span className="scopeNode scopeNodeHarbor">Protected harbor<small>Your data. Your control.</small></span>
-      </div>
+      {!available ? (
+        <div className="scopeShieldFallback" aria-hidden="true">
+          <AppIcon name="shield" size={92} />
+        </div>
+      ) : null}
     </figure>
   );
 }
 
-function stageForStep(step: string | null, status: string) {
-  if (status === "completed" || status === "completed_with_warnings") return 4;
-  if (status === "ready") return 2;
-  if (!step) return 0;
-  if (step.includes("validation")) return 1;
-  if (step.includes("normaliz")) return 3;
-  if (step.includes("report") || step.includes("explanation")) return 4;
-  return 2;
-}
+function createShieldComposition() {
+  const root = new THREE.Group();
+  root.position.set(0.18, 0, 0);
 
-function compileShader(gl: WebGLRenderingContext, type: number, source: string) {
-  const shader = gl.createShader(type);
-  if (!shader) return null;
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    gl.deleteShader(shader);
-    return null;
-  }
-  return shader;
-}
+  const network = createNetworkMesh();
+  network.position.set(-0.75, 0.02, -0.7);
+  root.add(network);
 
-function createCubeVertices() {
-  const data: number[] = [];
-  const faces: Array<{ normal: Vec3; corners: Vec3[] }> = [
-    { normal: [0, 0, 1], corners: [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]] },
-    { normal: [0, 0, -1], corners: [[1, -1, -1], [-1, -1, -1], [-1, 1, -1], [1, 1, -1]] },
-    { normal: [1, 0, 0], corners: [[1, -1, 1], [1, -1, -1], [1, 1, -1], [1, 1, 1]] },
-    { normal: [-1, 0, 0], corners: [[-1, -1, -1], [-1, -1, 1], [-1, 1, 1], [-1, 1, -1]] },
-    { normal: [0, 1, 0], corners: [[-1, 1, 1], [1, 1, 1], [1, 1, -1], [-1, 1, -1]] },
-    { normal: [0, -1, 0], corners: [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1]] }
-  ];
-  for (const face of faces) {
-    for (const index of [0, 1, 2, 0, 2, 3]) {
-      data.push(...face.corners[index], ...face.normal);
-    }
-  }
-  return new Float32Array(data);
-}
+  const shield = new THREE.Group();
+  shield.position.set(2.05, 0, 0);
+  shield.rotation.set(-0.025, profileTilt["passive-web"], -0.025);
+  root.add(shield);
 
-function createCylinderVertices(segments: number) {
-  const data: number[] = [];
-  for (let index = 0; index < segments; index += 1) {
-    const firstAngle = (index / segments) * Math.PI * 2;
-    const secondAngle = ((index + 1) / segments) * Math.PI * 2;
-    const firstX = Math.cos(firstAngle);
-    const firstZ = Math.sin(firstAngle);
-    const secondX = Math.cos(secondAngle);
-    const secondZ = Math.sin(secondAngle);
-
-    data.push(0, 1, 0, 0, 1, 0, firstX, 1, firstZ, 0, 1, 0, secondX, 1, secondZ, 0, 1, 0);
-    data.push(0, -1, 0, 0, -1, 0, secondX, -1, secondZ, 0, -1, 0, firstX, -1, firstZ, 0, -1, 0);
-    data.push(
-      firstX, -1, firstZ, firstX, 0, firstZ,
-      secondX, -1, secondZ, secondX, 0, secondZ,
-      secondX, 1, secondZ, secondX, 0, secondZ,
-      firstX, -1, firstZ, firstX, 0, firstZ,
-      secondX, 1, secondZ, secondX, 0, secondZ,
-      firstX, 1, firstZ, firstX, 0, firstZ
-    );
-  }
-  return new Float32Array(data);
-}
-
-function createOctahedronVertices() {
-  const data: number[] = [];
-  const vertices: Vec3[] = [
-    [0, 1, 0],
-    [1, 0, 0],
-    [0, 0, 1],
-    [-1, 0, 0],
-    [0, 0, -1],
-    [0, -1, 0]
-  ];
-  const faces: Array<[number, number, number]> = [
-    [0, 2, 1], [0, 3, 2], [0, 4, 3], [0, 1, 4],
-    [5, 1, 2], [5, 2, 3], [5, 3, 4], [5, 4, 1]
-  ];
-  for (const [firstIndex, secondIndex, thirdIndex] of faces) {
-    const first = vertices[firstIndex];
-    const second = vertices[secondIndex];
-    const third = vertices[thirdIndex];
-    const normal = normalize(cross(
-      [second[0] - first[0], second[1] - first[1], second[2] - first[2]],
-      [third[0] - first[0], third[1] - first[1], third[2] - first[2]]
-    ));
-    data.push(...first, ...normal, ...second, ...normal, ...third, ...normal);
-  }
-  return new Float32Array(data);
-}
-
-function profileRouteLabel(profileId: string) {
-  if (profileId === "active-demo") return "Bounded active checks";
-  if (profileId === "modern-web-crawl") return "Rendered route crawl";
-  if (profileId === "repo") return "Offline repository scan";
-  return "Observe only";
-}
-
-function createRouteTube(start: Vec3, end: Vec3, radius: number, color: Vec3, emissive = 0): SceneBox {
-  const deltaX = end[0] - start[0];
-  const deltaZ = end[2] - start[2];
-  const distance = Math.hypot(deltaX, deltaZ);
-  return {
-    position: [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2, (start[2] + end[2]) / 2],
-    scale: [radius, distance / 2, radius],
-    rotation: [0, -Math.atan2(deltaZ, deltaX), -Math.PI / 2],
-    color,
-    emissive,
-    geometry: "cylinder"
-  };
-}
-
-function createRoute(points: Vec3[], radius: number, color: Vec3, emissive = 0): SceneBox[] {
-  return points.slice(0, -1).map((point, index) => createRouteTube(point, points[index + 1], radius, color, emissive));
-}
-
-function createShieldBeam(start: [number, number], end: [number, number], z: number, thickness: number, color: Vec3, emissive = 0): SceneBox {
-  const deltaX = end[0] - start[0];
-  const deltaY = end[1] - start[1];
-  return {
-    position: [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2, z],
-    scale: [Math.hypot(deltaX, deltaY) / 2, thickness, thickness],
-    rotation: [0, 0, Math.atan2(deltaY, deltaX)],
-    color,
-    emissive
-  };
-}
-
-function createWebGLScene(lane: number, currentStep: string | null, status: string, lightTheme: boolean): WebGLScene {
-  const stage = stageForStep(currentStep, status);
-  const warning = status === "completed_with_warnings" || status === "failed";
-  const completed = status === "completed";
-  const orange: Vec3 = warning ? [1, 0.48, 0.08] : [1, 0.28, 0.035];
-  const orangeBright: Vec3 = warning ? [1, 0.66, 0.16] : [1, 0.48, 0.09];
-  const blue: Vec3 = lightTheme ? [0.08, 0.42, 0.9] : [0.11, 0.54, 1];
-  const yellow: Vec3 = lightTheme ? [0.85, 0.52, 0.04] : [1, 0.72, 0.12];
-  const outcomeColor: Vec3 = completed ? [0.28, 0.78, 0.5] : warning ? yellow : orangeBright;
-  const structure: Vec3 = lightTheme ? [0.33, 0.38, 0.48] : [0.035, 0.055, 0.09];
-  const structureTop: Vec3 = lightTheme ? [0.55, 0.6, 0.69] : [0.12, 0.16, 0.23];
-  const boxes: SceneBox[] = [];
-  const pulseBindings: PulseBinding[] = [];
-  const routePoints: Vec3[] = [
-    [-4.45, -0.04, -0.72],
-    [-3.25, 0.02, 0.5],
-    [-2.03, 0.05, -0.08],
-    [-0.55, 0.08, lane],
-    [0.92, 0.11, 0.18],
-    [2.52, 0.14, 0]
-  ];
-
-  boxes.push(...createRoute(routePoints, 0.13, structure));
-  const orangeRoute = createRoute(routePoints, 0.052, orange, 0.16);
-  boxes.push(...orangeRoute);
-  const bluePoints = routePoints.map((point, index) => [point[0], point[1] + 0.11, point[2] + 0.42 * (1 - index / (routePoints.length - 1))] as Vec3);
-  const yellowPoints = routePoints.map((point, index) => [point[0], point[1] + 0.06, point[2] - 0.42 * (1 - index / (routePoints.length - 1))] as Vec3);
-  boxes.push(...createRoute(bluePoints, 0.026, blue, 0.12));
-  boxes.push(...createRoute(yellowPoints, 0.022, yellow, 0.12));
-
-  routePoints.slice(0, -1).forEach((point, index) => {
-    const active = index <= stage;
-    const node: SceneBox = {
-      position: [point[0], point[1] + 0.16, point[2]],
-      scale: index === 2 ? [0.3, 0.42, 0.3] : [0.23, 0.31, 0.23],
-      rotation: [0, index * 0.58, 0],
-      color: active ? orangeBright : structureTop,
-      emissive: index === stage ? 0.28 : active ? 0.1 : 0,
-      geometry: "octahedron"
-    };
-    boxes.push(node);
-    if (index === stage) pulseBindings.push({ box: node, base: 0.28, amount: 0.22 });
-
-    const blueSatellite: Vec3 = [bluePoints[index][0], bluePoints[index][1] + 0.13, bluePoints[index][2]];
-    const yellowSatellite: Vec3 = [yellowPoints[index][0], yellowPoints[index][1] + 0.11, yellowPoints[index][2]];
-    boxes.push(
-      { position: blueSatellite, scale: [0.095, 0.13, 0.095], color: blue, emissive: 0.12, geometry: "octahedron" },
-      { position: yellowSatellite, scale: [0.075, 0.1, 0.075], color: yellow, emissive: 0.1, geometry: "octahedron" },
-      createRouteTube([point[0], point[1] + 0.08, point[2]], blueSatellite, 0.012, blue, 0.08),
-      createRouteTube([point[0], point[1] + 0.07, point[2]], yellowSatellite, 0.01, yellow, 0.08)
-    );
+  const outerMaterial = new THREE.MeshPhysicalMaterial({
+    color: 0x252936,
+    metalness: 0.92,
+    roughness: 0.2,
+    clearcoat: 0.48,
+    clearcoatRoughness: 0.16,
+    envMapIntensity: 1.35
+  });
+  const innerMaterial = new THREE.MeshPhysicalMaterial({
+    color: 0x12131f,
+    emissive: 0x21194d,
+    emissiveIntensity: 0.7,
+    metalness: 0.78,
+    roughness: 0.18,
+    clearcoat: 0.62,
+    clearcoatRoughness: 0.14,
+    envMapIntensity: 1.2
+  });
+  const edgeMaterial = new THREE.LineBasicMaterial({
+    color: 0x7f899e,
+    transparent: true,
+    opacity: 0.38
+  });
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x6f55ff,
+    transparent: true,
+    opacity: 0.08,
+    depthWrite: false,
+    side: THREE.DoubleSide
   });
 
-  const shieldPoints: Array<[number, number]> = [
-    [3.82, 1.7],
-    [4.55, 1.34],
-    [4.43, 0.36],
-    [3.82, -0.28],
-    [3.21, 0.36],
-    [3.09, 1.34]
+  const outerGeometry = new THREE.ExtrudeGeometry(createShieldShape(1.28, 1.54), {
+    depth: 0.34,
+    steps: 1,
+    bevelEnabled: true,
+    bevelSegments: 5,
+    bevelSize: 0.11,
+    bevelThickness: 0.11
+  });
+  outerGeometry.center();
+  const outerShield = new THREE.Mesh(outerGeometry, outerMaterial);
+  shield.add(outerShield);
+
+  const outerEdges = new THREE.LineSegments(new THREE.EdgesGeometry(outerGeometry, 24), edgeMaterial);
+  outerEdges.position.z = 0.01;
+  shield.add(outerEdges);
+
+  const innerGeometry = new THREE.ExtrudeGeometry(createShieldShape(0.88, 1.06), {
+    depth: 0.19,
+    steps: 1,
+    bevelEnabled: true,
+    bevelSegments: 4,
+    bevelSize: 0.07,
+    bevelThickness: 0.07
+  });
+  innerGeometry.center();
+  const innerShield = new THREE.Mesh(innerGeometry, innerMaterial);
+  innerShield.position.z = 0.31;
+  shield.add(innerShield);
+
+  const innerEdges = new THREE.LineSegments(new THREE.EdgesGeometry(innerGeometry, 22), edgeMaterial.clone());
+  innerEdges.position.z = 0.325;
+  shield.add(innerEdges);
+
+  const glowGeometry = new THREE.ShapeGeometry(createShieldShape(1.48, 1.78));
+  glowGeometry.center();
+  const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+  glow.position.z = -0.24;
+  shield.add(glow);
+
+  const emblem = new THREE.Group();
+  emblem.position.z = 0.54;
+  shield.add(emblem);
+
+  const emblemMaterial = new THREE.MeshPhysicalMaterial({
+    color: 0x8a76ff,
+    emissive: 0x6047ff,
+    emissiveIntensity: 2.05,
+    metalness: 0.18,
+    roughness: 0.14,
+    clearcoat: 0.72,
+    clearcoatRoughness: 0.12,
+    envMapIntensity: 1.1
+  });
+  const emblemGeometry = new THREE.CylinderGeometry(0.205, 0.205, 0.12, 6, 1, false);
+  const emblemPoints: Array<[number, number, number]> = [
+    [0, 0.28, 0],
+    [-0.24, -0.02, 0],
+    [0.24, -0.02, 0],
+    [0, -0.32, 0]
   ];
-  for (let index = 0; index < shieldPoints.length; index += 1) {
-    const next = shieldPoints[(index + 1) % shieldPoints.length];
-    boxes.push(
-      createShieldBeam(shieldPoints[index], next, 0.08, 0.12, structure),
-      createShieldBeam(shieldPoints[index], next, -0.02, 0.047, stage >= 4 ? outcomeColor : orange, stage >= 4 ? 0.2 : 0.12)
-    );
+  for (const [x, y, z] of emblemPoints) {
+    const cell = new THREE.Mesh(emblemGeometry, emblemMaterial);
+    cell.rotation.x = Math.PI / 2;
+    cell.position.set(x, y, z);
+    emblem.add(cell);
   }
-  boxes.push(
-    createShieldBeam([2.52, 0.14], [3.82, 0.71], -0.01, 0.055, orangeBright, 0.18),
-    createShieldBeam([3.82, 0.1], [3.82, 1.27], 0, 0.038, blue, 0.12),
-    createShieldBeam([3.48, 0.7], [4.16, 0.7], -0.025, 0.034, yellow, 0.12)
-  );
-  const shieldCore: SceneBox = {
-    position: [3.82, 0.7, -0.08],
-    scale: [0.31, 0.43, 0.22],
-    rotation: [0, Math.PI / 4, 0],
-    color: stage >= 4 ? outcomeColor : orangeBright,
-    emissive: 0.26,
-    geometry: "octahedron"
+
+  const coreLight = new THREE.PointLight(0x7458ff, 18, 4.5, 2);
+  coreLight.position.set(0, 0, 1.05);
+  shield.add(coreLight);
+
+  return {
+    root,
+    shield,
+    network,
+    emblem,
+    outerMaterial,
+    innerMaterial,
+    edgeMaterial,
+    glowMaterial,
+    emblemMaterial,
+    networkMaterial: network.userData.lineMaterial as THREE.LineBasicMaterial,
+    pointMaterial: network.userData.pointMaterial as THREE.MeshStandardMaterial
   };
-  boxes.push(shieldCore);
-  pulseBindings.push({ box: shieldCore, base: 0.26, amount: 0.18 });
+}
 
-  const constellation: Array<[Vec3, Vec3]> = [
-    [[-3.8, -0.28, -1.45], blue],
-    [[-2.55, -0.34, 1.32], yellow],
-    [[-1.08, -0.3, -1.27], structureTop],
-    [[0.42, -0.31, 1.18], blue],
-    [[1.76, -0.3, -1.05], yellow],
-    [[2.72, -0.2, 0.94], structureTop]
+function createShieldShape(width: number, height: number) {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, height);
+  shape.lineTo(width, height * 0.67);
+  shape.lineTo(width * 0.9, -height * 0.26);
+  shape.lineTo(width * 0.48, -height * 0.76);
+  shape.lineTo(0, -height);
+  shape.lineTo(-width * 0.48, -height * 0.76);
+  shape.lineTo(-width * 0.9, -height * 0.26);
+  shape.lineTo(-width, height * 0.67);
+  shape.closePath();
+  return shape;
+}
+
+function createNetworkMesh() {
+  const group = new THREE.Group();
+  const points = [
+    [-3.65, 0.64, -0.1], [-3.2, 0.98, 0.06], [-2.75, 0.55, -0.02], [-2.2, 0.92, 0.08],
+    [-1.65, 0.5, -0.06], [-1.1, 0.82, 0.03], [-0.55, 0.46, -0.08], [0, 0.72, 0.02],
+    [0.55, 0.38, -0.04], [1.05, 0.62, 0.04], [-3.48, 0.02, 0.05], [-2.94, 0.18, -0.08],
+    [-2.42, -0.14, 0.04], [-1.9, 0.12, -0.05], [-1.36, -0.18, 0.05], [-0.82, 0.08, -0.07],
+    [-0.28, -0.22, 0.04], [0.28, 0.04, -0.06], [0.78, -0.16, 0.04], [1.22, 0.04, -0.02],
+    [-3.18, -0.55, -0.04], [-2.62, -0.42, 0.04], [-2.08, -0.65, -0.05], [-1.5, -0.46, 0.04],
+    [-0.92, -0.72, -0.04], [-0.36, -0.5, 0.04], [0.2, -0.7, -0.04], [0.74, -0.48, 0.04],
+    [1.18, -0.58, -0.02]
+  ].map(([x, y, z]) => new THREE.Vector3(x, y, z));
+  const connections: Array<[number, number]> = [
+    [0, 1], [0, 10], [0, 11], [1, 2], [1, 11], [2, 3], [2, 11], [2, 12],
+    [3, 4], [3, 13], [4, 5], [4, 13], [4, 14], [5, 6], [5, 15], [6, 7],
+    [6, 15], [6, 16], [7, 8], [7, 17], [8, 9], [8, 17], [8, 18], [9, 19],
+    [10, 11], [10, 20], [11, 12], [11, 20], [11, 21], [12, 13], [12, 21], [12, 22],
+    [13, 14], [13, 22], [13, 23], [14, 15], [14, 23], [14, 24], [15, 16],
+    [15, 24], [15, 25], [16, 17], [16, 25], [16, 26], [17, 18], [17, 26],
+    [17, 27], [18, 19], [18, 27], [18, 28], [19, 28], [20, 21], [21, 22],
+    [22, 23], [23, 24], [24, 25], [25, 26], [26, 27], [27, 28]
   ];
-  boxes.push(...constellation.map(([position, color], index) => ({
-    position,
-    scale: [0.055 + (index % 2) * 0.025, 0.08 + (index % 3) * 0.018, 0.055 + (index % 2) * 0.025] as Vec3,
-    rotation: [0, index * 0.73, 0] as Vec3,
-    color,
-    emissive: color === structureTop ? 0 : 0.08,
-    geometry: "octahedron" as const
-  })));
-
-  return { boxes, pulseBindings };
-}
-
-function composeMatrix(position: Vec3, rotation: Vec3, scale: Vec3) {
-  return multiplyMatrices(
-    translationMatrix(...position),
-    multiplyMatrices(
-      rotationYMatrix(rotation[1]),
-      multiplyMatrices(rotationZMatrix(rotation[2]), multiplyMatrices(rotationXMatrix(rotation[0]), scalingMatrix(...scale)))
-    )
-  );
-}
-
-function multiplyMatrices(left: Float32Array, right: Float32Array) {
-  const result = new Float32Array(16);
-  return multiplyMatricesInto(left, right, result);
-}
-
-function multiplyMatricesInto(left: Float32Array, right: Float32Array, result: Float32Array) {
-  for (let column = 0; column < 4; column += 1) {
-    for (let row = 0; row < 4; row += 1) {
-      let value = 0;
-      for (let index = 0; index < 4; index += 1) {
-        value += left[index * 4 + row] * right[column * 4 + index];
-      }
-      result[column * 4 + row] = value;
-    }
+  const linePositions: number[] = [];
+  for (const [start, end] of connections) {
+    linePositions.push(...points[start].toArray(), ...points[end].toArray());
   }
-  return result;
-}
+  const lineGeometry = new THREE.BufferGeometry();
+  lineGeometry.setAttribute("position", new THREE.Float32BufferAttribute(linePositions, 3));
+  const lineMaterial = new THREE.LineBasicMaterial({
+    color: 0x6d5cf0,
+    transparent: true,
+    opacity: 0.34,
+    depthWrite: false
+  });
+  group.add(new THREE.LineSegments(lineGeometry, lineMaterial));
 
-function perspectiveMatrix(fieldOfView: number, aspect: number, near: number, far: number) {
-  const f = 1 / Math.tan(fieldOfView / 2);
-  const nf = 1 / (near - far);
-  return new Float32Array([
-    f / aspect, 0, 0, 0,
-    0, f, 0, 0,
-    0, 0, (far + near) * nf, -1,
-    0, 0, 2 * far * near * nf, 0
-  ]);
-}
-
-function lookAtMatrix(eye: Vec3, center: Vec3, up: Vec3) {
-  const z = normalize([eye[0] - center[0], eye[1] - center[1], eye[2] - center[2]]);
-  const x = normalize(cross(up, z));
-  const y = cross(z, x);
-  return new Float32Array([
-    x[0], y[0], z[0], 0,
-    x[1], y[1], z[1], 0,
-    x[2], y[2], z[2], 0,
-    -dot(x, eye), -dot(y, eye), -dot(z, eye), 1
-  ]);
-}
-
-function translationMatrix(x: number, y: number, z: number) {
-  return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1]);
-}
-
-function scalingMatrix(x: number, y: number, z: number) {
-  return new Float32Array([x, 0, 0, 0, 0, y, 0, 0, 0, 0, z, 0, 0, 0, 0, 1]);
-}
-
-function rotationXMatrix(angle: number) {
-  const cosine = Math.cos(angle);
-  const sine = Math.sin(angle);
-  return new Float32Array([1, 0, 0, 0, 0, cosine, sine, 0, 0, -sine, cosine, 0, 0, 0, 0, 1]);
-}
-
-function rotationYMatrix(angle: number) {
-  const cosine = Math.cos(angle);
-  const sine = Math.sin(angle);
-  return new Float32Array([cosine, 0, -sine, 0, 0, 1, 0, 0, sine, 0, cosine, 0, 0, 0, 0, 1]);
-}
-
-function rotationZMatrix(angle: number) {
-  const cosine = Math.cos(angle);
-  const sine = Math.sin(angle);
-  return new Float32Array([cosine, sine, 0, 0, -sine, cosine, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
-}
-
-function normalize(vector: Vec3): Vec3 {
-  const length = Math.hypot(...vector) || 1;
-  return [vector[0] / length, vector[1] / length, vector[2] / length];
-}
-
-function cross(left: Vec3, right: Vec3): Vec3 {
-  return [left[1] * right[2] - left[2] * right[1], left[2] * right[0] - left[0] * right[2], left[0] * right[1] - left[1] * right[0]];
-}
-
-function dot(left: Vec3, right: Vec3) {
-  return left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
+  const pointGeometry = new THREE.SphereGeometry(0.055, 12, 8);
+  const pointMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb8afff,
+    emissive: 0x4d3db4,
+    emissiveIntensity: 0.32,
+    metalness: 0.72,
+    roughness: 0.28,
+    envMapIntensity: 0.85
+  });
+  const nodes = new THREE.InstancedMesh(pointGeometry, pointMaterial, points.length);
+  const transform = new THREE.Object3D();
+  points.forEach((point, index) => {
+    transform.position.copy(point);
+    transform.updateMatrix();
+    nodes.setMatrixAt(index, transform.matrix);
+  });
+  nodes.instanceMatrix.needsUpdate = true;
+  group.add(nodes);
+  group.userData.lineMaterial = lineMaterial;
+  group.userData.pointMaterial = pointMaterial;
+  return group;
 }

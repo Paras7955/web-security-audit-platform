@@ -206,7 +206,7 @@ export function FindingsDashboard({
         </div>
 
         <details className="advancedFindingControls">
-          <summary><span>Filters &amp; tags</span>{secondaryFilterCount > 0 ? <span className="activeFilterCount">{secondaryFilterCount} active</span> : <span className="filterSummaryHint">Scope, status, confidence, and more</span>}</summary>
+          <summary><span>Filters &amp; tags</span>{secondaryFilterCount > 0 ? <span className="activeFilterCount">{secondaryFilterCount} active</span> : <span className="filterSummaryHint">Scope, status &amp; more</span>}</summary>
           <div className="findingFilterSection">
             <h4>Scope and management</h4>
             <div className="filterGrid filterGridPrimary" aria-label="Finding scope and management filters">
