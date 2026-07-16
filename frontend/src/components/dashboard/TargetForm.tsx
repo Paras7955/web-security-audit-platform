@@ -32,7 +32,7 @@ export function TargetForm({
   return (
     <div className="panel">
       <div className="panelHeader">
-        <h3>Target</h3>
+        <div><h3>Validate a target</h3><p>Confirm the exact allowlist match and optional approved repository path before saving scope.</p></div>
         <span className="contextBadge">Allowlisted</span>
       </div>
 

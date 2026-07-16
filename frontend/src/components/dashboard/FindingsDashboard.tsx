@@ -41,8 +41,10 @@ export function FindingsDashboard({
   scanProfiles,
   tags,
   tagLabel,
+  assignmentTagId,
   tagResourceType,
   suppressionReason,
+  isSuppressing,
   onSeverityFilter,
   onLifecycleFilter,
   onSuppressionFilter,
@@ -59,6 +61,7 @@ export function FindingsDashboard({
   onTargetFilter,
   onProfileFilter,
   onTagLabelChange,
+  onAssignmentTagChange,
   onTagResourceTypeChange,
   onCreateTag,
   onAssignTag,
@@ -88,8 +91,10 @@ export function FindingsDashboard({
   scanProfiles: readonly { id: string; label: string }[];
   tags: Tag[];
   tagLabel: string;
+  assignmentTagId: string;
   tagResourceType: string;
   suppressionReason: string;
+  isSuppressing: boolean;
   onSeverityFilter: (severity: string) => void;
   onLifecycleFilter: (status: string) => void;
   onSuppressionFilter: (status: string) => void;
@@ -106,6 +111,7 @@ export function FindingsDashboard({
   onTargetFilter: (targetId: string) => void;
   onProfileFilter: (profileId: string) => void;
   onTagLabelChange: (label: string) => void;
+  onAssignmentTagChange: (tagId: string) => void;
   onTagResourceTypeChange: (resourceType: string) => void;
   onCreateTag: () => void;
   onAssignTag: () => void;
@@ -165,7 +171,7 @@ export function FindingsDashboard({
     <div className="findingsLayout">
       <div className="panel findingsPanel">
         <div className="panelHeader">
-          <h3>Findings</h3>
+          <div><h3>Findings</h3><p>Sort and filter normalized evidence, then select one row to inspect and triage.</p></div>
           <span className="contextBadge">{findings.length}</span>
         </div>
 
@@ -233,8 +239,9 @@ export function FindingsDashboard({
             <div className="tagManagement">
               <label className="tagLabelInput"><span className="srOnly">New tag label</span><input value={tagLabel} onChange={(event) => onTagLabelChange(event.target.value)} placeholder="Tag label" /></label>
               <button type="button" onClick={onCreateTag} disabled={!tagLabel.trim()}>Create tag</button>
+              <label className="tagAssignmentSelect"><span className="srOnly">Tag to assign</span><select value={assignmentTagId} onChange={(event) => onAssignmentTagChange(event.target.value)}><option value="">Choose tag to assign</option>{tags.map((tag) => <option value={tag.id} key={tag.id}>{tag.label}</option>)}</select></label>
               <select value={tagResourceType} onChange={(event) => onTagResourceTypeChange(event.target.value)} aria-label="Tag resource type"><option value="target">Target</option><option value="scan">Scan</option></select>
-              <button type="button" onClick={onAssignTag} disabled={!tagFilter || !selectedFinding}>Assign tag</button>
+              <button type="button" onClick={onAssignTag} disabled={!assignmentTagId || !selectedFinding}>Assign tag</button>
             </div>
           </div>
         </details>
@@ -312,6 +319,7 @@ export function FindingsDashboard({
       <FindingDetail
         finding={selectedFinding}
         suppressionReason={suppressionReason}
+        isSuppressing={isSuppressing}
         onUpdateLifecycle={onUpdateLifecycle}
         onSuppressionReasonChange={onSuppressionReasonChange}
         onSuppressFinding={onSuppressFinding}
@@ -323,12 +331,14 @@ export function FindingsDashboard({
 function FindingDetail({
   finding,
   suppressionReason,
+  isSuppressing,
   onUpdateLifecycle,
   onSuppressionReasonChange,
   onSuppressFinding
 }: {
   finding: Finding | null;
   suppressionReason: string;
+  isSuppressing: boolean;
   onUpdateLifecycle: (findingId: string, lifecycleStatus: string) => void;
   onSuppressionReasonChange: (reason: string) => void;
   onSuppressFinding: (finding: Finding) => void;
@@ -337,7 +347,7 @@ function FindingDetail({
     return (
       <div className="panel findingDetail">
         <div className="panelHeader">
-          <h3>Finding Detail</h3>
+          <div><h3>Finding detail</h3><p>Lifecycle, sanitized evidence, remediation, and suppression controls appear here.</p></div>
           <span className="contextBadge">Empty</span>
         </div>
         <p className="emptyState">Select a completed scan with findings.</p>
@@ -348,7 +358,7 @@ function FindingDetail({
   return (
     <div className="panel findingDetail">
       <div className="panelHeader">
-        <h3>{finding.title}</h3>
+        <div><h3>{finding.title}</h3><p>Review the normalized evidence and record the decision that should follow.</p></div>
         <span className={`severity severity-${finding.severity}`}>{finding.severity}</span>
       </div>
 
@@ -367,8 +377,8 @@ function FindingDetail({
           Suppression reason
           <textarea value={suppressionReason} onChange={(event) => onSuppressionReasonChange(event.target.value)} rows={2} />
         </label>
-        <button type="button" onClick={() => onSuppressFinding(finding)} disabled={finding.suppressed || !suppressionReason.trim()}>
-          Suppress
+        <button type="button" onClick={() => onSuppressFinding(finding)} disabled={isSuppressing || finding.suppressed || !suppressionReason.trim()}>
+          {isSuppressing ? "Saving…" : "Suppress"}
         </button>
       </div>
 

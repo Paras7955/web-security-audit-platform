@@ -11,6 +11,7 @@ import { AuditLogPanel } from "@/components/dashboard/AuditLogPanel";
 import { AuthProfilesPanel } from "@/components/dashboard/AuthProfilesPanel";
 import { FindingsDashboard, severityRank } from "@/components/dashboard/FindingsDashboard";
 import { OpsHealthPanel } from "@/components/dashboard/OpsHealthPanel";
+import { ProductGuide } from "@/components/dashboard/ProductGuide";
 import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
 import { RiskDashboardPanel } from "@/components/dashboard/RiskDashboardPanel";
 import {
@@ -58,12 +59,14 @@ export const workspaceViews = [
   { id: "findings", label: "Findings", description: "Triage evidence", icon: "finding" },
   { id: "intelligence", label: "Intelligence", description: "Risk, reports & AI", icon: "intelligence" },
   { id: "credentials", label: "Credentials", description: "Target auth profiles", icon: "credential" },
-  { id: "operations", label: "Operations", description: "Platform readiness", icon: "operations" }
+  { id: "operations", label: "Operations", description: "Platform readiness", icon: "operations" },
+  { id: "guide", label: "Guide", description: "Project and workflow guide", icon: "guide" }
 ] as const;
 
 export type WorkspaceView = (typeof workspaceViews)[number]["id"];
 
 type AuditPhase = "ready" | "scope" | "profile" | "authorize" | "run" | "review";
+type ActionFeedback = { tone: "info" | "success" | "error"; text: string };
 
 const auditPhases: Array<{ id: AuditPhase; label: string; icon: "operations" | "target" | "scan" | "shield" | "activity" | "finding" }> = [
   { id: "ready", label: "Preflight", icon: "operations" },
@@ -122,6 +125,7 @@ export function TargetSetup({
   const [owaspFilter, setOwaspFilter] = useState("");
   const [cweFilter, setCweFilter] = useState("");
   const [tagFilter, setTagFilter] = useState("");
+  const [assignmentTagId, setAssignmentTagId] = useState("");
   const [dateAfterFilter, setDateAfterFilter] = useState("");
   const [dateBeforeFilter, setDateBeforeFilter] = useState("");
   const [riskMinFilter, setRiskMinFilter] = useState("");
@@ -139,15 +143,28 @@ export function TargetSetup({
   const [aiMessage, setAiMessage] = useState("AI explanations are available after a passive or Active Demo scan completes.");
   const [riskMessage, setRiskMessage] = useState("Risk scores are generated for completed scans using risk-v1.");
   const [opsMessage, setOpsMessage] = useState("Platform health has not been loaded.");
+  const [auditLogMessage, setAuditLogMessage] = useState("Workspace activity has not been loaded.");
+  const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
   const [bootstrapError, setBootstrapError] = useState("");
   const [archiveCandidate, setArchiveCandidate] = useState<Target | null>(null);
   const [revokeCandidate, setRevokeCandidate] = useState<AuthProfile | null>(null);
+  const [confirmActionError, setConfirmActionError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isCheckingPlatform, setIsCheckingPlatform] = useState(false);
+  const [isRefreshingActivity, setIsRefreshingActivity] = useState(false);
+  const [isComparingScans, setIsComparingScans] = useState(false);
+  const [isSuppressingFinding, setIsSuppressingFinding] = useState(false);
   const [isGeneratingReports, setIsGeneratingReports] = useState(false);
   const [isCancellingScan, setIsCancellingScan] = useState(false);
+  const [platformHealthCheckedAt, setPlatformHealthCheckedAt] = useState("");
+  const [auditLogCheckedAt, setAuditLogCheckedAt] = useState("");
   const selectedScanIdRef = useRef("");
   const selectedTargetIdRef = useRef("");
+  const baselineScanIdRef = useRef("");
+  const comparisonScanIdRef = useRef("");
+  const findingsRequestIdRef = useRef(0);
   const auditPhaseTabsRef = useRef<HTMLElement>(null);
   const activeAuditPhaseRef = useRef<HTMLButtonElement>(null);
 
@@ -169,6 +186,7 @@ export function TargetSetup({
   );
   const canStartScan = authorizationReady && platformReady && !isBusy;
   const reviewReady = Boolean(selectedScan && ["completed", "completed_with_warnings"].includes(selectedScan.status));
+  const hasCompletedScan = scanHistory.some((scan) => ["completed", "completed_with_warnings"].includes(scan.status));
   const displayFindings = findings;
   const displayAiExplanation = useMemo(() => uniqueAiExplanation(aiExplanation, findings), [aiExplanation, findings]);
   const filteredFindings = useMemo(() => {
@@ -195,7 +213,13 @@ export function TargetSetup({
   const selectedFinding = filteredFindings.find((finding) => finding.id === selectedFindingId) ?? filteredFindings[0] ?? null;
 
   useEffect(() => {
-    void loadInitialData();
+    void (async () => {
+      try {
+        await loadInitialData();
+      } finally {
+        setIsBootstrapping(false);
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -205,6 +229,40 @@ export function TargetSetup({
   useEffect(() => {
     selectedTargetIdRef.current = selectedTargetId;
   }, [selectedTargetId]);
+
+  useEffect(() => {
+    baselineScanIdRef.current = baselineScanId;
+  }, [baselineScanId]);
+
+  useEffect(() => {
+    comparisonScanIdRef.current = comparisonScanId;
+  }, [comparisonScanId]);
+
+  useEffect(() => {
+    setActionFeedback(null);
+  }, [activeView]);
+
+  useEffect(() => {
+    if (activeView !== "findings" && activeView !== "intelligence") {
+      return;
+    }
+    const selectedScanMatchesView = Boolean(
+      selectedScan &&
+      ["completed", "completed_with_warnings"].includes(selectedScan.status) &&
+      (activeView !== "intelligence" || selectedScan.target_id === selectedTargetId)
+    );
+    if (selectedScanMatchesView) {
+      return;
+    }
+    const latestCompletedScan = scanHistory.find((scan) =>
+      ["completed", "completed_with_warnings"].includes(scan.status) &&
+      (activeView !== "intelligence" || scan.target_id === selectedTargetId)
+    );
+    const nextScanId = latestCompletedScan?.id ?? "";
+    if (nextScanId !== selectedScanIdRef.current) {
+      setSelectedScanId(nextScanId);
+    }
+  }, [activeView, scanHistory, selectedScan?.id, selectedScan?.status, selectedScan?.target_id, selectedTargetId]);
 
   useEffect(() => {
     const centerActivePhase = () => {
@@ -257,7 +315,6 @@ export function TargetSetup({
       setSelectedFindingId("");
       return;
     }
-    void loadFindings(selectedScanId, { onlyIfSelected: true });
     void loadToolRuns(selectedScanId, { onlyIfSelected: true });
     if (selectedScan && canUseReports(selectedScan)) {
       void loadReports(selectedScanId, { onlyIfSelected: true });
@@ -273,7 +330,21 @@ export function TargetSetup({
     setAiMessage("AI explanations remain available for passive and Active Demo scans.");
   }, [
     selectedScanId,
-    selectedScan?.scan_profile_id,
+    selectedScan?.scan_profile_id
+  ]);
+
+  useEffect(() => {
+    if (!selectedScanId) {
+      setFindings([]);
+      setSelectedFindingId("");
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void loadFindings(selectedScanId, { onlyIfSelected: true });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [
+    selectedScanId,
     severityFilter,
     lifecycleFilter,
     suppressionFilter,
@@ -344,7 +415,7 @@ export function TargetSetup({
           target_url: targetUrl,
           permission_confirmed: permissionConfirmed,
           repo_path: repoPath.trim() || null,
-          auth_profile_id: selectedAuthProfileId || null
+          auth_profile_id: null
         })
       });
       const body = await readJson<Target>(response, "Target creation failed.");
@@ -364,6 +435,7 @@ export function TargetSetup({
 
     const target = archiveCandidate;
     setIsBusy(true);
+    setConfirmActionError("");
     setMessage(`Removing ${target.name} from saved targets...`);
     try {
       const response = await apiFetch(`${apiBaseUrl}/targets/${target.id}`, { method: "DELETE" });
@@ -374,10 +446,13 @@ export function TargetSetup({
       if (selectedTargetIdRef.current === target.id) {
         setSelectedTargetId("");
       }
-      await Promise.all([loadTargets(""), loadDashboardOverview()]);
+      const preferredTargetId = selectedTargetIdRef.current === target.id ? "" : selectedTargetIdRef.current;
+      await Promise.all([loadTargets(preferredTargetId), loadDashboardOverview()]);
       setMessage(`${target.name} was removed from saved targets. Its scan, finding, report, and audit history remains available.`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Target removal failed.");
+      const detail = error instanceof Error ? error.message : "Target removal failed.";
+      setMessage(detail);
+      setConfirmActionError(detail);
     } finally {
       setIsBusy(false);
     }
@@ -441,12 +516,12 @@ export function TargetSetup({
       return;
     }
     if (selectedTarget.auth_profile_id && selectedProfile.mode !== "passive") {
-      setMessage("Auth profiles are currently supported only for passive-web scans.");
+      setActionFeedback({ tone: "error", text: "Credential profiles are supported only for guarded Passive Web scans." });
       return;
     }
 
     setIsBusy(true);
-    setMessage(`Creating ${selectedProfile.label} scan...`);
+    setActionFeedback({ tone: "info", text: `Creating ${selectedProfile.label} scan…` });
 
     try {
       const response = await apiFetch(`${apiBaseUrl}/scans`, {
@@ -467,14 +542,14 @@ export function TargetSetup({
       setSelectedFindingId("");
       setReportMessage("Reports are available after this passive, Active Demo, or Repo scan completes.");
       setAiMessage("AI explanations are available after this passive or Active Demo scan completes.");
-      setMessage("Scan queued. Worker status will update below.");
+      setActionFeedback({ tone: "success", text: "Audit queued. Worker status will update in the Run phase." });
       setAuditPhase("run");
       await loadScanHistory(scan.id);
       await loadDashboardOverview();
       await loadTargetDashboard(selectedTarget.id);
       await loadLatestComparison(selectedTarget.id);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Scan creation failed.");
+      setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Scan creation failed." });
     } finally {
       setIsBusy(false);
     }
@@ -486,7 +561,7 @@ export function TargetSetup({
     }
 
     setIsBusy(true);
-    setMessage("Attaching repo path to selected target...");
+    setActionFeedback({ tone: "info", text: "Attaching the displayed repository path to the selected target…" });
 
     try {
       const response = await apiFetch(`${apiBaseUrl}/targets/${selectedTarget.id}/repo-path`, {
@@ -497,9 +572,9 @@ export function TargetSetup({
       const updatedTarget = await readJson<Target>(response, "Repo path update failed.");
       setTargets((current) => current.map((target) => (target.id === updatedTarget.id ? updatedTarget : target)));
       setSelectedTargetId(updatedTarget.id);
-      setMessage("Repo path attached. Repo scans are available for this target.");
+      setActionFeedback({ tone: "success", text: "Repository path attached. Repository audits are now available for this target." });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Repo path update failed.");
+      setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Repository path update failed." });
     } finally {
       setIsBusy(false);
     }
@@ -563,6 +638,7 @@ export function TargetSetup({
     }
     const profile = revokeCandidate;
     setIsBusy(true);
+    setConfirmActionError("");
     setAuthProfileMessage("Revoking auth profile and detaching it from targets...");
     try {
       const response = await apiFetch(`${apiBaseUrl}/auth-profiles/${profile.id}/revoke`, { method: "POST" });
@@ -572,7 +648,9 @@ export function TargetSetup({
       await Promise.all([loadAuthProfiles(revokedProfile.id), loadTargets(selectedTargetId)]);
       setAuthProfileMessage("Auth profile revoked. Its encrypted secret was erased and attached targets were detached.");
     } catch (error) {
-      setAuthProfileMessage(error instanceof Error ? error.message : "Auth profile revocation failed.");
+      const detail = error instanceof Error ? error.message : "Auth profile revocation failed.";
+      setAuthProfileMessage(detail);
+      setConfirmActionError(detail);
     } finally {
       setIsBusy(false);
     }
@@ -628,7 +706,7 @@ export function TargetSetup({
         await loadLatestComparison(scan.target_id);
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Scan status refresh failed.");
+      setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Scan status refresh failed." });
     }
   }
 
@@ -637,16 +715,16 @@ export function TargetSetup({
       return;
     }
     setIsCancellingScan(true);
-    setMessage("Requesting scan cancellation...");
+    setActionFeedback({ tone: "info", text: "Requesting audit cancellation…" });
     try {
       const response = await apiFetch(`${apiBaseUrl}/scans/${selectedScan.id}/cancel`, { method: "POST" });
       const scan = await readJson<Scan>(response, "Scan cancellation failed.");
       setScanHistory((current) => mergeScan(current, scan));
-      setMessage(scan.status === "cancelled" ? "Scan cancelled." : "Cancellation requested. Worker will stop at a safe checkpoint.");
+      setActionFeedback({ tone: "success", text: scan.status === "cancelled" ? "Audit cancelled." : "Cancellation requested. The worker will stop at a safe checkpoint." });
       await loadDashboardOverview();
       await loadPlatformHealth();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Scan cancellation failed.");
+      setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Scan cancellation failed." });
     } finally {
       setIsCancellingScan(false);
     }
@@ -669,6 +747,8 @@ export function TargetSetup({
   }
 
   async function loadPlatformHealth() {
+    setIsCheckingPlatform(true);
+    setOpsMessage("Running local readiness checks…");
     try {
       const response = await apiFetch(`${apiBaseUrl}/ops/health`);
       const body = await readJson<PlatformHealth>(response, "Platform health load failed.");
@@ -678,15 +758,24 @@ export function TargetSetup({
     } catch (error) {
       setPlatformHealth(null);
       setOpsMessage(error instanceof Error ? error.message : "Platform health load failed.");
+    } finally {
+      setPlatformHealthCheckedAt(new Date().toISOString());
+      setIsCheckingPlatform(false);
     }
   }
 
   async function loadAuditLogs() {
+    setIsRefreshingActivity(true);
+    setAuditLogMessage("Refreshing safe workspace activity…");
     try {
       setAuditLogs(await readAllPages<AuditLogEntry>(`${apiBaseUrl}/audit-logs`, "Workspace activity could not be loaded."));
+      setAuditLogMessage("Workspace activity is up to date.");
     } catch (error) {
       setAuditLogs([]);
-      setOpsMessage(error instanceof Error ? error.message : "Workspace activity could not be loaded.");
+      setAuditLogMessage(error instanceof Error ? error.message : "Workspace activity could not be loaded.");
+    } finally {
+      setAuditLogCheckedAt(new Date().toISOString());
+      setIsRefreshingActivity(false);
     }
   }
 
@@ -742,20 +831,34 @@ export function TargetSetup({
     }
 
     const requestTargetId = selectedTargetIdRef.current;
+    const requestBaselineScanId = baselineScanId;
+    const requestComparisonScanId = comparisonScanId;
+    setIsComparingScans(true);
+    setRiskMessage("Comparing normalized findings…");
     try {
       const response = await apiFetch(`${apiBaseUrl}/scans/${comparisonScanId}/comparison?baseline_scan_id=${encodeURIComponent(baselineScanId)}`);
       const body = await readJson<ScanComparison>(response, "Scan comparison failed.");
-      if (selectedTargetIdRef.current !== requestTargetId) {
+      if (
+        selectedTargetIdRef.current !== requestTargetId ||
+        baselineScanIdRef.current !== requestBaselineScanId ||
+        comparisonScanIdRef.current !== requestComparisonScanId
+      ) {
         return;
       }
       setScanComparison(body);
       setRiskMessage("Manual scan comparison is ready.");
     } catch (error) {
-      if (selectedTargetIdRef.current !== requestTargetId) {
+      if (
+        selectedTargetIdRef.current !== requestTargetId ||
+        baselineScanIdRef.current !== requestBaselineScanId ||
+        comparisonScanIdRef.current !== requestComparisonScanId
+      ) {
         return;
       }
       setScanComparison(null);
       setRiskMessage(error instanceof Error ? error.message : "Scan comparison failed.");
+    } finally {
+      setIsComparingScans(false);
     }
   }
 
@@ -780,16 +883,21 @@ export function TargetSetup({
   async function loadTags(preferredTagId?: string) {
     const items = await readAllPages<Tag>(`${apiBaseUrl}/tags`, "Tag list load failed.");
     setTags(items);
-    setTagFilter(preferredTagId ?? tagFilter);
+    const requestedTagId = preferredTagId ?? assignmentTagId;
+    setAssignmentTagId(items.some((tag) => tag.id === requestedTagId) ? requestedTagId : items[0]?.id ?? "");
     setBootstrapError("");
   }
 
   async function loadFindings(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
+    const requestId = ++findingsRequestIdRef.current;
     try {
       const params = findingFilterParams();
       const query = params.toString();
       const endpoint = findingScope === "workspace" ? `${apiBaseUrl}/findings` : `${apiBaseUrl}/scans/${scanId}/findings`;
       const body = await readAllPages<Finding>(`${endpoint}${query ? `?${query}` : ""}`, "Findings could not be loaded.");
+      if (requestId !== findingsRequestIdRef.current) {
+        return;
+      }
       if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
         return;
       }
@@ -800,11 +908,15 @@ export function TargetSetup({
         )[0];
         return body.some((finding) => finding.id === current) ? current : firstBySeverity?.id ?? "";
       });
-    } catch {
+    } catch (error) {
+      if (requestId !== findingsRequestIdRef.current) {
+        return;
+      }
       if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
         return;
       }
       setFindings([]);
+      setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Findings could not be loaded." });
     }
   }
 
@@ -871,9 +983,9 @@ export function TargetSetup({
       if (selectedScanIdRef.current) {
         await loadFindings(selectedScanIdRef.current, { onlyIfSelected: true });
       }
-      setMessage("Finding lifecycle updated.");
+      setActionFeedback({ tone: "success", text: "Finding lifecycle updated." });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Finding lifecycle update failed.");
+      setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Finding lifecycle update failed." });
     }
   }
 
@@ -881,6 +993,8 @@ export function TargetSetup({
     if (!finding.target_id || !suppressionReason.trim()) {
       return;
     }
+    setIsSuppressingFinding(true);
+    setActionFeedback({ tone: "info", text: "Saving the suppression decision…" });
     try {
       const response = await apiFetch(`${apiBaseUrl}/suppressions`, {
         method: "POST",
@@ -898,9 +1012,11 @@ export function TargetSetup({
       if (selectedScanIdRef.current) {
         await loadFindings(selectedScanIdRef.current, { onlyIfSelected: true });
       }
-      setMessage("Finding suppression saved.");
+      setActionFeedback({ tone: "success", text: "Finding suppression saved." });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Suppression rule creation failed.");
+      setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Suppression rule creation failed." });
+    } finally {
+      setIsSuppressingFinding(false);
     }
   }
 
@@ -917,15 +1033,15 @@ export function TargetSetup({
       const tag = await readJson<Tag>(response, "Tag creation failed.");
       setTagLabel("");
       await loadTags(tag.id);
-      setMessage("Tag created.");
+      setActionFeedback({ tone: "success", text: "Tag created and selected for assignment." });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Tag creation failed.");
+      setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Tag creation failed." });
     }
   }
 
   async function assignTag() {
     const resourceId = tagResourceType === "scan" ? selectedFinding?.scan_id : selectedFinding?.target_id;
-    if (!tagFilter || !resourceId) {
+    if (!assignmentTagId || !resourceId) {
       return;
     }
     try {
@@ -933,7 +1049,7 @@ export function TargetSetup({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tag_id: tagFilter,
+          tag_id: assignmentTagId,
           resource_type: tagResourceType,
           resource_id: resourceId
         })
@@ -942,9 +1058,9 @@ export function TargetSetup({
       if (selectedScanIdRef.current) {
         await loadFindings(selectedScanIdRef.current, { onlyIfSelected: true });
       }
-      setMessage("Tag assigned.");
+      setActionFeedback({ tone: "success", text: `Tag assigned to the selected ${tagResourceType}.` });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Tag assignment failed.");
+      setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Tag assignment failed." });
     }
   }
 
@@ -1032,7 +1148,14 @@ export function TargetSetup({
       const content = await response.text();
       const mediaType = report.report_type === "html" ? "text/html" : "text/markdown";
       const url = window.URL.createObjectURL(new Blob([content], { type: mediaType }));
-      window.open(url, "_blank", "noopener,noreferrer");
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
     } catch (error) {
       setReportMessage(error instanceof Error ? error.message : "Report view failed.");
     }
@@ -1050,8 +1173,10 @@ export function TargetSetup({
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = `scan-${report.scan_id}-report.${extension}`;
+      document.body.append(anchor);
       anchor.click();
-      window.URL.revokeObjectURL(url);
+      anchor.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 1_000);
     } catch (error) {
       setReportMessage(error instanceof Error ? error.message : "Report download failed.");
     }
@@ -1081,8 +1206,10 @@ export function TargetSetup({
         scanProfiles={SCAN_PROFILES}
         tags={tags}
         tagLabel={tagLabel}
+        assignmentTagId={assignmentTagId}
         tagResourceType={tagResourceType}
         suppressionReason={suppressionReason}
+        isSuppressing={isSuppressingFinding}
         onSeverityFilter={setSeverityFilter}
         onLifecycleFilter={setLifecycleFilter}
         onSuppressionFilter={setSuppressionFilter}
@@ -1099,6 +1226,7 @@ export function TargetSetup({
         onTargetFilter={setTargetFilter}
         onProfileFilter={setProfileFilter}
         onTagLabelChange={setTagLabel}
+        onAssignmentTagChange={setAssignmentTagId}
         onTagResourceTypeChange={setTagResourceType}
         onCreateTag={createTag}
         onAssignTag={assignTag}
@@ -1119,9 +1247,17 @@ export function TargetSetup({
     review: reviewReady
   };
 
+  if (isBootstrapping) {
+    return (
+      <section className="dashboard" aria-label="ScopeHarbor workspace">
+        <WorkspaceLoadingState />
+      </section>
+    );
+  }
+
   return (
     <section className="dashboard" aria-label="ScopeHarbor workspace">
-      {activeView !== "scanning" ? (
+      {activeView !== "scanning" && activeView !== "guide" ? (
         <div className="workspaceUtilityBar">
           <span><AppIcon name={workspaceViews.find((view) => view.id === activeView)?.icon ?? "overview"} size={16} />{workspaceViews.find((view) => view.id === activeView)?.description}</span>
           <button className="refreshButton" type="button" onClick={refreshWorkspace} disabled={isRefreshing}>
@@ -1137,6 +1273,13 @@ export function TargetSetup({
         </div>
       ) : null}
 
+      {actionFeedback ? (
+        <div className={`workspaceActionStatus workspaceActionStatus-${actionFeedback.tone}`} role={actionFeedback.tone === "error" ? "alert" : "status"}>
+          <AppIcon name={actionFeedback.tone === "error" ? "finding" : actionFeedback.tone === "success" ? "check" : "activity"} size={16} />
+          <span>{actionFeedback.text}</span>
+        </div>
+      ) : null}
+
       <div id="workspace-panel" className="workspaceTabPanel">
         {activeView === "overview" ? (
           <WorkspaceOverview
@@ -1144,7 +1287,16 @@ export function TargetSetup({
             health={platformHealth}
             selectedScan={selectedScan}
             selectedTarget={selectedTarget}
-            onNavigate={(view) => onActiveViewChange(view as WorkspaceView)}
+            onNavigate={(view) => {
+              if (view === "scanning") {
+                setAuditPhase("profile");
+              }
+              onActiveViewChange(view as WorkspaceView);
+            }}
+            onOpenScanHistory={() => {
+              setAuditPhase("run");
+              onActiveViewChange("scanning");
+            }}
           />
         ) : null}
 
@@ -1189,7 +1341,14 @@ export function TargetSetup({
                     <div><span>02</span><strong>Resolve only flagged items</strong><p>Healthy rows need no action. A degraded row explains which local dependency needs attention.</p></div>
                     <div><span>03</span><strong>Continue to authorized scope</strong><p>When all required services are healthy, choose the exact target this audit may inspect.</p></div>
                   </div>
-                  <OpsHealthPanel health={platformHealth} message={opsMessage} onRefresh={loadPlatformHealth} context="audit" />
+                  <OpsHealthPanel
+                    health={platformHealth}
+                    message={opsMessage}
+                    isRefreshing={isCheckingPlatform}
+                    checkedAt={platformHealthCheckedAt}
+                    onRefresh={loadPlatformHealth}
+                    context="audit"
+                  />
                   <div className="boundaryStrip" aria-label="Persistent platform boundaries">
                     <span><AppIcon name="target" size={16} /><strong>Exact targets</strong> only</span>
                     <span><AppIcon name="shield" size={16} /><strong>Workspace context</strong> rechecked</span>
@@ -1211,7 +1370,10 @@ export function TargetSetup({
                         setSelectedTargetId(targetId);
                         setAcknowledgements([]);
                       }}
-                      onRequestArchive={setArchiveCandidate}
+                      onRequestArchive={(target) => {
+                        setConfirmActionError("");
+                        setArchiveCandidate(target);
+                      }}
                     />
                     <TargetForm
                       targetUrl={targetUrl}
@@ -1348,7 +1510,14 @@ export function TargetSetup({
                 <button type="button" className="secondaryButton" onClick={resetFindingFilters}>Reset filters</button>
               </div>
             </div>
-            {renderFindingsDashboard()}
+            {hasCompletedScan ? renderFindingsDashboard() : (
+              <EvidenceFirstRunState
+                onStartAudit={() => {
+                  setAuditPhase("profile");
+                  onActiveViewChange("scanning");
+                }}
+              />
+            )}
           </div>
         ) : null}
 
@@ -1365,6 +1534,7 @@ export function TargetSetup({
               comparisonScanId={comparisonScanId}
               comparison={scanComparison}
               message={riskMessage}
+              isComparing={isComparingScans}
               onBaselineScanChange={setBaselineScanId}
               onComparisonScanChange={setComparisonScanId}
               onCompare={loadManualComparison}
@@ -1416,6 +1586,7 @@ export function TargetSetup({
               onRevokeProfile={() => {
                 const profile = authProfiles.find((item) => item.id === selectedAuthProfileId);
                 if (profile) {
+                  setConfirmActionError("");
                   setRevokeCandidate(profile);
                 }
               }}
@@ -1426,14 +1597,43 @@ export function TargetSetup({
         {activeView === "operations" ? (
           <div className="operationsWorkspace productPage">
             <div className="viewIntro"><div><h2>Operations & readiness</h2><p>Confirm the worker, database, artifacts, queue, and scanner dependencies, then inspect the workspace activity trail.</p></div></div>
-            <OpsHealthPanel health={platformHealth} message={opsMessage} onRefresh={loadPlatformHealth} context="operations" />
-            <div className="operationsBoundaryList">
-              <article><AppIcon name="target" /><strong>Exact target scope</strong><p>Only explicitly configured Docker-service targets can be launched.</p></article>
-              <article><AppIcon name="shield" /><strong>Safe persistence</strong><p>URLs and evidence are sanitized before database, report, or AI boundaries.</p></article>
-              <article><AppIcon name="operations" /><strong>Local ownership</strong><p>Workspace records and generated artifacts stay isolated inside this deployment.</p></article>
-            </div>
-            <AuditLogPanel entries={auditLogs} onRefresh={loadAuditLogs} />
+            <OpsHealthPanel
+              health={platformHealth}
+              message={opsMessage}
+              isRefreshing={isCheckingPlatform}
+              checkedAt={platformHealthCheckedAt}
+              onRefresh={loadPlatformHealth}
+              context="operations"
+            />
+            <section className="operationsBoundarySection" aria-labelledby="operations-boundaries-title">
+              <div className="sectionHeading">
+                <div><h3 id="operations-boundaries-title">Persistent safety boundaries</h3><p>These constraints remain enforced even when every local component reports healthy.</p></div>
+              </div>
+              <div className="operationsBoundaryList">
+                <article><AppIcon name="target" /><strong>Exact target scope</strong><p>Only explicitly configured Docker-service targets can be launched.</p></article>
+                <article><AppIcon name="shield" /><strong>Safe persistence</strong><p>URLs and evidence are sanitized before database, report, or AI boundaries.</p></article>
+                <article><AppIcon name="operations" /><strong>Local ownership</strong><p>Workspace records and generated artifacts stay isolated inside this deployment.</p></article>
+              </div>
+            </section>
+            <AuditLogPanel
+              entries={auditLogs}
+              message={auditLogMessage}
+              isRefreshing={isRefreshingActivity}
+              checkedAt={auditLogCheckedAt}
+              onRefresh={loadAuditLogs}
+            />
           </div>
+        ) : null}
+
+        {activeView === "guide" ? (
+          <ProductGuide
+            onNavigate={(view, phase) => {
+              if (phase) {
+                setAuditPhase(phase);
+              }
+              onActiveViewChange(view);
+            }}
+          />
         ) : null}
       </div>
 
@@ -1448,7 +1648,11 @@ export function TargetSetup({
           busyLabel="Removing…"
           icon="trash"
           isBusy={isBusy}
-          onCancel={() => setArchiveCandidate(null)}
+          error={confirmActionError}
+          onCancel={() => {
+            setConfirmActionError("");
+            setArchiveCandidate(null);
+          }}
           onConfirm={archiveTarget}
         />
       ) : null}
@@ -1464,11 +1668,42 @@ export function TargetSetup({
           busyLabel="Revoking…"
           icon="credential"
           isBusy={isBusy}
-          onCancel={() => setRevokeCandidate(null)}
+          error={confirmActionError}
+          onCancel={() => {
+            setConfirmActionError("");
+            setRevokeCandidate(null);
+          }}
           onConfirm={revokeSelectedAuthProfile}
         />
       ) : null}
     </section>
+  );
+}
+
+function WorkspaceLoadingState() {
+  return (
+    <div className="workspaceLoadingState" role="status" aria-live="polite">
+      <span className="workspaceLoadingIcon"><AppIcon name="operations" size={20} /></span>
+      <div>
+        <strong>Loading the local workspace</strong>
+        <p>Checking authorized targets, recent audits, normalized evidence, and platform readiness.</p>
+      </div>
+      <span className="workspaceLoadingPulse" aria-hidden="true" />
+    </div>
+  );
+}
+
+function EvidenceFirstRunState({ onStartAudit }: { onStartAudit: () => void }) {
+  return (
+    <div className="firstRunState">
+      <span className="firstRunIcon"><AppIcon name="finding" size={22} /></span>
+      <div>
+        <p className="panelKicker">First completed audit</p>
+        <h3>Findings will appear after evidence is normalized</h3>
+        <p>Choose an audit profile, confirm authorization, and let the worker complete normalization. This page will then unlock sorting, triage, evidence detail, tags, and suppression controls.</p>
+      </div>
+      <button type="button" onClick={onStartAudit}>Configure an audit <AppIcon name="arrow" size={15} /></button>
+    </div>
   );
 }
 

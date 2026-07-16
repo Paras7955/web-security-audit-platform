@@ -18,6 +18,7 @@ export function RiskDashboardPanel({
   comparisonScanId,
   comparison,
   message,
+  isComparing,
   onBaselineScanChange,
   onComparisonScanChange,
   onCompare
@@ -31,6 +32,7 @@ export function RiskDashboardPanel({
   comparisonScanId: string;
   comparison: ScanComparison | null;
   message: string;
+  isComparing: boolean;
   onBaselineScanChange: (scanId: string) => void;
   onComparisonScanChange: (scanId: string) => void;
   onCompare: () => void;
@@ -95,33 +97,37 @@ export function RiskDashboardPanel({
           <div><h3>Compare completed scans</h3><p>See what appeared, changed, resolved, or remained between two audits of the same target.</p></div>
           <span className="contextBadge">Same target only</span>
         </div>
-        <div className="comparisonControls">
-          <label className="selectLabel">
-            Baseline scan
-            <select value={baselineScanId} onChange={(event) => onBaselineScanChange(event.target.value)}>
-              <option value="">Select baseline</option>
-              {comparableScans.map((scan) => (
-                <option key={scan.id} value={scan.id}>
-                  {scan.scan_profile_id} · {formatDate(scan.created_at)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="selectLabel">
-            Comparison scan
-            <select value={comparisonScanId} onChange={(event) => onComparisonScanChange(event.target.value)}>
-              <option value="">Select comparison</option>
-              {comparableScans.map((scan) => (
-                <option key={scan.id} value={scan.id}>
-                  {scan.scan_profile_id} · {formatDate(scan.created_at)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="button" onClick={onCompare} disabled={!baselineScanId || !comparisonScanId || baselineScanId === comparisonScanId}>
-            Compare scans
-          </button>
-        </div>
+        {comparableScans.length >= 2 ? (
+          <div className="comparisonControls">
+            <label className="selectLabel">
+              Baseline scan
+              <select value={baselineScanId} onChange={(event) => onBaselineScanChange(event.target.value)}>
+                <option value="">Select baseline</option>
+                {comparableScans.map((scan) => (
+                  <option key={scan.id} value={scan.id}>
+                    {scan.scan_profile_id} · {formatDate(scan.created_at)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="selectLabel">
+              Comparison scan
+              <select value={comparisonScanId} onChange={(event) => onComparisonScanChange(event.target.value)}>
+                <option value="">Select comparison</option>
+                {comparableScans.map((scan) => (
+                  <option key={scan.id} value={scan.id}>
+                    {scan.scan_profile_id} · {formatDate(scan.created_at)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" onClick={onCompare} disabled={isComparing || !baselineScanId || !comparisonScanId || baselineScanId === comparisonScanId}>
+              {isComparing ? "Comparing…" : "Compare scans"}
+            </button>
+          </div>
+        ) : (
+          <p className="emptyState">Complete at least two audits for this target to unlock scan comparison.</p>
+        )}
         <p className="formMessage">{message}</p>
         {comparison ? <ComparisonSummary comparison={comparison} /> : null}
       </div>
@@ -159,7 +165,7 @@ function SeverityBars({ counts }: { counts: Record<string, number> }) {
           <div key={severity}>
             <span>{severity}</span>
             <div className="severityTrack">
-              <i style={{ width: `${Math.max(4, (count / max) * 100)}%` }} />
+              <i style={{ width: count === 0 ? "0%" : `${(count / max) * 100}%` }} />
             </div>
             <strong>{count}</strong>
           </div>

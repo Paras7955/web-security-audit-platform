@@ -1,3 +1,4 @@
+import { AppIcon } from "@/components/AppIcon";
 import type { PlatformHealth } from "@/lib/securityAuditApi";
 
 type OpsHealthContext = "audit" | "operations";
@@ -12,12 +13,16 @@ const componentPurpose: Record<string, string> = {
 export function OpsHealthPanel({
   health,
   message,
+  isRefreshing,
+  checkedAt,
   onRefresh,
   context = "operations"
 }: {
   health: PlatformHealth | null;
   message: string;
-  onRefresh: () => void;
+  isRefreshing: boolean;
+  checkedAt: string;
+  onRefresh: () => Promise<void>;
   context?: OpsHealthContext;
 }) {
   const components: Array<[string, { status: string; detail: string | null }]> = health
@@ -38,10 +43,14 @@ export function OpsHealthPanel({
           <h3>{isAuditContext ? "Audit preflight results" : "Platform health"}</h3>
           <p>{isAuditContext ? "These checks confirm the local platform can start and preserve an audit safely." : "Live state for the local services that support this workspace."}</p>
         </div>
-        <button type="button" className="secondaryButton" onClick={onRefresh}>
-          {health ? "Run checks again" : "Run readiness checks"}
+        <button type="button" className="secondaryButton" onClick={() => void onRefresh()} disabled={isRefreshing}>
+          <AppIcon name="refresh" size={15} />
+          {isRefreshing ? "Checking…" : health ? "Run checks again" : "Run readiness checks"}
         </button>
       </div>
+      <p className="panelActionStatus" role="status" aria-live="polite">
+        {message}{checkedAt ? ` · Last checked ${formatCheckedAt(checkedAt)}` : ""}
+      </p>
       {health ? (
         <>
           <dl className="opsSummary">
@@ -69,10 +78,15 @@ export function OpsHealthPanel({
         </>
       ) : (
         <div className="emptyState richEmptyState">
+          <AppIcon name="operations" size={22} />
           <strong>No readiness result yet</strong>
-          <span>{message}</span>
+          <span>Run the local checks to confirm the services required for a safe audit.</span>
         </div>
       )}
     </div>
   );
+}
+
+function formatCheckedAt(value: string) {
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(value));
 }

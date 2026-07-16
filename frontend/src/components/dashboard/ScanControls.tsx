@@ -131,7 +131,8 @@ export function ScanProfileSelector({
             <div className="repoPathNotice">
               <p>Repository scans stage bounded regular files only. ScopeHarbor never clones, builds, installs, runs hooks, or executes repository code.</p>
               <strong>{selectedTarget?.has_repo_path ? "Repository path attached" : "Repository path required"}</strong>
-              {repoPathMissing ? <button type="button" onClick={onAttachRepoPath} disabled={!canAttachRepoPath}>Attach saved repo path</button> : null}
+              <small className="repoPathValue">{repoPath.trim() || "No repository path entered in Scope."}</small>
+              {repoPathMissing ? <button type="button" onClick={onAttachRepoPath} disabled={!canAttachRepoPath}>Attach this repository path</button> : null}
             </div>
           ) : null}
           {authProfileUnsupported ? <p className="formMessage errorText">Detach the target credential or choose Passive Web. Credentials never enter active, browser, or repository scans.</p> : null}
@@ -303,7 +304,7 @@ export function ScanHistory({
   return (
     <div className="panel historyPanel">
       <div className="panelHeader">
-        <div><p className="panelKicker">Audit trail</p><h3>Scan history</h3></div>
+        <div><p className="panelKicker">Audit trail</p><h3>Scan history</h3><p>Filter previous audits, then select one to monitor progress or reopen its normalized results.</p></div>
         <span className="contextBadge">{filteredScans.length}/{scans.length}</span>
       </div>
 
@@ -376,13 +377,14 @@ export function ScanProgress({
       <div className="scanHeader">
         <div>
           <h3>Selected scan</h3>
+          <p>Live status, bounded worker progress, and sanitized scanner receipts for this audit.</p>
           <small>{scan.id}</small>
         </div>
         <span className={`statusPill status-${scan.status}`}>{scan.status}</span>
       </div>
       <div className="scanActions">
         <button type="button" className="secondaryButton" onClick={onCancel} disabled={!canCancel || isCancelling}>
-          {scan.cancellation_requested_at ? "Cancellation Requested" : "Cancel Scan"}
+          {isCancelling ? "Requesting cancellation…" : scan.cancellation_requested_at ? "Cancellation requested" : "Cancel scan"}
         </button>
       </div>
       <div className="progressTrack" role="progressbar" aria-label="Scan progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={displayedProgress}>
@@ -411,7 +413,7 @@ export function ScanProgress({
       {scan.failure ? <p className="errorText">{scan.failure.message} ({scan.failure.code})</p> : null}
       {toolRuns.length > 0 ? (
         <div className="toolRunPanel">
-          <h4>Scanner receipts</h4>
+          <div className="toolRunHeading"><h4>Scanner receipts</h4><p>Safe execution metadata only; raw tool output is never shown here.</p></div>
           <ToolRunList toolRuns={visibleToolRuns} />
           {remainingToolRuns.length > 0 ? (
             <details className="scannerReceiptOverflow">

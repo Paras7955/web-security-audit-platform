@@ -28,13 +28,13 @@ export function ReportsPanel({
   return (
     <div className="reportPanel">
       <div className="panelHeader">
-        <h3>Reports</h3>
+        <div><h3>Reports</h3><p>Generate sanitized Markdown and HTML artifacts from normalized findings for the selected scan.</p></div>
         <span className="contextBadge">Normalized findings only</span>
       </div>
 
       <div className="reportActions">
         <button type="button" onClick={onGenerate} disabled={!canGenerate}>
-          Generate Reports
+          {isGenerating ? "Generating…" : "Generate reports"}
         </button>
         <p>{scan && !canUseReports(scan) ? "Reports remain available for passive, Active Demo, and Repo scans." : message}</p>
       </div>

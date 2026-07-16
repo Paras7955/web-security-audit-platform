@@ -14,6 +14,7 @@ export function ConfirmActionDialog({
   busyLabel,
   icon,
   isBusy,
+  error,
   onCancel,
   onConfirm
 }: {
@@ -26,6 +27,7 @@ export function ConfirmActionDialog({
   busyLabel: string;
   icon: "trash" | "credential";
   isBusy: boolean;
+  error?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -81,6 +83,7 @@ export function ConfirmActionDialog({
           <h3 id="confirm-action-dialog-title">{title}</h3>
           <p id="confirm-action-dialog-description">{description}</p>
           <div className="historyPreserved"><AppIcon name="shield" size={16} /><span>{note}</span></div>
+          {error ? <p className="dialogError" role="alert">{error}</p> : null}
         </div>
         <div className="dialogActions">
           <button ref={cancelRef} type="button" className="secondaryButton" onClick={onCancel} disabled={isBusy}>{cancelLabel}</button>

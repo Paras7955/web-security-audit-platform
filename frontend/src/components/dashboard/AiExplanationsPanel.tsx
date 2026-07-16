@@ -9,7 +9,7 @@ export function AiExplanationsPanel({ explanation, message }: { explanation: AiE
   return (
     <div className="aiPanel">
       <div className="panelHeader">
-        <h3>AI Explanations</h3>
+        <div><h3>AI explanations</h3><p>Translate prioritized normalized findings into impact, recommended action, and stated limitations.</p></div>
         <span className="contextBadge">{explanation?.provider ?? "Template default"}</span>
       </div>
 

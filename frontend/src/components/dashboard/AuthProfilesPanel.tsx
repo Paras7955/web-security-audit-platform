@@ -46,7 +46,9 @@ export function AuthProfilesPanel({
 }) {
   const selectedProfile = authProfiles.find((profile) => profile.id === selectedAuthProfileId) ?? null;
   const canCreate = Boolean(label.trim() && secret.trim() && (profileType === "bearer_token" || headerName.trim()) && !isBusy);
-  const canAttach = Boolean(selectedTarget && !isBusy && (!selectedProfile || selectedProfile.status === "active"));
+  const requestedProfileIsUsable = !selectedAuthProfileId || selectedProfile?.status === "active";
+  const attachmentWouldChange = Boolean(selectedTarget && (selectedTarget.auth_profile_id ?? "") !== selectedAuthProfileId);
+  const canAttach = Boolean(selectedTarget && !isBusy && requestedProfileIsUsable && attachmentWouldChange);
   const canRotate = Boolean(selectedProfile?.status === "active" && rotationSecret.trim() && !isBusy);
   const canRevoke = Boolean(selectedProfile?.status === "active" && !isBusy);
 
@@ -112,7 +114,7 @@ export function AuthProfilesPanel({
             <div><h4 id="manage-credential-title">Attach and manage</h4><p>Choose one saved profile for the selected target, or detach credentials before running an incompatible profile.</p></div>
           </div>
 
-          <div className="authProfileAttach">
+          {selectedTarget ? <div className="authProfileAttach">
             <label className="selectLabel">
               <span>Saved profile</span>
               <select value={selectedAuthProfileId} onChange={(event) => onSelectAuthProfile(event.target.value)}>
@@ -165,7 +167,13 @@ export function AuthProfilesPanel({
                 Revoke profile
               </button>
             </div>
-          </div>
+          </div> : (
+            <div className="emptyState richEmptyState credentialManageEmpty">
+              <AppIcon name="target" size={22} />
+              <strong>Select an authorized target first</strong>
+              <span>Choose a saved target in Workspace or Audits → Scope, then return here to attach, rotate, or revoke a credential.</span>
+            </div>
+          )}
         </section>
       </div>
 

@@ -7,7 +7,19 @@ import type { AuditLogEntry } from "@/lib/securityAuditApi";
 
 const activityPageSize = 8;
 
-export function AuditLogPanel({ entries, onRefresh }: { entries: AuditLogEntry[]; onRefresh: () => void }) {
+export function AuditLogPanel({
+  entries,
+  message,
+  isRefreshing,
+  checkedAt,
+  onRefresh
+}: {
+  entries: AuditLogEntry[];
+  message: string;
+  isRefreshing: boolean;
+  checkedAt: string;
+  onRefresh: () => Promise<void>;
+}) {
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(activityPageSize);
   const filteredEntries = useMemo(() => {
@@ -36,8 +48,13 @@ export function AuditLogPanel({ entries, onRefresh }: { entries: AuditLogEntry[]
           <span className="srOnly">Search workspace activity</span>
           <input value={query} onChange={(event) => handleQueryChange(event.target.value)} placeholder="Search event or resource" />
         </label>
-        <button type="button" className="secondaryButton" onClick={onRefresh}><AppIcon name="refresh" size={15} />Refresh history</button>
+        <button type="button" className="secondaryButton" onClick={() => void onRefresh()} disabled={isRefreshing}>
+          <AppIcon name="refresh" size={15} />{isRefreshing ? "Refreshing…" : "Refresh history"}
+        </button>
       </div>
+      <p className="panelActionStatus" role="status" aria-live="polite">
+        {message}{checkedAt ? ` · Last checked ${formatCheckedTime(checkedAt)}` : ""}
+      </p>
       {visibleEntries.length ? (
         <div className="auditLogTableWrap">
           <table className="auditLogTable">
@@ -54,7 +71,7 @@ export function AuditLogPanel({ entries, onRefresh }: { entries: AuditLogEntry[]
             </tbody>
           </table>
         </div>
-      ) : <div className="emptyState richEmptyState"><AppIcon name="activity" size={22} /><strong>{entries.length ? "No activity matches this search" : "No workspace activity yet"}</strong><span>Target, scan, report, and management events will appear here.</span></div>}
+      ) : <div className="emptyState richEmptyState"><AppIcon name="activity" size={22} /><strong>{entries.length ? "No activity matches this search" : "No workspace activity yet"}</strong><span>{entries.length ? "Try a different event or resource." : "Target, scan, report, and management events will appear here."}</span></div>}
       {filteredEntries.length > activityPageSize ? (
         <nav className="resultsPagination auditLogDisclosure" aria-label="Workspace activity visibility">
           {visibleEntries.length > activityPageSize ? (
@@ -122,4 +139,8 @@ function formatEvent(value: string) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+}
+
+function formatCheckedTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(value));
 }
