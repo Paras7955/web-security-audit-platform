@@ -24,8 +24,6 @@
   --accent-soft: oklch(64% 0.205 37 / 0.14);
   --blue: oklch(72% 0.14 251);
   --blue-soft: oklch(72% 0.14 251 / 0.12);
-  --violet: oklch(69% 0.17 286);
-  --violet-soft: oklch(69% 0.17 286 / 0.1);
   --amber: oklch(80% 0.15 78);
   --amber-soft: oklch(80% 0.15 78 / 0.13);
   --danger: oklch(70% 0.18 25);
@@ -33,7 +31,7 @@
   --success: oklch(76% 0.12 157);
   --shadow: 0 4px 8px oklch(2% 0.02 250 / 0.34);
   --shadow-soft: 0 2px 6px oklch(2% 0.02 250 / 0.26);
-  --hero-glow: oklch(62% 0.16 286 / 0.12);
+  --hero-glow: oklch(64% 0.18 42 / 0.14);
   --brand-mark-glow: oklch(61% 0.17 45 / 0.24);
   --modal-scrim: oklch(4% 0.01 65 / 0.78);
   --dialog-shadow: 0 6px 8px oklch(0% 0 0 / 0.38);
@@ -88,8 +86,6 @@
   --accent-soft: oklch(61% 0.2 37 / 0.11);
   --blue: oklch(50% 0.075 240);
   --blue-soft: oklch(50% 0.075 240 / 0.1);
-  --violet: oklch(52% 0.15 286);
-  --violet-soft: oklch(52% 0.15 286 / 0.08);
   --amber: oklch(55% 0.15 72);
   --amber-soft: oklch(65% 0.15 72 / 0.1);
   --danger: oklch(53% 0.19 25);
@@ -97,7 +93,7 @@
   --success: oklch(49% 0.12 157);
   --shadow: 0 4px 8px oklch(30% 0.02 60 / 0.1);
   --shadow-soft: 0 2px 6px oklch(30% 0.02 60 / 0.08);
-  --hero-glow: oklch(57% 0.13 286 / 0.08);
+  --hero-glow: oklch(59% 0.15 42 / 0.1);
   --input: oklch(100% 0 0 / 0.92);
   --body-gradient-start: oklch(93.5% 0.012 250);
   --body-glow-secondary: oklch(61% 0.09 252 / 0.08);
@@ -318,6 +314,11 @@ h4 {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 13%, transparent), 0 0 18px var(--success);
 }
 
+.liveDotChecking {
+  background: var(--amber);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--amber) 13%, transparent), 0 0 18px var(--amber);
+}
+
 .iconButton {
   display: grid;
   width: 39px;
@@ -503,7 +504,7 @@ h4 {
 }
 
 .scopeFieldFallback {
-  background: radial-gradient(circle at 70% 48%, var(--violet-soft), transparent 34%);
+  background: radial-gradient(circle at 70% 48%, var(--accent-soft), transparent 34%);
 }
 
 .scopeShieldFallback {
@@ -511,8 +512,8 @@ h4 {
   inset: 0;
   display: grid;
   place-items: center;
-  color: var(--violet);
-  filter: drop-shadow(0 18px 32px color-mix(in oklch, var(--violet) 28%, transparent));
+  color: var(--accent-strong);
+  filter: drop-shadow(0 18px 32px color-mix(in oklch, var(--accent) 28%, transparent));
 }
 
 .workspaceConsole {
@@ -614,7 +615,7 @@ button.dangerButton,
 }
 
 .workspaceUtilityBar > span svg {
-  color: var(--accent);
+  color: var(--muted);
 }
 
 @keyframes panel-enter {
@@ -768,7 +769,7 @@ button.dangerButton,
 
 .metricCard-cyan { color: var(--accent); }
 .metricCard-blue { color: var(--blue); }
-.metricCard-violet { color: var(--violet); }
+.metricCard-accent { color: var(--accent); }
 .metricCard-amber { color: var(--amber); }
 .metricCard-danger { color: var(--danger); }
 
@@ -2591,6 +2592,11 @@ textarea:focus {
   color: var(--success);
 }
 
+.auditPhaseTabInterrupted small,
+.auditPhaseTabInterrupted .auditPhaseMarker {
+  color: var(--danger);
+}
+
 .auditPhasePanel {
   min-width: 0;
 }
@@ -3264,6 +3270,514 @@ textarea:focus {
   max-width: 70ch;
 }
 
+/* Probe-aligned product pages: line-led structure, restrained color, bounded evidence. */
+.productPage,
+.productPage .riskDashboard {
+  gap: var(--space-sm);
+}
+
+.productPage > :is(.viewIntro, .viewToolbar) {
+  padding: var(--space-2xs) 2px var(--space-sm);
+}
+
+.productPage :is(.panel, .opsPanel, .reportPanel, .aiPanel, .auditLogPanel, .metricCard, .riskScoreCard) {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.productPage .panelHeader {
+  margin-bottom: var(--space-sm);
+}
+
+.productPage .panelHeader > div > p,
+.opsPanel .panelHeader > div > p {
+  max-width: 64ch;
+  margin: var(--space-2xs) 0 0;
+  color: var(--muted);
+  font-size: var(--type-meta);
+  line-height: 1.5;
+}
+
+.productPage .contextBadge {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+}
+
+.productPage :is(.metricGrid, .riskMetricGrid) {
+  gap: 1px;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--border);
+}
+
+.productPage :is(.metricCard, .riskScoreCard) {
+  min-height: 112px;
+  border: 0;
+  background: var(--bg-elevated);
+  color: var(--text);
+  padding: var(--space-md);
+}
+
+.productPage .metricCard {
+  gap: var(--space-sm);
+}
+
+.productPage .metricCard::after {
+  display: none;
+}
+
+.productPage .metricIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.productPage .metricCard > div > strong,
+.productPage .riskScoreCard > strong {
+  font-size: 1.75rem;
+}
+
+.productPage .metricCard-danger > div > strong {
+  color: var(--danger);
+}
+
+.productPage :is(.overviewSplit, .riskDashboardGrid, .intelligenceGrid, .findingsLayout) {
+  gap: 1px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--border);
+}
+
+.productPage :is(.overviewSplit, .riskDashboardGrid, .intelligenceGrid, .findingsLayout) > :is(.panel, .reportPanel, .aiPanel) {
+  border: 0;
+  background: var(--bg-elevated);
+}
+
+.productPage .findingsLayout {
+  gap: 0;
+  overflow: visible;
+  background: var(--bg-elevated);
+}
+
+.productPage .findingsLayout > .panel + .panel {
+  border-left: 1px solid var(--border);
+}
+
+.productPage > :is(.recentActivityPanel, .credentialPanel, .opsPanel, .auditLogPanel),
+.productPage .comparisonPanel {
+  height: auto;
+  border-right: 0;
+  border-left: 0;
+  background: var(--bg-elevated);
+}
+
+.productPage .intelligenceGrid {
+  align-items: start;
+}
+
+.productPage .intelligenceGrid > :is(.reportPanel, .aiPanel) {
+  height: auto;
+}
+
+.productPage :is(.focusPanel, .activityPanel) {
+  min-height: 0;
+}
+
+.productPage .focusTarget {
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.productPage .quickActions {
+  margin-top: var(--space-md);
+}
+
+.productPage .focusCapabilities {
+  gap: 0;
+}
+
+.productPage .focusCapabilities span {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: var(--space-2xs) var(--space-sm) var(--space-2xs) 0;
+}
+
+.productPage .focusCapabilities span + span {
+  border-left: 1px solid var(--border);
+  padding-left: var(--space-sm);
+}
+
+.productPage .focusCapabilities svg,
+.productPage .operationsBoundaryList svg {
+  color: var(--muted);
+}
+
+.productPage .filterButton {
+  border-radius: 4px !important;
+}
+
+.severityBars > div:nth-child(1) .severityTrack i,
+.severityBars > div:nth-child(2) .severityTrack i {
+  background: var(--danger);
+}
+
+.severityBars > div:nth-child(3) .severityTrack i {
+  background: var(--amber);
+}
+
+.severityBars > div:nth-child(4) .severityTrack i {
+  background: var(--blue);
+}
+
+.severityBars > div:nth-child(5) .severityTrack i {
+  background: var(--muted);
+}
+
+.readinessGuide {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--border);
+}
+
+.readinessGuide > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-2xs) var(--space-sm);
+  background: var(--bg-elevated);
+  padding: var(--space-md);
+}
+
+.readinessGuide span {
+  grid-row: 1 / 3;
+  color: var(--faint);
+  font-size: var(--type-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.readinessGuide strong {
+  color: var(--text-soft);
+  font-size: var(--type-meta);
+  font-weight: var(--weight-semibold);
+}
+
+.readinessGuide p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--type-meta);
+  line-height: 1.5;
+}
+
+.profilePhaseContent {
+  gap: 0;
+}
+
+.profilePhaseContent .recentFindingsPreview {
+  margin-top: 0;
+  padding-top: var(--space-xs);
+}
+
+.opsPanel .panelHeader {
+  align-items: center;
+}
+
+.opsSummary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 0 var(--space-sm);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--border);
+}
+
+.opsSummary > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2xs) var(--space-md);
+  background: var(--bg-elevated);
+  padding: var(--space-sm) 0;
+}
+
+.opsSummary dt {
+  align-self: end;
+}
+
+.opsSummary dd {
+  max-width: none;
+  color: var(--text);
+  font-size: var(--type-meta);
+  text-align: right;
+}
+
+.opsSummary small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: var(--type-caption);
+}
+
+.opsSummary > div:first-child {
+  padding-right: var(--space-md);
+}
+
+.opsSummary > div:last-child {
+  padding-left: var(--space-md);
+}
+
+.opsPanel .opsList {
+  gap: 0;
+}
+
+.opsPanel .opsList small {
+  white-space: normal;
+}
+
+.operationsBoundaryList {
+  gap: 1px;
+  background: var(--border);
+}
+
+.productPage .operationsBoundaryList article {
+  background: var(--bg-elevated);
+}
+
+.productPage .operationsBoundaryList article + article {
+  border-left: 0;
+}
+
+.auditLogDisclosure {
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+}
+
+.auditLogDisclosure span {
+  margin-inline: auto 0;
+}
+
+.changeGrid {
+  gap: 1px;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--border);
+}
+
+.changeList {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  padding: var(--space-md);
+}
+
+.changeList h4 {
+  margin: 0 0 var(--space-xs);
+}
+
+.changeList h4 span {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.changeList ul {
+  flex: 1;
+}
+
+button.changeListDisclosure {
+  width: 100%;
+  min-height: 36px;
+  justify-content: flex-start;
+  border: 0 !important;
+  border-top: 1px solid var(--border) !important;
+  border-radius: 0;
+  background: transparent !important;
+  color: var(--accent-strong) !important;
+  margin-top: var(--space-xs);
+  padding: var(--space-xs) 0 !important;
+}
+
+button.changeListDisclosure:hover:not(:disabled) {
+  transform: none;
+  background: transparent !important;
+  color: var(--text) !important;
+}
+
+.compactTable {
+  overflow: auto;
+}
+
+.reportHistory {
+  margin-top: var(--space-sm);
+}
+
+.reportHistory > .reportList,
+.reportOverflowDetails .reportList {
+  margin-top: 0;
+}
+
+.reportOverflowDetails,
+.scannerReceiptOverflow {
+  border-top: 1px solid var(--border);
+}
+
+.reportOverflowDetails > summary,
+.scannerReceiptOverflow > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: var(--type-meta);
+  font-weight: var(--weight-semibold);
+  list-style: none;
+}
+
+.reportOverflowDetails > summary::-webkit-details-marker,
+.scannerReceiptOverflow > summary::-webkit-details-marker {
+  display: none;
+}
+
+.reportOverflowDetails > summary::after,
+.scannerReceiptOverflow > summary::after {
+  color: var(--accent-strong);
+  content: "+";
+  font-size: var(--type-subheading);
+  font-weight: var(--weight-medium);
+}
+
+.reportOverflowDetails[open] > summary::after,
+.scannerReceiptOverflow[open] > summary::after {
+  content: "−";
+}
+
+.scannerReceiptOverflow .opsList {
+  margin-top: 0;
+}
+
+.credentialWorkspace {
+  justify-items: stretch;
+}
+
+.credentialWorkspace > .credentialPanel {
+  width: min(1080px, 100%);
+  max-width: none;
+  justify-self: center;
+  padding: 0;
+}
+
+.credentialPanel > .panelHeader {
+  margin: 0;
+  padding: var(--space-md);
+}
+
+.credentialSafetyNote {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.credentialSafetyNote svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.credentialSafetyNote p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--type-meta);
+  line-height: 1.55;
+}
+
+.credentialSafetyNote strong {
+  color: var(--text-soft);
+}
+
+.authProfileGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+}
+
+.authProfileCreate,
+.authProfileManage {
+  min-width: 0;
+  background: var(--bg-elevated);
+  padding: var(--space-lg);
+}
+
+.authSectionHeader {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.authSectionHeader > span {
+  color: var(--faint);
+  font-size: var(--type-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.authSectionHeader h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--type-subheading);
+  font-weight: var(--weight-semibold);
+}
+
+.authSectionHeader p {
+  max-width: 48ch;
+  margin: var(--space-2xs) 0 0;
+  color: var(--muted);
+  font-size: var(--type-meta);
+  line-height: 1.5;
+}
+
+.authProfileAttach {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.rotationSecretField {
+  border-top: 1px solid var(--border);
+  margin-top: var(--space-xs);
+  padding-top: var(--space-sm);
+}
+
+.rotationSecretField small {
+  color: var(--muted);
+  font-size: var(--type-caption);
+  font-weight: var(--weight-regular);
+  line-height: 1.45;
+}
+
+.credentialPanel > .formMessage {
+  margin: 0;
+  border-top: 1px solid var(--border);
+  padding: var(--space-sm) var(--space-md);
+}
+
 .modalBackdrop {
   position: fixed;
   inset: 0;
@@ -3741,6 +4255,57 @@ textarea:focus {
   .severity,
   .panelKicker {
     font-size: 0.72rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .productPage .operationsBoundaryList article + article {
+    border-top: 0;
+    border-left: 0;
+  }
+}
+
+@media (max-width: 1100px) {
+  .productPage .findingsLayout > .panel + .panel {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 840px) {
+  .authProfileGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .readinessGuide,
+  .opsSummary {
+    grid-template-columns: 1fr;
+  }
+
+  .opsSummary > div:first-child,
+  .opsSummary > div:last-child {
+    padding-inline: 0;
+  }
+
+  .authProfileCreate,
+  .authProfileManage {
+    padding: var(--space-md);
+  }
+
+  .auditLogDisclosure {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .auditLogDisclosure span {
+    margin: 0;
+    text-align: center;
+  }
+
+  .auditLogDisclosure button {
+    width: 100%;
   }
 }
 

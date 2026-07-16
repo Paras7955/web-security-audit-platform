@@ -75,9 +75,9 @@ export function WebGLScopeField({
     const ambient = new THREE.HemisphereLight(0xdde8ff, 0x080711, 1.35);
     const key = new THREE.DirectionalLight(0xf4f6ff, 3.5);
     key.position.set(-3.2, 4.8, 5.5);
-    const rim = new THREE.PointLight(0x7257ff, 22, 8, 1.8);
+    const rim = new THREE.PointLight(0xff6a2b, 22, 8, 1.8);
     rim.position.set(2.6, 0.3, 2.7);
-    const edge = new THREE.PointLight(0x8d75ff, 12, 6, 2);
+    const edge = new THREE.PointLight(0xffa24c, 12, 6, 2);
     edge.position.set(0.4, -1.6, 1.2);
     scene.add(ambient, key, rim, edge);
 
@@ -106,9 +106,9 @@ export function WebGLScopeField({
     const updateTheme = () => {
       const lightTheme = document.documentElement.dataset.theme === "light";
       composition.outerMaterial.color.set(lightTheme ? 0x596173 : 0x252936);
-      composition.innerMaterial.color.set(lightTheme ? 0x27243f : 0x12131f);
-      composition.networkMaterial.color.set(lightTheme ? 0x5b48c6 : 0x6d5cf0);
-      composition.pointMaterial.color.set(lightTheme ? 0x6659b8 : 0xb8afff);
+      composition.innerMaterial.color.set(lightTheme ? 0x3a251f : 0x171313);
+      composition.networkMaterial.color.set(lightTheme ? 0xb24d23 : 0xdf642d);
+      composition.pointMaterial.color.set(lightTheme ? 0xb65b32 : 0xffb16f);
       renderer.toneMappingExposure = lightTheme ? 0.96 : 1.06;
     };
 
@@ -251,7 +251,7 @@ function createShieldComposition() {
   });
   const innerMaterial = new THREE.MeshPhysicalMaterial({
     color: 0x12131f,
-    emissive: 0x21194d,
+    emissive: 0x57200f,
     emissiveIntensity: 0.7,
     metalness: 0.78,
     roughness: 0.18,
@@ -265,7 +265,7 @@ function createShieldComposition() {
     opacity: 0.38
   });
   const glowMaterial = new THREE.MeshBasicMaterial({
-    color: 0x6f55ff,
+    color: 0xff6a2b,
     transparent: true,
     opacity: 0.08,
     depthWrite: false,
@@ -316,8 +316,8 @@ function createShieldComposition() {
   shield.add(emblem);
 
   const emblemMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0x8a76ff,
-    emissive: 0x6047ff,
+    color: 0xffa455,
+    emissive: 0xff5b21,
     emissiveIntensity: 2.05,
     metalness: 0.18,
     roughness: 0.14,
@@ -339,7 +339,7 @@ function createShieldComposition() {
     emblem.add(cell);
   }
 
-  const coreLight = new THREE.PointLight(0x7458ff, 18, 4.5, 2);
+  const coreLight = new THREE.PointLight(0xff6a2b, 18, 4.5, 2);
   coreLight.position.set(0, 0, 1.05);
   shield.add(coreLight);
 
@@ -401,7 +401,7 @@ function createNetworkMesh() {
   const lineGeometry = new THREE.BufferGeometry();
   lineGeometry.setAttribute("position", new THREE.Float32BufferAttribute(linePositions, 3));
   const lineMaterial = new THREE.LineBasicMaterial({
-    color: 0x6d5cf0,
+    color: 0xdf642d,
     transparent: true,
     opacity: 0.34,
     depthWrite: false
@@ -410,8 +410,8 @@ function createNetworkMesh() {
 
   const pointGeometry = new THREE.SphereGeometry(0.055, 12, 8);
   const pointMaterial = new THREE.MeshStandardMaterial({
-    color: 0xb8afff,
-    emissive: 0x4d3db4,
+    color: 0xffb16f,
+    emissive: 0x8c3518,
     emissiveIntensity: 0.32,
     metalness: 0.72,
     roughness: 0.28,

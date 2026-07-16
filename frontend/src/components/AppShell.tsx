@@ -27,7 +27,10 @@ export function AppShell() {
 
   function navigateTo(view: WorkspaceView) {
     setActiveView(view);
-    window.requestAnimationFrame(() => document.getElementById("workspace-console")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    window.requestAnimationFrame(() => document.getElementById("workspace-console")?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "start"
+    }));
   }
 
   return (
@@ -55,7 +58,7 @@ export function AppShell() {
 
         <div className="topbarActions">
           <div className="localOnlyBadge">
-            <span className="liveDot" />
+            <span className={heroState.status === "ready" || heroState.status === "completed" ? "liveDot" : "liveDot liveDotChecking"} />
             {heroState.status === "ready" || heroState.status === "completed" ? "Platform ready" : "Platform check"}
           </div>
           <button className="iconButton themeToggle" type="button" onClick={toggleTheme} aria-label="Toggle light and dark mode">

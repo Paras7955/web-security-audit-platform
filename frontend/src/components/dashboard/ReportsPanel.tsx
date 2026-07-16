@@ -2,6 +2,8 @@ import type { ReportArtifact, Scan } from "@/lib/securityAuditApi";
 
 import { canUseReports, reportableStatuses } from "./ScanControls";
 
+const visibleReportCount = 4;
+
 export function ReportsPanel({
   scan,
   reports,
@@ -20,6 +22,8 @@ export function ReportsPanel({
   onDownloadReport: (report: ReportArtifact) => void;
 }) {
   const canGenerate = Boolean(scan && canUseReports(scan) && reportableStatuses.has(scan.status) && !isGenerating);
+  const visibleReports = reports.slice(0, visibleReportCount);
+  const remainingReports = reports.slice(visibleReportCount);
 
   return (
     <div className="reportPanel">
@@ -36,23 +40,45 @@ export function ReportsPanel({
       </div>
 
       {reports.length > 0 ? (
-        <ul className="reportList">
-          {reports.map((report) => (
-            <li key={report.id}>
-              <strong>{report.report_type}</strong>
-              <span>{new Date(report.created_at).toLocaleString()}</span>
-              <button type="button" onClick={() => onViewReport(report)}>
-                View
-              </button>
-              <button type="button" onClick={() => onDownloadReport(report)}>
-                Download
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="reportHistory">
+          <ReportList reports={visibleReports} onViewReport={onViewReport} onDownloadReport={onDownloadReport} />
+          {remainingReports.length > 0 ? (
+            <details className="reportOverflowDetails">
+              <summary>Show {remainingReports.length} older report{remainingReports.length === 1 ? "" : "s"}</summary>
+              <ReportList reports={remainingReports} onViewReport={onViewReport} onDownloadReport={onDownloadReport} />
+            </details>
+          ) : null}
+        </div>
       ) : (
         <p className="emptyState">No report artifacts yet.</p>
       )}
     </div>
+  );
+}
+
+function ReportList({
+  reports,
+  onViewReport,
+  onDownloadReport
+}: {
+  reports: ReportArtifact[];
+  onViewReport: (report: ReportArtifact) => void;
+  onDownloadReport: (report: ReportArtifact) => void;
+}) {
+  return (
+    <ul className="reportList">
+      {reports.map((report) => (
+        <li key={report.id}>
+          <strong>{report.report_type}</strong>
+          <span>{new Date(report.created_at).toLocaleString()}</span>
+          <button type="button" onClick={() => onViewReport(report)}>
+            View
+          </button>
+          <button type="button" onClick={() => onDownloadReport(report)}>
+            Download
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }

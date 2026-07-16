@@ -12,6 +12,7 @@ export const terminalStatuses = new Set(["completed", "completed_with_warnings",
 export const reportableStatuses = new Set(["completed", "completed_with_warnings"]);
 type ScanProfileMetadata = (typeof SCAN_PROFILES)[number];
 const profilesById: Map<string, ScanProfileMetadata> = new Map(SCAN_PROFILES.map((profile) => [profile.id, profile]));
+const receiptPreviewCount = 4;
 
 export function scanProfileForScan(scan: Scan) {
   return profilesById.get(scan.scan_profile_id) ?? null;
@@ -91,19 +92,23 @@ export function ScanProfileSelector({
         <div className="modeGrid" role="group" aria-label="Audit profile choices">
           {SCAN_PROFILES.map((profile) => {
             const isAvailable = selectedTarget?.available_scan_profile_ids.includes(profile.id) ?? false;
+            const isUnavailable = Boolean(selectedTarget && !isAvailable);
+            const isSelected = scanProfileId === profile.id;
             const capabilities = profileCapabilities(profile);
             return (
               <button
                 key={profile.id}
                 type="button"
-                aria-pressed={scanProfileId === profile.id}
-                className={`modeCard${scanProfileId === profile.id ? " modeCardActive" : ""}${!isAvailable && selectedTarget ? " modeCardUnavailable" : ""}`}
+                aria-pressed={isSelected}
+                aria-disabled={isUnavailable}
+                disabled={isUnavailable}
+                className={`modeCard${isSelected && !isUnavailable ? " modeCardActive" : ""}${isUnavailable ? " modeCardUnavailable" : ""}`}
                 onClick={() => onSelectScanProfile(profile.id)}
               >
                 <span className="modeCardIcon"><AppIcon name={profileIcon(profile.id)} size={28} /></span>
                 <span className="modeCardTop">
                   <strong>{profile.label}</strong>
-                  <em>{scanProfileId === profile.id ? "Selected" : isAvailable ? "Available" : "Unavailable"}</em>
+                  <em>{!selectedTarget ? "Needs target" : isUnavailable ? "Unavailable" : isSelected ? "Selected" : "Available"}</em>
                 </span>
                 <span>{profileDecisionCopy(profile.id)}</span>
                 <span className="profileMeta">{capabilities.join(" · ")}</span>
@@ -242,7 +247,7 @@ export function ScanLaunchPanel({
       <button type="button" onClick={onStartScan} disabled={!canStartScan || isBusy}>
         {isBusy ? "Queuing audit…" : `Launch ${profile.label}`} <AppIcon name="arrow" size={15} />
       </button>
-      {!platformReady ? <p className="formMessage errorText">Confirm platform readiness before launch. Refresh the Ready phase after the worker and database are healthy.</p> : null}
+      {!platformReady ? <p className="formMessage errorText">Confirm platform readiness before launch. Run Preflight again after the worker and database are healthy.</p> : null}
     </section>
   );
 }
@@ -350,17 +355,21 @@ function formatScanDate(value: string) {
 
 export function ScanProgress({
   scan,
+  targetName,
   toolRuns,
   isCancelling,
   onCancel
 }: {
   scan: Scan;
+  targetName: string;
   toolRuns: ScannerToolRun[];
   isCancelling: boolean;
   onCancel: () => void;
 }) {
   const displayedProgress = useSmoothedProgress(scan);
   const canCancel = !terminalStatuses.has(scan.status) && !scan.cancellation_requested_at;
+  const visibleToolRuns = toolRuns.slice(0, receiptPreviewCount);
+  const remainingToolRuns = toolRuns.slice(receiptPreviewCount);
 
   return (
     <div className="scanPanel">
@@ -381,6 +390,10 @@ export function ScanProgress({
       </div>
       <dl className="scanMeta">
         <div>
+          <dt>Target</dt>
+          <dd>{targetName}</dd>
+        </div>
+        <div>
           <dt>Profile</dt>
           <dd>{formatScanProfileLabel(scan.scan_profile_id)}</dd>
         </div>
@@ -399,22 +412,34 @@ export function ScanProgress({
       {toolRuns.length > 0 ? (
         <div className="toolRunPanel">
           <h4>Scanner receipts</h4>
-          <ul className="opsList">
-            {toolRuns.map((toolRun) => (
-              <li key={toolRun.id}>
-                <span className={`statusDot status-${toolRun.status}`} />
-                <strong>{toolRun.tool_name}</strong>
-                <em>{toolRun.status}</em>
-                <small>
-                  {toolRun.tool_version ?? "version unavailable"} · {toolRun.finding_count} finding(s)
-                  {toolRun.warning_code ? ` · ${toolRun.warning_code}` : ""}
-                </small>
-              </li>
-            ))}
-          </ul>
+          <ToolRunList toolRuns={visibleToolRuns} />
+          {remainingToolRuns.length > 0 ? (
+            <details className="scannerReceiptOverflow">
+              <summary>Show {remainingToolRuns.length} more scanner receipt{remainingToolRuns.length === 1 ? "" : "s"}</summary>
+              <ToolRunList toolRuns={remainingToolRuns} />
+            </details>
+          ) : null}
         </div>
       ) : null}
     </div>
+  );
+}
+
+function ToolRunList({ toolRuns }: { toolRuns: ScannerToolRun[] }) {
+  return (
+    <ul className="opsList">
+      {toolRuns.map((toolRun) => (
+        <li key={toolRun.id}>
+          <span className={`statusDot status-${toolRun.status}`} />
+          <strong>{toolRun.tool_name}</strong>
+          <em>{toolRun.status}</em>
+          <small>
+            {toolRun.tool_version ?? "version unavailable"} · {toolRun.finding_count} finding(s)
+            {toolRun.warning_code ? ` · ${toolRun.warning_code}` : ""}
+          </small>
+        </li>
+      ))}
+    </ul>
   );
 }
 

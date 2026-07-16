@@ -5,15 +5,24 @@ import { useMemo, useState } from "react";
 import { AppIcon } from "@/components/AppIcon";
 import type { AuditLogEntry } from "@/lib/securityAuditApi";
 
+const activityPageSize = 8;
+
 export function AuditLogPanel({ entries, onRefresh }: { entries: AuditLogEntry[]; onRefresh: () => void }) {
   const [query, setQuery] = useState("");
+  const [visibleCount, setVisibleCount] = useState(activityPageSize);
   const filteredEntries = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     if (!normalizedQuery) return entries;
     return entries.filter((entry) => [entry.event_type, entry.resource_type, entry.resource_id, metadataSummary(entry.metadata_json)]
       .some((value) => value?.toLowerCase().includes(normalizedQuery)));
   }, [entries, query]);
-  const visibleEntries = filteredEntries.slice(0, 80);
+  const visibleEntries = filteredEntries.slice(0, visibleCount);
+  const remainingCount = Math.max(0, filteredEntries.length - visibleEntries.length);
+
+  function handleQueryChange(value: string) {
+    setQuery(value);
+    setVisibleCount(activityPageSize);
+  }
 
   return (
     <section className="auditLogPanel">
@@ -25,7 +34,7 @@ export function AuditLogPanel({ entries, onRefresh }: { entries: AuditLogEntry[]
         <label className="searchField compactSearch">
           <AppIcon name="search" size={16} />
           <span className="srOnly">Search workspace activity</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search event or resource" />
+          <input value={query} onChange={(event) => handleQueryChange(event.target.value)} placeholder="Search event or resource" />
         </label>
         <button type="button" className="secondaryButton" onClick={onRefresh}><AppIcon name="refresh" size={15} />Refresh history</button>
       </div>
@@ -46,7 +55,25 @@ export function AuditLogPanel({ entries, onRefresh }: { entries: AuditLogEntry[]
           </table>
         </div>
       ) : <div className="emptyState richEmptyState"><AppIcon name="activity" size={22} /><strong>{entries.length ? "No activity matches this search" : "No workspace activity yet"}</strong><span>Target, scan, report, and management events will appear here.</span></div>}
-      {filteredEntries.length > visibleEntries.length ? <p className="tableLimitNote">Showing the newest 80 matching events. Refine the search to find older activity.</p> : null}
+      {filteredEntries.length > activityPageSize ? (
+        <nav className="resultsPagination auditLogDisclosure" aria-label="Workspace activity visibility">
+          {visibleEntries.length > activityPageSize ? (
+            <button type="button" className="secondaryButton" onClick={() => setVisibleCount(activityPageSize)}>
+              Show fewer
+            </button>
+          ) : null}
+          <span>Showing <strong>{visibleEntries.length}</strong> of <strong>{filteredEntries.length}</strong></span>
+          {remainingCount > 0 ? (
+            <button
+              type="button"
+              className="secondaryButton"
+              onClick={() => setVisibleCount((currentCount) => Math.min(currentCount + activityPageSize, filteredEntries.length))}
+            >
+              Show {Math.min(activityPageSize, remainingCount)} more
+            </button>
+          ) : null}
+        </nav>
+      ) : null}
     </section>
   );
 }

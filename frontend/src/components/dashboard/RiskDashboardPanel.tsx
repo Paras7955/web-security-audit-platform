@@ -1,7 +1,12 @@
+"use client";
+
+import { useState } from "react";
+
 import type { DashboardOverview, Scan, ScanComparison, Target, TargetDashboard } from "@/lib/securityAuditApi";
 
 const completedStatuses = new Set(["completed", "completed_with_warnings"]);
 const severityOrder = ["critical", "high", "medium", "low", "info"];
+const comparisonPreviewSize = 4;
 
 export function RiskDashboardPanel({
   overview,
@@ -38,7 +43,7 @@ export function RiskDashboardPanel({
 
   return (
     <div className="riskDashboard">
-      <div className="riskMetricGrid">
+      <div className="riskMetricGrid" aria-label="Risk overview">
         <RiskScoreCard title="Latest scan risk" score={overview?.latest_risk_score ?? null} />
         <RiskScoreCard title="Target risk" score={latestScore} />
         <MetricCard label="Targets" value={overview?.targets_count ?? 0} context="Workspace" />
@@ -48,7 +53,7 @@ export function RiskDashboardPanel({
       <div className="riskDashboardGrid">
         <div className="panel">
           <div className="panelHeader">
-            <h3>Workspace Dashboard</h3>
+            <div><h3>Workspace posture</h3><p>Severity distribution and the latest completed audits across this workspace.</p></div>
             <span className="contextBadge">{overview?.findings_count ?? 0} findings</span>
           </div>
           <SeverityBars counts={overview?.severity_counts ?? {}} />
@@ -57,7 +62,7 @@ export function RiskDashboardPanel({
 
         <div className="panel">
           <div className="panelHeader">
-            <h3>Target Dashboard</h3>
+            <div><h3>Selected target posture</h3><p>Current risk inputs for the authorized target selected in this workspace.</p></div>
             <span className="contextBadge">{selectedTarget?.name ?? "No target"}</span>
           </div>
           {targetDashboard ? (
@@ -87,7 +92,7 @@ export function RiskDashboardPanel({
 
       <div className="panel comparisonPanel">
         <div className="panelHeader">
-          <h3>Scan Comparison</h3>
+          <div><h3>Compare completed scans</h3><p>See what appeared, changed, resolved, or remained between two audits of the same target.</p></div>
           <span className="contextBadge">Same target only</span>
         </div>
         <div className="comparisonControls">
@@ -227,32 +232,50 @@ function ComparisonSummary({ comparison }: { comparison: ScanComparison }) {
         <MetricCard label="Model" value={comparison.scoring_model_version} context="Version" />
       </div>
       <div className="changeGrid">
-        <ChangeList title="New" items={comparison.new_findings} />
-        <ChangeList title="Resolved" items={comparison.resolved_findings} />
-        <ChangeList title="Severity changed" items={comparison.severity_changed_findings} />
-        <ChangeList title="Unchanged" items={comparison.unchanged_findings.slice(0, 6)} />
+        <ChangeList key={`${comparison.baseline_scan_id}:${comparison.comparison_scan_id}:new`} title="New" items={comparison.new_findings} />
+        <ChangeList key={`${comparison.baseline_scan_id}:${comparison.comparison_scan_id}:resolved`} title="Resolved" items={comparison.resolved_findings} />
+        <ChangeList key={`${comparison.baseline_scan_id}:${comparison.comparison_scan_id}:severity`} title="Severity changed" items={comparison.severity_changed_findings} />
+        <ChangeList key={`${comparison.baseline_scan_id}:${comparison.comparison_scan_id}:unchanged`} title="Unchanged" items={comparison.unchanged_findings} />
       </div>
     </div>
   );
 }
 
 function ChangeList({ title, items }: { title: string; items: ScanComparison["new_findings"] }) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleItems = expanded ? items : items.slice(0, comparisonPreviewSize);
+  const remainingCount = Math.max(0, items.length - visibleItems.length);
+  const listId = `comparison-${title.toLowerCase().replaceAll(" ", "-")}-findings`;
+
   return (
     <div className="changeList">
       <h4>
         {title} <span>{items.length}</span>
       </h4>
       {items.length > 0 ? (
-        <ul>
-          {items.map((item) => (
-            <li key={`${title}-${item.dedupe_key}`}>
-              <strong>{item.title}</strong>
-              <small>
-                {item.previous_severity ?? "-"} {"->"} {item.current_severity ?? "-"}
-              </small>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul id={listId}>
+            {visibleItems.map((item) => (
+              <li key={`${title}-${item.dedupe_key}`}>
+                <strong>{item.title}</strong>
+                <small>
+                  {item.previous_severity ?? "none"} {"→"} {item.current_severity ?? "none"}
+                </small>
+              </li>
+            ))}
+          </ul>
+          {items.length > comparisonPreviewSize ? (
+            <button
+              type="button"
+              className="secondaryButton changeListDisclosure"
+              aria-controls={listId}
+              aria-expanded={expanded}
+              onClick={() => setExpanded((currentValue) => !currentValue)}
+            >
+              {expanded ? "Show fewer" : `Show ${remainingCount} more`}
+            </button>
+          ) : null}
+        </>
       ) : (
         <p className="emptyState">None</p>
       )}

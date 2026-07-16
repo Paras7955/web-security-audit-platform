@@ -20,12 +20,12 @@ export function WorkspaceOverview({
   const riskScore = overview?.latest_risk_score?.score;
 
   return (
-    <div className="overviewWorkspace">
+    <div className="overviewWorkspace productPage">
       <div className="viewIntro"><div><h2>Workspace overview</h2><p>See current risk, platform readiness, authorized scope, and the latest audit activity at a glance.</p></div></div>
       <section className="metricGrid" aria-label="Workspace metrics">
         <MetricCard icon="target" label="Saved targets" value={overview?.targets_count ?? "—"} detail="Exact allowlist only" tone="cyan" />
         <MetricCard icon="scan" label="Total scans" value={overview?.scans_count ?? "—"} detail={`${overview?.completed_scans_count ?? 0} completed`} tone="blue" />
-        <MetricCard icon="finding" label="Open evidence" value={overview?.findings_count ?? "—"} detail={`${criticalCount + highCount} high priority`} tone={criticalCount ? "danger" : "violet"} />
+        <MetricCard icon="finding" label="Open evidence" value={overview?.findings_count ?? "—"} detail={`${criticalCount + highCount} high priority`} tone={criticalCount ? "danger" : "accent"} />
         <MetricCard icon="activity" label="Latest risk" value={riskScore ?? "—"} detail={overview?.latest_risk_score?.label ?? "Awaiting completed scan"} tone="amber" />
       </section>
 

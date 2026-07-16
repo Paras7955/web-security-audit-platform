@@ -21,6 +21,7 @@ import {
   ScanProgress,
   canUseAi,
   canUseReports,
+  formatScanProfileLabel,
   mergeScan,
   terminalStatuses
 } from "@/components/dashboard/ScanControls";
@@ -65,7 +66,7 @@ export type WorkspaceView = (typeof workspaceViews)[number]["id"];
 type AuditPhase = "ready" | "scope" | "profile" | "authorize" | "run" | "review";
 
 const auditPhases: Array<{ id: AuditPhase; label: string; icon: "operations" | "target" | "scan" | "shield" | "activity" | "finding" }> = [
-  { id: "ready", label: "Ready", icon: "operations" },
+  { id: "ready", label: "Preflight", icon: "operations" },
   { id: "scope", label: "Scope", icon: "target" },
   { id: "profile", label: "Profile", icon: "scan" },
   { id: "authorize", label: "Authorize", icon: "shield" },
@@ -94,6 +95,7 @@ export function TargetSetup({
   const [authProfileType, setAuthProfileType] = useState("bearer_token");
   const [authProfileHeaderName, setAuthProfileHeaderName] = useState("");
   const [authProfileSecret, setAuthProfileSecret] = useState("");
+  const [authProfileRotationSecret, setAuthProfileRotationSecret] = useState("");
   const [selectedTargetId, setSelectedTargetId] = useState("");
   const [scanProfileId, setScanProfileId] = useState("passive-web");
   const [acknowledgements, setAcknowledgements] = useState<string[]>([]);
@@ -151,6 +153,7 @@ export function TargetSetup({
 
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
   const selectedScan = scanHistory.find((scan) => scan.id === selectedScanId) ?? null;
+  const selectedScanTarget = targets.find((target) => target.id === selectedScan?.target_id) ?? null;
   const selectedProfile = SCAN_PROFILES.find((profile) => profile.id === scanProfileId) ?? SCAN_PROFILES[0];
   const platformReady = platformHealth?.status === "ok";
   const canCreate = useMemo(() => Boolean(validation && permissionConfirmed && !isBusy), [validation, permissionConfirmed, isBusy]);
@@ -462,7 +465,6 @@ export function TargetSetup({
       setReports([]);
       setAiExplanation(null);
       setSelectedFindingId("");
-      setAcknowledgements([]);
       setReportMessage("Reports are available after this passive, Active Demo, or Repo scan completes.");
       setAiMessage("AI explanations are available after this passive or Active Demo scan completes.");
       setMessage("Scan queued. Worker status will update below.");
@@ -533,7 +535,7 @@ export function TargetSetup({
   }
 
   async function rotateSelectedAuthProfile() {
-    if (!selectedAuthProfileId || !authProfileSecret.trim()) {
+    if (!selectedAuthProfileId || !authProfileRotationSecret.trim()) {
       return;
     }
     setIsBusy(true);
@@ -542,10 +544,10 @@ export function TargetSetup({
       const response = await apiFetch(`${apiBaseUrl}/auth-profiles/${selectedAuthProfileId}/rotate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret: authProfileSecret })
+        body: JSON.stringify({ secret: authProfileRotationSecret })
       });
       const profile = await readJson<AuthProfile>(response, "Auth profile rotation failed.");
-      setAuthProfileSecret("");
+      setAuthProfileRotationSecret("");
       await loadAuthProfiles(profile.id);
       setAuthProfileMessage("Auth profile rotated. Existing scan snapshots were not changed.");
     } catch (error) {
@@ -566,6 +568,7 @@ export function TargetSetup({
       const response = await apiFetch(`${apiBaseUrl}/auth-profiles/${profile.id}/revoke`, { method: "POST" });
       const revokedProfile = await readJson<AuthProfile>(response, "Auth profile revocation failed.");
       setRevokeCandidate(null);
+      setAuthProfileRotationSecret("");
       await Promise.all([loadAuthProfiles(revokedProfile.id), loadTargets(selectedTargetId)]);
       setAuthProfileMessage("Auth profile revoked. Its encrypted secret was erased and attached targets were detached.");
     } catch (error) {
@@ -1112,8 +1115,8 @@ export function TargetSetup({
     scope: Boolean(selectedTarget),
     profile: profileReady,
     authorize: authorizationReady,
-    run: Boolean(selectedScan && terminalStatuses.has(selectedScan.status)),
-    review: reviewReady && findings.length > 0
+    run: reviewReady,
+    review: reviewReady
   };
 
   return (
@@ -1151,7 +1154,8 @@ export function TargetSetup({
               {auditPhases.map((phase, index) => {
                 const isActive = auditPhase === phase.id;
                 const isComplete = phaseComplete[phase.id] && !isActive;
-                const phaseState = isActive ? "In progress" : isComplete ? "Complete" : "Pending";
+                const isRunInterrupted = phase.id === "run" && Boolean(selectedScan && ["failed", "cancelled"].includes(selectedScan.status));
+                const phaseState = auditPhaseState(phase.id, isActive, isComplete, selectedScan);
                 return (
                   <button
                     ref={isActive ? activeAuditPhaseRef : undefined}
@@ -1162,7 +1166,7 @@ export function TargetSetup({
                     aria-selected={isActive}
                     aria-controls="audit-phase-panel"
                     tabIndex={isActive ? 0 : -1}
-                    className={`auditPhaseTab${isActive ? " auditPhaseTabActive" : ""}${isComplete ? " auditPhaseTabComplete" : ""}`}
+                    className={`auditPhaseTab${isActive ? " auditPhaseTabActive" : ""}${isComplete ? " auditPhaseTabComplete" : ""}${isRunInterrupted ? " auditPhaseTabInterrupted" : ""}`}
                     onClick={() => setAuditPhase(phase.id)}
                     onKeyDown={(event) => handlePhaseKeyDown(event, index)}
                   >
@@ -1177,10 +1181,15 @@ export function TargetSetup({
               {auditPhase === "ready" ? (
                 <div className="auditPhaseContent">
                   <div className="phaseHeading">
-                    <div><span>Before you scope an audit</span><h2>Confirm the local platform is ready</h2><p>The database, worker, queue, scanner dependencies, and artifact storage must be visible before launch.</p></div>
+                    <div><span>Before any target is contacted</span><h2>Run the local audit preflight</h2><p>This read-only check confirms ScopeHarbor can validate scope, run bounded tools, and save sanitized results. It does not scan a target.</p></div>
                     <span className={platformReady ? "readinessState readinessStateReady" : "readinessState"}><span className="statusDot" />{platformReady ? "Ready to audit" : "Needs attention"}</span>
                   </div>
-                  <OpsHealthPanel health={platformHealth} message={opsMessage} onRefresh={loadPlatformHealth} />
+                  <div className="readinessGuide" aria-label="How audit preflight works">
+                    <div><span>01</span><strong>Check local services</strong><p>Database, worker, approved scanner support, and artifact storage report their state.</p></div>
+                    <div><span>02</span><strong>Resolve only flagged items</strong><p>Healthy rows need no action. A degraded row explains which local dependency needs attention.</p></div>
+                    <div><span>03</span><strong>Continue to authorized scope</strong><p>When all required services are healthy, choose the exact target this audit may inspect.</p></div>
+                  </div>
+                  <OpsHealthPanel health={platformHealth} message={opsMessage} onRefresh={loadPlatformHealth} context="audit" />
                   <div className="boundaryStrip" aria-label="Persistent platform boundaries">
                     <span><AppIcon name="target" size={16} /><strong>Exact targets</strong> only</span>
                     <span><AppIcon name="shield" size={16} /><strong>Workspace context</strong> rechecked</span>
@@ -1228,7 +1237,7 @@ export function TargetSetup({
               ) : null}
 
               {auditPhase === "profile" ? (
-                <div className="auditPhaseContent auditPhaseContentPriority">
+                <div className="auditPhaseContent auditPhaseContentPriority profilePhaseContent">
                   <ScanProfileSelector
                     targets={targets}
                     selectedTargetId={selectedTargetId}
@@ -1249,7 +1258,7 @@ export function TargetSetup({
                   {reviewReady && filteredFindings.length > 0 ? (
                     <section className="recentFindingsPreview" aria-labelledby="recent-findings-title">
                       <div className="recentFindingsHeader">
-                        <div><h3 id="recent-findings-title">Recent normalized findings</h3><p>A compact preview from the selected audit. Open Review for full triage and evidence.</p></div>
+                        <div><h3 id="recent-findings-title">Recent normalized findings</h3><p>{selectedScanTarget?.name ?? "Selected target"} · {selectedScan ? formatScanProfileLabel(selectedScan.scan_profile_id) : "Completed audit"} · {selectedScan ? formatShortDate(selectedScan.completed_at ?? selectedScan.created_at) : "Recent"}. Open Review for evidence and triage.</p></div>
                         <button type="button" className="secondaryButton" onClick={() => setAuditPhase("review")}>Review all {filteredFindings.length} <AppIcon name="arrow" size={15} /></button>
                       </div>
                       <div className="recentFindingsTableWrap">
@@ -1299,7 +1308,7 @@ export function TargetSetup({
                     onStartScan={startScan}
                   />
                   <div className="runWorkspaceGrid">
-                    {selectedScan ? <ScanProgress scan={selectedScan} toolRuns={toolRuns} isCancelling={isCancellingScan} onCancel={cancelSelectedScan} /> : <div className="emptyState richEmptyState"><AppIcon name="activity" size={24} /><strong>No scan selected</strong><span>Launch this audit or choose a historical scan to monitor it.</span></div>}
+                    {selectedScan ? <ScanProgress scan={selectedScan} targetName={selectedScanTarget?.name ?? "Historical target"} toolRuns={toolRuns} isCancelling={isCancellingScan} onCancel={cancelSelectedScan} /> : <div className="emptyState richEmptyState"><AppIcon name="activity" size={24} /><strong>No scan selected</strong><span>Launch this audit or choose a historical scan to monitor it.</span></div>}
                     <ScanHistory scans={scanHistory} selectedScanId={selectedScanId} onSelectScan={setSelectedScanId} />
                   </div>
                   <div className="phaseFooter"><span>{reviewReady ? "Normalized results are ready for triage." : "Review unlocks after a scan completes or completes with warnings."}</span><button type="button" onClick={() => setAuditPhase("review")} disabled={!reviewReady}>Review findings <AppIcon name="arrow" size={15} /></button></div>
@@ -1327,7 +1336,7 @@ export function TargetSetup({
         ) : null}
 
         {activeView === "findings" ? (
-          <div className="findingsWorkspace">
+          <div className="findingsWorkspace productPage">
             <div className="viewToolbar">
               <div><h2>Finding triage</h2><p>Filter normalized evidence, update lifecycle state, and keep remediation decisions attached to the finding.</p></div>
               <div className="viewToolbarActions">
@@ -1344,7 +1353,7 @@ export function TargetSetup({
         ) : null}
 
         {activeView === "intelligence" ? (
-          <div className="intelligenceWorkspace">
+          <div className="intelligenceWorkspace productPage">
             <div className="viewIntro"><div><h2>Risk intelligence</h2><p>Compare security posture, generate sanitized reports, and review bounded explanations.</p></div></div>
             <RiskDashboardPanel
               overview={dashboardOverview}
@@ -1376,7 +1385,7 @@ export function TargetSetup({
         ) : null}
 
         {activeView === "credentials" ? (
-          <div className="credentialWorkspace">
+          <div className="credentialWorkspace productPage">
             <div className="viewIntro">
               <div><h2>Credential profiles</h2><p>Manage target-application secrets used only by guarded passive requests. Secret values never return through the API.</p></div>
               <span className="safetyPill"><AppIcon name="credential" size={15} /> Fernet encrypted</span>
@@ -1389,13 +1398,18 @@ export function TargetSetup({
               profileType={authProfileType}
               headerName={authProfileHeaderName}
               secret={authProfileSecret}
+              rotationSecret={authProfileRotationSecret}
               message={authProfileMessage}
               isBusy={isBusy}
-              onSelectAuthProfile={setSelectedAuthProfileId}
+              onSelectAuthProfile={(authProfileId) => {
+                setSelectedAuthProfileId(authProfileId);
+                setAuthProfileRotationSecret("");
+              }}
               onLabelChange={setAuthProfileLabel}
               onProfileTypeChange={setAuthProfileType}
               onHeaderNameChange={setAuthProfileHeaderName}
               onSecretChange={setAuthProfileSecret}
+              onRotationSecretChange={setAuthProfileRotationSecret}
               onCreateProfile={createAuthProfile}
               onAttachProfile={updateSelectedTargetAuthProfile}
               onRotateProfile={rotateSelectedAuthProfile}
@@ -1410,9 +1424,9 @@ export function TargetSetup({
         ) : null}
 
         {activeView === "operations" ? (
-          <div className="operationsWorkspace">
+          <div className="operationsWorkspace productPage">
             <div className="viewIntro"><div><h2>Operations & readiness</h2><p>Confirm the worker, database, artifacts, queue, and scanner dependencies, then inspect the workspace activity trail.</p></div></div>
-            <OpsHealthPanel health={platformHealth} message={opsMessage} onRefresh={loadPlatformHealth} />
+            <OpsHealthPanel health={platformHealth} message={opsMessage} onRefresh={loadPlatformHealth} context="operations" />
             <div className="operationsBoundaryList">
               <article><AppIcon name="target" /><strong>Exact target scope</strong><p>Only explicitly configured Docker-service targets can be launched.</p></article>
               <article><AppIcon name="shield" /><strong>Safe persistence</strong><p>URLs and evidence are sanitized before database, report, or AI boundaries.</p></article>
@@ -1456,6 +1470,22 @@ export function TargetSetup({
       ) : null}
     </section>
   );
+}
+
+function formatShortDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+}
+
+function auditPhaseState(phase: AuditPhase, isActive: boolean, isComplete: boolean, selectedScan: Scan | null) {
+  if (phase === "run" && selectedScan) {
+    if (selectedScan.status === "failed") return "Failed";
+    if (selectedScan.status === "cancelled") return "Cancelled";
+    if (["completed", "completed_with_warnings"].includes(selectedScan.status)) return "Complete";
+    if (!terminalStatuses.has(selectedScan.status)) return "Running";
+  }
+  if (isActive) return "In progress";
+  if (isComplete) return "Complete";
+  return "Pending";
 }
 
 function uniqueAiExplanation(explanation: AiExplanation | null, findings: Finding[]): AiExplanation | null {
