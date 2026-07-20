@@ -112,17 +112,35 @@ def latest_target_comparison(
     db: Session = Depends(get_db),
 ) -> ScanComparisonRead:
     get_target_or_404(db, target_id, principal.workspace_id)
-    completed_scans = list(
-        db.scalars(
-            select(Scan)
-            .where(Scan.workspace_id == principal.workspace_id, Scan.target_id == target_id, Scan.status.in_(COMPLETED_SCAN_STATUSES))
-            .order_by(Scan.completed_at.desc().nullslast(), Scan.created_at.desc(), Scan.id.desc())
-            .limit(2)
-        ).all()
+    latest_scan = db.scalar(
+        select(Scan)
+        .where(Scan.workspace_id == principal.workspace_id, Scan.target_id == target_id, Scan.status.in_(COMPLETED_SCAN_STATUSES))
+        .order_by(Scan.completed_at.desc().nullslast(), Scan.created_at.desc(), Scan.id.desc())
+        .limit(1)
     )
-    if len(completed_scans) < 2:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="At least two completed scans are required for comparison.")
-    return build_comparison(db, completed_scans[1], completed_scans[0])
+    if latest_scan is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="At least two completed scans using the same audit profile are required for comparison.",
+        )
+    baseline_scan = db.scalar(
+        select(Scan)
+        .where(
+            Scan.workspace_id == principal.workspace_id,
+            Scan.target_id == target_id,
+            Scan.status.in_(COMPLETED_SCAN_STATUSES),
+            Scan.scan_profile_id == latest_scan.scan_profile_id,
+            Scan.id != latest_scan.id,
+        )
+        .order_by(Scan.completed_at.desc().nullslast(), Scan.created_at.desc(), Scan.id.desc())
+        .limit(1)
+    )
+    if baseline_scan is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="At least two completed scans using the same audit profile are required for comparison.",
+        )
+    return build_comparison(db, baseline_scan, latest_scan)
 
 
 def build_comparison(db: Session, baseline_scan: Scan, comparison_scan: Scan) -> ScanComparisonRead:
@@ -130,6 +148,8 @@ def build_comparison(db: Session, baseline_scan: Scan, comparison_scan: Scan) ->
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
     if baseline_scan.target_id != comparison_scan.target_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scans must belong to the same target.")
+    if baseline_scan.scan_profile_id != comparison_scan.scan_profile_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scans must use the same audit profile.")
 
     baseline_findings = list(
         db.scalars(select(Finding).where(Finding.workspace_id == baseline_scan.workspace_id, Finding.scan_id == baseline_scan.id)).all()

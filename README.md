@@ -128,8 +128,8 @@ page:
   launch controls, searchable scan history, scanner receipts, and cancellation.
 - **Findings** provides severity and management filters, workspace/scan scope,
   free-text search, lifecycle updates, suppressions, tags, and redacted detail.
-- **Intelligence** groups risk trends, same-target comparisons, safe reports,
-  and bounded explanations.
+- **Intelligence** groups risk trends, same-target and same-profile comparisons,
+  safe reports, and bounded explanations.
 - **Credentials** contains target auth-profile creation, attachment, rotation,
   and revocation.
 - **Operations** shows safe database, worker, queue, ZAP, and artifact readiness.
@@ -160,6 +160,11 @@ Fernet-encrypted, never returned by the API, and available only to future
 passive scans. Rotation changes the future secret. Revocation wipes ciphertext,
 detaches targets, and preserves a metadata tombstone. Either action is rejected
 while a nonterminal scan references the profile.
+
+The credential form accepts the target application's token or header value,
+never `AUTH_PROFILE_SECRET_KEY`. HTTP submission is permitted only through the
+supplied local-only workflow; non-local deployments must use HTTPS. If a trusted
+reverse proxy terminates TLS, configure its exact IP in `TRUSTED_PROXY_IPS`.
 
 ## Scan profiles
 

@@ -826,7 +826,20 @@ export function TargetSetup({
 
   async function loadManualComparison() {
     if (!baselineScanId || !comparisonScanId || baselineScanId === comparisonScanId) {
-      setRiskMessage("Choose two different completed scans for the same target.");
+      setRiskMessage("Choose two different completed scans for the same target and audit profile.");
+      return;
+    }
+    const baselineScan = scanHistory.find((scan) => scan.id === baselineScanId);
+    const comparisonScan = scanHistory.find((scan) => scan.id === comparisonScanId);
+    if (
+      !baselineScan ||
+      !comparisonScan ||
+      baselineScan.target_id !== selectedTargetId ||
+      comparisonScan.target_id !== selectedTargetId ||
+      baselineScan.scan_profile_id !== comparisonScan.scan_profile_id
+    ) {
+      setScanComparison(null);
+      setRiskMessage("Comparisons require two completed scans from the same target and audit profile.");
       return;
     }
 
@@ -1535,8 +1548,21 @@ export function TargetSetup({
               comparison={scanComparison}
               message={riskMessage}
               isComparing={isComparingScans}
-              onBaselineScanChange={setBaselineScanId}
-              onComparisonScanChange={setComparisonScanId}
+              onBaselineScanChange={(scanId) => {
+                setBaselineScanId(scanId);
+                const baselineProfile = scanHistory.find((scan) => scan.id === scanId)?.scan_profile_id;
+                const comparisonProfile = scanHistory.find((scan) => scan.id === comparisonScanId)?.scan_profile_id;
+                if (!baselineProfile || baselineProfile !== comparisonProfile) {
+                  setComparisonScanId("");
+                }
+                setScanComparison(null);
+                setRiskMessage(scanId ? "Choose a second completed scan from the same audit profile." : "Choose a baseline scan to begin.");
+              }}
+              onComparisonScanChange={(scanId) => {
+                setComparisonScanId(scanId);
+                setScanComparison(null);
+                setRiskMessage(scanId ? "Ready to compare matching audit coverage." : "Choose a comparison scan from the same profile.");
+              }}
               onCompare={loadManualComparison}
             />
             <div className="intelligenceGrid">

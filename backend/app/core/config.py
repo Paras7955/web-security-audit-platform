@@ -1,4 +1,5 @@
 from functools import lru_cache
+from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -48,6 +49,7 @@ class Settings(BaseSettings):
     zap_api_key: str = ""
     cors_origins: list[str] = ["http://localhost:3001"]
     trusted_hosts: list[str] = ["localhost", "127.0.0.1", "testserver", "backend"]
+    trusted_proxy_ips: list[str] = []
     max_request_body_bytes: int = 1_048_576
     page_default_limit: int = 50
     page_max_limit: int = 200
@@ -87,6 +89,19 @@ class Settings(BaseSettings):
         if not hosts or any(not host or "*" in host or "/" in host for host in hosts):
             raise ValueError("TRUSTED_HOSTS must contain exact host names")
         return hosts
+
+    @field_validator("trusted_proxy_ips")
+    @classmethod
+    def validate_trusted_proxy_ips(cls, proxies: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for proxy in proxies:
+            try:
+                normalized.append(ip_address(proxy.strip()).compressed)
+            except ValueError as exc:
+                raise ValueError("TRUSTED_PROXY_IPS must contain exact IP addresses") from exc
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("TRUSTED_PROXY_IPS cannot contain duplicates")
+        return normalized
 
 
 @lru_cache

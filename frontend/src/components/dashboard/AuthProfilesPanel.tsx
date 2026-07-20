@@ -56,15 +56,15 @@ export function AuthProfilesPanel({
     <div className="panel credentialPanel">
       <div className="panelHeader">
         <div>
-          <h3>Guarded target credentials</h3>
-          <p>Create encrypted credentials, then explicitly attach one to the currently selected target.</p>
+          <h3>Target request credentials</h3>
+          <p>Save a credential used by the target application, then explicitly attach it to the currently selected target.</p>
         </div>
         <span className="contextBadge">Encrypted secrets</span>
       </div>
 
       <div className="credentialSafetyNote">
         <AppIcon name="shield" size={18} />
-        <p><strong>Passive requests only.</strong> Secret values never appear in findings, reports, AI explanations, logs, ZAP scans, or browser workflows.</p>
+        <p><strong>Target credential, not an encryption key.</strong> Enter the token or API key expected by the target application. Never enter <code>AUTH_PROFILE_SECRET_KEY</code> here; that operator-managed key remains in the backend environment. Saved credentials are available to guarded passive requests only and never appear in findings, reports, AI explanations, logs, ZAP scans, or browser-driven scan sessions.</p>
       </div>
 
       <div className="authProfileGrid">
@@ -77,7 +77,7 @@ export function AuthProfilesPanel({
           <div className="targetForm">
             <label>
               <span>Profile label</span>
-              <input value={label} onChange={(event) => onLabelChange(event.target.value)} placeholder="Demo bearer token" />
+              <input name="credential-profile-label" value={label} onChange={(event) => onLabelChange(event.target.value)} placeholder="Demo bearer token" autoComplete="off" />
             </label>
 
             <label>
@@ -91,13 +91,25 @@ export function AuthProfilesPanel({
             {profileType === "custom_header" ? (
               <label>
                 <span>Header name</span>
-                <input value={headerName} onChange={(event) => onHeaderNameChange(event.target.value)} placeholder="X-API-Key" />
+                <input name="credential-header-name" value={headerName} onChange={(event) => onHeaderNameChange(event.target.value)} placeholder="X-API-Key" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
               </label>
             ) : null}
 
             <label>
-              <span>Secret value</span>
-              <input type="password" value={secret} onChange={(event) => onSecretChange(event.target.value)} placeholder="Stored encrypted; never returned" />
+              <span>Target credential secret</span>
+              <input
+                type="password"
+                name="target-credential-secret"
+                value={secret}
+                onChange={(event) => onSecretChange(event.target.value)}
+                placeholder="Token or API key used by the target"
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-describedby="target-credential-secret-hint"
+              />
+              <small id="target-credential-secret-hint">Encrypted before storage, never returned by the API, and cleared from this field after saving.</small>
             </label>
 
             <div className="actions">
@@ -151,9 +163,20 @@ export function AuthProfilesPanel({
             </dl>
 
             <label className="selectLabel rotationSecretField">
-              <span>Replacement secret</span>
-              <input type="password" value={rotationSecret} onChange={(event) => onRotationSecretChange(event.target.value)} placeholder="Used only when rotating this profile" />
-              <small>Rotation affects future passive scans only. Existing scan snapshots remain unchanged.</small>
+              <span>New target credential secret</span>
+              <input
+                type="password"
+                name="target-credential-rotation-secret"
+                value={rotationSecret}
+                onChange={(event) => onRotationSecretChange(event.target.value)}
+                placeholder="Replacement token or API key"
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-describedby="target-credential-rotation-hint"
+              />
+              <small id="target-credential-rotation-hint">Rotation affects future passive scans only. The value is cleared after saving; existing scan snapshots remain unchanged.</small>
             </label>
 
             <div className="actions">

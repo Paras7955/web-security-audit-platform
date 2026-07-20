@@ -186,7 +186,7 @@ export function ProductGuide({
             <div>
               <div className="guideSectionHeading">
                 <span>Outputs</span>
-                <div><h3>Risk, reports, and explanations</h3><p>Intelligence summarizes posture and can compare completed scans of the same target. Reports use normalized findings, while explanations remain bounded by profile and data-handling policy.</p></div>
+                <div><h3>Risk, reports, and explanations</h3><p>Intelligence summarizes posture and compares completed scans only when the target and audit profile match. Reports use normalized findings, while explanations remain bounded by profile and data-handling policy.</p></div>
               </div>
               <button type="button" className="secondaryButton" onClick={() => onNavigate("intelligence")}>Open Intelligence</button>
             </div>

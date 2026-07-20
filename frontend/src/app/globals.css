@@ -4184,6 +4184,18 @@ button.changeListDisclosure:hover:not(:disabled) {
   color: var(--text-soft);
 }
 
+.credentialSafetyNote code {
+  color: var(--text-soft);
+  overflow-wrap: anywhere;
+}
+
+.authProfileCreate .targetForm small {
+  color: var(--muted);
+  font-size: var(--type-caption);
+  font-weight: var(--weight-regular);
+  line-height: 1.45;
+}
+
 .authProfileGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

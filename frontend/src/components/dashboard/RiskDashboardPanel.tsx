@@ -40,6 +40,20 @@ export function RiskDashboardPanel({
   const comparableScans = scans
     .filter((scan) => scan.target_id === selectedTargetId && completedStatuses.has(scan.status))
     .sort((left, right) => scanCompletionTime(right).localeCompare(scanCompletionTime(left)));
+  const profileCounts = comparableScans.reduce<Map<string, number>>((counts, scan) => {
+    counts.set(scan.scan_profile_id, (counts.get(scan.scan_profile_id) ?? 0) + 1);
+    return counts;
+  }, new Map());
+  const eligibleProfiles = new Set(
+    [...profileCounts.entries()].filter(([, count]) => count >= 2).map(([profileId]) => profileId)
+  );
+  const eligibleBaselineScans = comparableScans.filter((scan) => eligibleProfiles.has(scan.scan_profile_id));
+  const selectedBaseline = eligibleBaselineScans.find((scan) => scan.id === baselineScanId) ?? null;
+  const eligibleComparisonScans = selectedBaseline
+    ? eligibleBaselineScans.filter((scan) => scan.scan_profile_id === selectedBaseline.scan_profile_id && scan.id !== selectedBaseline.id)
+    : [];
+  const displayedBaselineScanId = selectedBaseline?.id ?? "";
+  const displayedComparisonScanId = eligibleComparisonScans.some((scan) => scan.id === comparisonScanId) ? comparisonScanId : "";
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
   const latestScore = targetDashboard?.latest_risk_score ?? null;
 
@@ -94,16 +108,16 @@ export function RiskDashboardPanel({
 
       <div className="panel comparisonPanel">
         <div className="panelHeader">
-          <div><h3>Compare completed scans</h3><p>See what appeared, changed, resolved, or remained between two audits of the same target.</p></div>
-          <span className="contextBadge">Same target only</span>
+          <div><h3>Compare completed scans</h3><p>See what appeared, changed, resolved, or remained between two audits with matching coverage.</p></div>
+          <span className="contextBadge">Same target + profile</span>
         </div>
-        {comparableScans.length >= 2 ? (
+        {eligibleBaselineScans.length >= 2 ? (
           <div className="comparisonControls">
             <label className="selectLabel">
               Baseline scan
-              <select value={baselineScanId} onChange={(event) => onBaselineScanChange(event.target.value)}>
+              <select value={displayedBaselineScanId} onChange={(event) => onBaselineScanChange(event.target.value)}>
                 <option value="">Select baseline</option>
-                {comparableScans.map((scan) => (
+                {eligibleBaselineScans.map((scan) => (
                   <option key={scan.id} value={scan.id}>
                     {scan.scan_profile_id} · {formatDate(scan.created_at)}
                   </option>
@@ -112,21 +126,25 @@ export function RiskDashboardPanel({
             </label>
             <label className="selectLabel">
               Comparison scan
-              <select value={comparisonScanId} onChange={(event) => onComparisonScanChange(event.target.value)}>
-                <option value="">Select comparison</option>
-                {comparableScans.map((scan) => (
+              <select
+                value={displayedComparisonScanId}
+                onChange={(event) => onComparisonScanChange(event.target.value)}
+                disabled={!selectedBaseline}
+              >
+                <option value="">{selectedBaseline ? `Select another ${selectedBaseline.scan_profile_id} audit` : "Choose a baseline first"}</option>
+                {eligibleComparisonScans.map((scan) => (
                   <option key={scan.id} value={scan.id}>
                     {scan.scan_profile_id} · {formatDate(scan.created_at)}
                   </option>
                 ))}
               </select>
             </label>
-            <button type="button" onClick={onCompare} disabled={isComparing || !baselineScanId || !comparisonScanId || baselineScanId === comparisonScanId}>
+            <button type="button" onClick={onCompare} disabled={isComparing || !displayedBaselineScanId || !displayedComparisonScanId}>
               {isComparing ? "Comparing…" : "Compare scans"}
             </button>
           </div>
         ) : (
-          <p className="emptyState">Complete at least two audits for this target to unlock scan comparison.</p>
+          <p className="emptyState">Complete at least two audits with the same profile for this target to unlock a coverage-equivalent comparison.</p>
         )}
         <p className="formMessage">{message}</p>
         {comparison ? <ComparisonSummary comparison={comparison} /> : null}

@@ -33,12 +33,18 @@ raw exceptions.
   for local development.
 - Use exact JSON arrays for `CORS_ORIGINS` and `TRUSTED_HOSTS`; wildcards are
   rejected.
+- Keep `TRUSTED_PROXY_IPS=[]` unless TLS terminates at a reverse proxy. If it
+  does, list only the immediate proxy's exact IP address and configure that
+  proxy to replace, not preserve, client-supplied forwarding headers.
 - Keep `ZAP_API_KEY`, database password, development token, Fernet keys, and AI
   keys out of Git.
 - A Fernet key may end in `=`. Do not accidentally truncate it or add literal
   quote characters.
 - Do not expose ZAP or change loopback port bindings without a separate network
   security review.
+- Do not submit target credentials over a non-local HTTP deployment. ScopeHarbor
+  rejects create/rotate requests unless they use HTTPS or the supplied
+  loopback-only local workflow.
 - Do not raise scan/staging limits until host capacity and denial-of-service
   implications have been reviewed.
 

@@ -166,6 +166,35 @@ class RiskDashboardTests(unittest.TestCase):
         self.assertEqual(incomplete.status_code, 400)
         self.assertIn("completed scan", incomplete.json()["detail"])
 
+    def test_comparison_rejects_scans_from_different_audit_profiles(self) -> None:
+        target_id = self.create_target()
+        passive_scan_id = self.create_scan(target_id, scan_profile_id="passive-web")
+        active_scan_id = self.create_scan(target_id, mode="active_demo", scan_profile_id="active-demo")
+
+        response = self.client.get(
+            f"/api/v1/scans/{active_scan_id}/comparison?baseline_scan_id={passive_scan_id}",
+            headers=DEV_AUTH_HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "Scans must use the same audit profile.")
+
+    def test_comparison_hides_scans_from_other_workspaces(self) -> None:
+        target_id = self.create_target()
+        comparison_scan_id = self.create_scan(target_id)
+        other_workspace_id = f"risk-comparison-workspace-{uuid4()}"
+        other_user_id = f"risk-comparison-user-{uuid4()}"
+        other_target_id = self.create_target(workspace_id=other_workspace_id, user_id=other_user_id)
+        other_scan_id = self.create_scan(other_target_id, workspace_id=other_workspace_id, user_id=other_user_id)
+
+        response = self.client.get(
+            f"/api/v1/scans/{comparison_scan_id}/comparison?baseline_scan_id={other_scan_id}",
+            headers=DEV_AUTH_HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["detail"], "Scan not found.")
+
     def test_completed_with_warnings_is_accepted_for_scores_and_comparison(self) -> None:
         target_id = self.create_target()
         baseline_scan_id = self.create_scan(target_id, status="completed_with_warnings", created_offset=0)
@@ -231,6 +260,28 @@ class RiskDashboardTests(unittest.TestCase):
         self.assertEqual(response.json()["comparison_scan_id"], created_earlier_completed_later)
         self.assertEqual(target_dashboard.status_code, 200)
         self.assertEqual(target_dashboard.json()["latest_risk_score"]["scan_id"], created_earlier_completed_later)
+
+    def test_latest_comparison_uses_prior_scan_from_latest_scan_profile(self) -> None:
+        target_id = self.create_target()
+        passive_baseline_id = self.create_scan(target_id, scan_profile_id="passive-web", completed_offset=1)
+        self.create_scan(target_id, mode="active_demo", scan_profile_id="active-demo", completed_offset=2)
+        passive_latest_id = self.create_scan(target_id, scan_profile_id="passive-web", completed_offset=3)
+
+        response = self.client.get(f"/api/v1/targets/{target_id}/latest-comparison", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["baseline_scan_id"], passive_baseline_id)
+        self.assertEqual(response.json()["comparison_scan_id"], passive_latest_id)
+
+    def test_latest_comparison_requires_prior_scan_from_latest_scan_profile(self) -> None:
+        target_id = self.create_target()
+        self.create_scan(target_id, scan_profile_id="passive-web", completed_offset=1)
+        self.create_scan(target_id, mode="active_demo", scan_profile_id="active-demo", completed_offset=2)
+
+        response = self.client.get(f"/api/v1/targets/{target_id}/latest-comparison", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("same audit profile", response.json()["detail"])
 
     def test_workspace_overview_latest_risk_uses_completion_order(self) -> None:
         target_id = self.create_target()
@@ -299,6 +350,8 @@ class RiskDashboardTests(unittest.TestCase):
         workspace_id: str = DEV_WORKSPACE_ID,
         user_id: str = DEV_USER_ID,
         status: str = "completed",
+        mode: str = "passive",
+        scan_profile_id: str = "passive-web",
         created_offset: int = 0,
         completed_offset: int | None = None,
         scan_id: str | None = None,
@@ -313,8 +366,8 @@ class RiskDashboardTests(unittest.TestCase):
                 workspace_id=workspace_id,
                 created_by_user_id=user_id,
                 target_id=target_id,
-                mode="passive",
-                scan_profile_id="passive-web",
+                mode=mode,
+                scan_profile_id=scan_profile_id,
                 status=status,
                 current_step="normalizing_findings" if is_completed else "target_validation",
                 status_message="Completed." if is_completed else "Queued.",
