@@ -39,10 +39,23 @@ export function WebGLScopeField({
     const field = fieldRef.current;
     if (!canvas || !field) return;
 
+    const contextAttributes: WebGLContextAttributes = {
+      alpha: true,
+      antialias: true,
+      powerPreference: "high-performance",
+      premultipliedAlpha: true
+    };
+    const context = canvas.getContext("webgl2", contextAttributes) ?? canvas.getContext("webgl", contextAttributes);
+    if (!context) {
+      window.setTimeout(() => setAvailable(false), 0);
+      return;
+    }
+
     let renderer: THREE.WebGLRenderer;
     try {
       renderer = new THREE.WebGLRenderer({
         canvas,
+        context,
         alpha: true,
         antialias: true,
         powerPreference: "high-performance",

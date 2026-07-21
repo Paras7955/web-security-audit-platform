@@ -45,6 +45,9 @@ export function FindingsDashboard({
   tagResourceType,
   suppressionReason,
   isSuppressing,
+  updatingFindingId,
+  isCreatingTag,
+  isAssigningTag,
   onSeverityFilter,
   onLifecycleFilter,
   onSuppressionFilter,
@@ -95,6 +98,9 @@ export function FindingsDashboard({
   tagResourceType: string;
   suppressionReason: string;
   isSuppressing: boolean;
+  updatingFindingId: string;
+  isCreatingTag: boolean;
+  isAssigningTag: boolean;
   onSeverityFilter: (severity: string) => void;
   onLifecycleFilter: (status: string) => void;
   onSuppressionFilter: (status: string) => void;
@@ -237,11 +243,11 @@ export function FindingsDashboard({
               <label>Risk max<input type="number" min="0" max="100" value={riskMaxFilter} onChange={(event) => onRiskMaxFilter(event.target.value)} /></label>
             </div>
             <div className="tagManagement">
-              <label className="tagLabelInput"><span className="srOnly">New tag label</span><input value={tagLabel} onChange={(event) => onTagLabelChange(event.target.value)} placeholder="Tag label" /></label>
-              <button type="button" onClick={onCreateTag} disabled={!tagLabel.trim()}>Create tag</button>
-              <label className="tagAssignmentSelect"><span className="srOnly">Tag to assign</span><select value={assignmentTagId} onChange={(event) => onAssignmentTagChange(event.target.value)}><option value="">Choose tag to assign</option>{tags.map((tag) => <option value={tag.id} key={tag.id}>{tag.label}</option>)}</select></label>
-              <select value={tagResourceType} onChange={(event) => onTagResourceTypeChange(event.target.value)} aria-label="Tag resource type"><option value="target">Target</option><option value="scan">Scan</option></select>
-              <button type="button" onClick={onAssignTag} disabled={!assignmentTagId || !selectedFinding}>Assign tag</button>
+              <label className="tagLabelInput"><span className="srOnly">New tag label</span><input value={tagLabel} onChange={(event) => onTagLabelChange(event.target.value)} placeholder="Tag label" disabled={isCreatingTag} /></label>
+              <button type="button" onClick={onCreateTag} disabled={!tagLabel.trim() || isCreatingTag}>{isCreatingTag ? "Creating…" : "Create tag"}</button>
+              <label className="tagAssignmentSelect"><span className="srOnly">Tag to assign</span><select value={assignmentTagId} onChange={(event) => onAssignmentTagChange(event.target.value)} disabled={isAssigningTag}><option value="">Choose tag to assign</option>{tags.map((tag) => <option value={tag.id} key={tag.id}>{tag.label}</option>)}</select></label>
+              <select value={tagResourceType} onChange={(event) => onTagResourceTypeChange(event.target.value)} aria-label="Tag resource type" disabled={isAssigningTag}><option value="target">Target</option><option value="scan">Scan</option></select>
+              <button type="button" onClick={onAssignTag} disabled={!assignmentTagId || !selectedFinding || isAssigningTag}>{isAssigningTag ? "Assigning…" : "Assign tag"}</button>
             </div>
           </div>
         </details>
@@ -320,6 +326,7 @@ export function FindingsDashboard({
         finding={selectedFinding}
         suppressionReason={suppressionReason}
         isSuppressing={isSuppressing}
+        isUpdatingLifecycle={Boolean(selectedFinding && updatingFindingId === selectedFinding.id)}
         onUpdateLifecycle={onUpdateLifecycle}
         onSuppressionReasonChange={onSuppressionReasonChange}
         onSuppressFinding={onSuppressFinding}
@@ -332,6 +339,7 @@ function FindingDetail({
   finding,
   suppressionReason,
   isSuppressing,
+  isUpdatingLifecycle,
   onUpdateLifecycle,
   onSuppressionReasonChange,
   onSuppressFinding
@@ -339,6 +347,7 @@ function FindingDetail({
   finding: Finding | null;
   suppressionReason: string;
   isSuppressing: boolean;
+  isUpdatingLifecycle: boolean;
   onUpdateLifecycle: (findingId: string, lifecycleStatus: string) => void;
   onSuppressionReasonChange: (reason: string) => void;
   onSuppressFinding: (finding: Finding) => void;
@@ -365,13 +374,14 @@ function FindingDetail({
       <div className="findingActions">
         <label>
           Lifecycle
-          <select value={finding.lifecycle_status} onChange={(event) => onUpdateLifecycle(finding.id, event.target.value)}>
+          <select value={finding.lifecycle_status} onChange={(event) => onUpdateLifecycle(finding.id, event.target.value)} disabled={isUpdatingLifecycle}>
             {lifecycleStatuses.map((item) => (
               <option value={item} key={item}>
                 {formatStatus(item)}
               </option>
             ))}
           </select>
+          {isUpdatingLifecycle ? <span className="inlineMutationStatus" role="status">Saving lifecycle…</span> : null}
         </label>
         <label>
           Suppression reason

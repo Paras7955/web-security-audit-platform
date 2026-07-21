@@ -19,6 +19,7 @@ export function RiskDashboardPanel({
   comparison,
   message,
   isComparing,
+  isLoading,
   onBaselineScanChange,
   onComparisonScanChange,
   onCompare
@@ -33,6 +34,7 @@ export function RiskDashboardPanel({
   comparison: ScanComparison | null;
   message: string;
   isComparing: boolean;
+  isLoading: boolean;
   onBaselineScanChange: (scanId: string) => void;
   onComparisonScanChange: (scanId: string) => void;
   onCompare: () => void;
@@ -58,7 +60,7 @@ export function RiskDashboardPanel({
   const latestScore = targetDashboard?.latest_risk_score ?? null;
 
   return (
-    <div className="riskDashboard">
+    <div className="riskDashboard" aria-busy={isLoading}>
       <div className="riskMetricGrid" aria-label="Risk overview">
         <RiskScoreCard title="Latest scan risk" score={overview?.latest_risk_score ?? null} />
         <RiskScoreCard title="Target risk" score={latestScore} />
@@ -81,7 +83,9 @@ export function RiskDashboardPanel({
             <div><h3>Selected target posture</h3><p>Current risk inputs for the authorized target selected in this workspace.</p></div>
             <span className="contextBadge">{selectedTarget?.name ?? "No target"}</span>
           </div>
-          {targetDashboard ? (
+          {isLoading ? (
+            <p className="emptyState" role="status">Loading target posture…</p>
+          ) : targetDashboard ? (
             <>
               <dl className="scanMeta">
                 <div>
@@ -101,7 +105,7 @@ export function RiskDashboardPanel({
               <ScoreInputs dashboard={targetDashboard} />
             </>
           ) : (
-            <p className="emptyState">Select a target to load target risk data.</p>
+            <p className="emptyState">{selectedTarget ? "Complete an audit to generate target risk data." : "Select a target to load target risk data."}</p>
           )}
         </div>
       </div>
@@ -146,7 +150,7 @@ export function RiskDashboardPanel({
         ) : (
           <p className="emptyState">Complete at least two audits with the same profile for this target to unlock a coverage-equivalent comparison.</p>
         )}
-        <p className="formMessage">{message}</p>
+        {eligibleBaselineScans.length >= 2 ? <p className="formMessage" role="status" aria-live="polite">{message}</p> : null}
         {comparison ? <ComparisonSummary comparison={comparison} /> : null}
       </div>
     </div>

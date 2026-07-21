@@ -59,8 +59,10 @@
   --space-2xl: 48px;
   --space-3xl: 64px;
   --radius-sm: 8px;
+  --radius-field: 9px;
   --radius-md: 12px;
   --radius-lg: 16px;
+  --radius-pill: 999px;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -150,6 +152,7 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 a:focus-visible,
+summary:focus-visible,
 [role="tabpanel"]:focus-visible {
   outline: 3px solid var(--accent-strong);
   outline-offset: 2px;
@@ -194,7 +197,8 @@ h4 {
 }
 
 .appTopbar {
-  position: relative;
+  position: sticky;
+  top: 0;
   z-index: 20;
   display: flex;
   min-height: 56px;
@@ -202,17 +206,18 @@ h4 {
   justify-content: space-between;
   gap: 24px;
   border-bottom: 1px solid var(--border);
+  background: var(--bg);
 }
 
 .brandLockup {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
 }
 
 .brandLockup strong {
-  font-size: 1.17rem;
+  font-size: var(--type-subheading);
   font-weight: var(--weight-bold);
 }
 
@@ -220,7 +225,7 @@ h4 {
   margin-left: 2px;
   border-left: 1px solid var(--border-strong);
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--type-caption);
   padding: 3px 0 3px 13px;
 }
 
@@ -266,7 +271,7 @@ h4 {
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: var(--type-meta);
   font-weight: 600;
   padding: 9px 12px;
   transition: color 180ms var(--ease-out), background 180ms var(--ease-out);
@@ -302,14 +307,14 @@ h4 {
 .localOnlyBadge {
   gap: 8px;
   color: var(--text-soft);
-  font-size: 0.8rem;
+  font-size: var(--type-meta);
   font-weight: 600;
 }
 
 .liveDot {
   width: 7px;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--success);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 13%, transparent), 0 0 18px var(--success);
 }
@@ -325,7 +330,7 @@ h4 {
   height: 39px;
   place-items: center;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--surface-soft);
   color: var(--text-soft);
   transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
@@ -381,7 +386,7 @@ h4 {
   gap: 7px;
   margin: 0 0 10px;
   color: var(--accent);
-  font-size: 0.72rem;
+  font-size: var(--type-caption);
   font-weight: var(--weight-bold);
   letter-spacing: 0.115em;
   text-transform: uppercase;
@@ -399,7 +404,7 @@ h4 {
 .commandHero h1 {
   max-width: 340px;
   margin: 0;
-  font-size: clamp(1.75rem, 2.25vw, 2.35rem);
+  font-size: var(--type-display);
   font-weight: var(--weight-bold);
   line-height: 1.15;
   letter-spacing: -0.028em;
@@ -410,7 +415,7 @@ h4 {
   max-width: 320px;
   margin: 12px 0 0;
   color: var(--text-soft);
-  font-size: 0.88rem;
+  font-size: var(--type-meta);
   line-height: 1.5;
   text-wrap: pretty;
 }
@@ -433,7 +438,7 @@ h4 {
   border-radius: var(--radius-sm);
   background: linear-gradient(135deg, var(--action), var(--action-end));
   color: var(--on-action);
-  font-size: 0.82rem;
+  font-size: var(--type-meta);
   font-weight: var(--weight-semibold);
   padding: 10px 15px;
   transition: background 180ms var(--ease-out), transform 180ms var(--ease-out);
@@ -449,7 +454,7 @@ h4 {
   align-items: center;
   gap: var(--space-xs);
   color: var(--muted);
-  font-size: 0.73rem;
+  font-size: var(--type-caption);
   font-weight: var(--weight-medium);
 }
 
@@ -466,7 +471,7 @@ h4 {
   gap: 7px;
   margin: 0;
   color: var(--text-soft);
-  font-size: 0.82rem;
+  font-size: var(--type-meta);
   font-weight: var(--weight-medium);
   list-style: none;
 }
@@ -491,7 +496,7 @@ h4 {
   z-index: -1;
   width: min(760px, 94%);
   height: 250px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: radial-gradient(ellipse, var(--hero-glow), transparent 68%);
   content: "";
   filter: blur(28px);
@@ -538,7 +543,7 @@ button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scan
   background: linear-gradient(135deg, var(--action), var(--action-end));
   box-shadow: none;
   color: var(--on-action);
-  font-size: 0.78rem;
+  font-size: var(--type-caption);
   font-weight: var(--weight-semibold);
   padding: 8px 14px;
   transition: transform 180ms var(--ease-out), background 180ms var(--ease-out), border-color 180ms var(--ease-out);
@@ -580,7 +585,7 @@ button.dangerButton,
 
 .statusBanner {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--bg-elevated);
   padding: 13px 16px;
 }
@@ -611,7 +616,7 @@ button.dangerButton,
   align-items: center;
   gap: var(--space-xs);
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--type-caption);
   font-weight: 600;
 }
 
@@ -705,10 +710,10 @@ button.dangerButton,
   flex: 0 0 auto;
   align-items: center;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--type-caption);
   font-style: normal;
   font-weight: var(--weight-semibold);
   letter-spacing: 0.025em;
@@ -738,7 +743,7 @@ button.dangerButton,
   bottom: -45px;
   width: 115px;
   height: 115px;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: currentColor;
   content: "";
   filter: blur(45px);
@@ -751,7 +756,7 @@ button.dangerButton,
   height: 38px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 11px;
+  border-radius: var(--radius-md);
   background: var(--surface-hover);
   color: currentColor;
 }
@@ -763,12 +768,12 @@ button.dangerButton,
 
 .metricCard > div > span {
   color: var(--muted);
-  font-size: 0.73rem;
+  font-size: var(--type-caption);
   font-weight: 600;
 }
 
 .metricCard > div > strong {
-  font-size: 2.05rem;
+  font-size: var(--type-display);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1.13;
@@ -776,7 +781,7 @@ button.dangerButton,
 
 .metricCard > div > small {
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: var(--type-caption);
 }
 
 .metricCard-cyan { color: var(--accent); }
@@ -837,7 +842,7 @@ button.dangerButton,
   overflow-wrap: anywhere;
   color: var(--text-soft);
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: var(--type-caption);
 }
 
 .focusTargetUrl svg {
@@ -855,10 +860,10 @@ button.dangerButton,
   align-items: center;
   gap: 6px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-field);
   background: var(--surface-soft);
   color: var(--text-soft);
-  font-size: 0.7rem;
+  font-size: var(--type-caption);
   padding: 7px 9px;
 }
 
@@ -904,19 +909,19 @@ button.dangerButton,
 }
 
 .activityProgress strong {
-  font-size: 2.65rem;
+  font-size: var(--type-display);
   font-weight: 700;
 }
 
 .activityProgress span {
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: var(--type-caption);
 }
 
 .progressTrack {
   height: 7px;
   overflow: hidden;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   background: var(--surface-hover);
 }
 
@@ -959,7 +964,7 @@ button.dangerButton,
 
 dt {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--type-caption);
 }
 
 dd {
@@ -967,7 +972,7 @@ dd {
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--text-soft);
-  font-size: 0.78rem;
+  font-size: var(--type-caption);
   font-weight: 600;
   text-align: right;
 }
@@ -983,7 +988,7 @@ dd {
   border: 0;
   background: transparent;
   color: var(--accent);
-  font-size: 0.72rem;
+  font-size: var(--type-caption);
   font-weight: 700;
   padding: 4px;
 }
@@ -1010,7 +1015,7 @@ td {
 
 th {
   color: var(--muted);
-  font-size: 0.71rem;
+  font-size: var(--type-caption);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1054,13 +1059,13 @@ tbody tr:last-child td {
 
 .viewIntro h3,
 .viewToolbar h3 {
-  font-size: 1.35rem;
+  font-size: var(--type-heading);
 }
 
 .viewIntro h2,
 .viewToolbar h2 {
   margin: 0;
-  font-size: 1.55rem;
+  font-size: var(--type-display);
   font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1.2;
@@ -1076,7 +1081,7 @@ tbody tr:last-child td {
   max-width: 680px;
   margin: 5px 0 0;
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: var(--type-meta);
 }
 
 .safetyPill {
@@ -1115,7 +1120,7 @@ tbody tr:last-child td {
   align-items: stretch;
   overflow: hidden;
   border: 1px solid transparent;
-  border-radius: 11px;
+  border-radius: var(--radius-md);
   background: var(--surface-soft);
 }
 
@@ -1144,7 +1149,7 @@ tbody tr:last-child td {
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-field);
   background: var(--surface-solid);
   color: var(--blue);
 }
@@ -1163,12 +1168,12 @@ tbody tr:last-child td {
 }
 
 .targetIdentity strong {
-  font-size: 0.8rem;
+  font-size: var(--type-meta);
 }
 
 .targetIdentity small {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--type-caption);
 }
 
 .targetCapabilities {
@@ -1179,10 +1184,10 @@ tbody tr:last-child td {
 }
 
 .targetCapabilities em {
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--surface-hover);
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: var(--type-caption);
   font-style: normal;
   padding: 2px 5px;
 }
@@ -1193,7 +1198,7 @@ tbody tr:last-child td {
   height: 21px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: var(--accent);
   color: var(--on-action);
 }
@@ -1226,7 +1231,7 @@ tbody tr:last-child td {
   display: grid;
   gap: 6px;
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: var(--type-caption);
   font-weight: 600;
 }
 
@@ -1236,7 +1241,7 @@ textarea {
   width: 100%;
   min-height: 39px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-field);
   background: var(--input);
   color: var(--text);
   padding: 8px 10px;
@@ -1273,7 +1278,7 @@ textarea:focus {
   align-items: flex-start;
   gap: 9px !important;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-field);
   background: var(--surface-soft);
   color: var(--text-soft) !important;
   padding: 10px;
@@ -1292,7 +1297,7 @@ textarea:focus {
 .aiPanel > p,
 .scanPanel > p {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: var(--type-meta);
   line-height: 1.6;
 }
 
@@ -1349,7 +1354,7 @@ textarea:focus {
 .changeList {
   margin-top: 14px;
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: var(--radius-md);
   background: var(--surface-soft);
   padding: 14px;
 }
@@ -1390,13 +1395,13 @@ textarea:focus {
 }
 
 .modeCard strong {
-  font-size: 0.76rem;
+  font-size: var(--type-caption);
 }
 
 .modeCard span {
   margin-top: 4px;
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: var(--type-caption);
   font-weight: 500;
   line-height: 1.4;
 }
@@ -1415,7 +1420,7 @@ textarea:focus {
 .inlineAction p {
   margin: 0;
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: var(--type-caption);
 }
 
 .historyFilters {
@@ -1426,7 +1431,7 @@ textarea:focus {
 }
 
 .historyFilters select {
-  font-size: 0.74rem;
+  font-size: var(--type-caption);
 }
 
 .searchField {
@@ -1464,7 +1469,7 @@ textarea:focus {
   align-items: center;
   gap: 10px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-field);
   background: var(--surface-soft);
   color: var(--text-soft);
   padding: 10px 11px;
@@ -1494,17 +1499,17 @@ textarea:focus {
 }
 
 .scanRow strong {
-  font-size: 0.73rem;
+  font-size: var(--type-caption);
 }
 
 .scanRow small {
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: var(--type-caption);
 }
 
 .scanRow em {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--type-caption);
   font-style: normal;
 }
 
@@ -1513,7 +1518,7 @@ textarea:focus {
   width: 7px;
   height: 7px;
   flex: 0 0 auto;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   background: var(--muted);
   box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 10%, transparent);
 }
@@ -1597,7 +1602,7 @@ textarea:focus {
   margin-top: var(--space-xs);
   color: var(--faint);
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-size: var(--type-caption);
 }
 
 .scanHeader > div > p {
@@ -1647,7 +1652,7 @@ textarea:focus {
 .opsList strong,
 .opsList em,
 .opsList small {
-  font-size: 0.74rem;
+  font-size: var(--type-caption);
 }
 
 .opsList em {
@@ -1693,7 +1698,7 @@ textarea:focus {
   width: auto;
   min-width: 145px;
   flex: 1 1 145px;
-  font-size: 0.76rem;
+  font-size: var(--type-caption);
 }
 
 .advancedFindingControls {
@@ -1710,7 +1715,7 @@ textarea:focus {
   gap: var(--space-xs);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: var(--type-caption);
   font-weight: 600;
   padding: var(--space-xs) 2px;
 }
@@ -1718,7 +1723,7 @@ textarea:focus {
 .advancedFindingControls summary::before {
   color: var(--accent-strong);
   content: "›";
-  font-size: 1.15rem;
+  font-size: var(--type-subheading);
   line-height: 1;
   transition: transform 180ms var(--ease-out);
 }
@@ -1732,10 +1737,10 @@ textarea:focus {
 }
 
 .activeFilterCount {
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent-soft);
   color: var(--accent-strong);
-  font-size: 0.72rem;
+  font-size: var(--type-caption);
   padding: 3px 7px;
 }
 
@@ -1797,7 +1802,7 @@ textarea:focus {
 .resultsToolbar p {
   margin: 0;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: var(--type-meta);
 }
 
 .resultsToolbar p strong {
@@ -1813,14 +1818,14 @@ textarea:focus {
   align-items: center;
   gap: var(--space-xs);
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: var(--type-caption);
   font-weight: 600;
 }
 
 .resultsToolbar select {
   width: auto;
   min-width: 78px;
-  font-size: 0.76rem;
+  font-size: var(--type-caption);
 }
 
 .resultsToolbar label:first-child select {
@@ -1955,7 +1960,7 @@ textarea:focus {
 .severity {
   border-color: currentColor;
   background: transparent;
-  font-size: 0.72rem;
+  font-size: var(--type-caption);
   padding: 4px 7px;
 }
 
@@ -1995,11 +2000,11 @@ textarea:focus {
   max-width: 100%;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-field);
   background: var(--input);
   color: var(--text-soft);
   font-family: var(--font-mono);
-  font-size: 0.76rem;
+  font-size: var(--type-caption);
   line-height: 1.6;
   padding: 11px;
   white-space: pre-wrap;
@@ -2014,7 +2019,7 @@ textarea:focus {
 .resultsPagination span {
   min-width: 118px;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--type-caption);
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -2034,12 +2039,12 @@ textarea:focus {
 
 .riskScoreCard > span {
   color: var(--muted);
-  font-size: 0.71rem;
+  font-size: var(--type-caption);
   font-weight: 600;
 }
 
 .riskScoreCard > strong {
-  font-size: 2rem;
+  font-size: var(--type-display);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -2069,14 +2074,14 @@ textarea:focus {
 .severityBars span,
 .severityBars strong {
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: var(--type-caption);
   text-transform: capitalize;
 }
 
 .severityTrack {
   height: 5px;
   overflow: hidden;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   background: var(--surface-hover);
 }
 
@@ -2129,7 +2134,7 @@ textarea:focus {
 
 .changeList li strong,
 .changeList li small {
-  font-size: 0.72rem;
+  font-size: var(--type-caption);
 }
 
 .changeList li small {
@@ -2182,8 +2187,8 @@ textarea:focus {
 }
 
 .reportList li button {
-  min-height: 32px !important;
-  padding: 5px 9px !important;
+  min-height: 32px;
+  padding: 5px 9px;
 }
 
 .aiMeta {
@@ -2265,14 +2270,14 @@ textarea:focus {
   align-items: center;
   gap: 7px;
   margin: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-soft);
   padding: 6px 9px;
 }
 
 .aiGroupList strong,
 .aiGroupList span {
-  font-size: 0.74rem;
+  font-size: var(--type-caption);
 }
 
 .aiGroupList span {
@@ -2347,7 +2352,7 @@ textarea:focus {
 
 .aiFindingRank strong,
 .aiFindingRank small {
-  font-size: 0.74rem;
+  font-size: var(--type-caption);
 }
 
 .aiFindingRank small {
@@ -2433,13 +2438,13 @@ textarea:focus {
 }
 
 .boundaryGrid article strong {
-  font-size: 0.86rem;
+  font-size: var(--type-meta);
 }
 
 .boundaryGrid article p {
   margin: 0;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--type-caption);
 }
 
 .operationsBoundaryList {
@@ -2467,20 +2472,20 @@ textarea:focus {
 
 .operationsBoundaryList strong {
   color: var(--text-soft);
-  font-size: 0.76rem;
+  font-size: var(--type-caption);
 }
 
 .operationsBoundaryList p {
   margin: 0;
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: var(--type-caption);
   line-height: 1.5;
 }
 
 .auditLogPanel .panelHeader p {
   margin: 4px 0 0;
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: var(--type-caption);
 }
 
 .auditLogToolbar {
@@ -2530,12 +2535,12 @@ textarea:focus {
 .tableLimitNote {
   margin: var(--space-sm) 0 0;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--type-caption);
 }
 
 .auditWorkspace > .viewIntro h2 {
   margin: 0;
-  font-size: 1.65rem;
+  font-size: var(--type-display);
   font-weight: 700;
   letter-spacing: -0.028em;
   line-height: 1.2;
@@ -2611,7 +2616,7 @@ textarea:focus {
   place-items: center;
   background: transparent;
   color: var(--faint);
-  font-size: 0.72rem;
+  font-size: var(--type-caption);
   font-weight: var(--weight-semibold);
 }
 
@@ -2684,7 +2689,7 @@ textarea:focus {
   display: block;
   margin-bottom: var(--space-2xs);
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: var(--type-caption);
   font-weight: 700;
 }
 
@@ -2726,7 +2731,7 @@ textarea:focus {
   align-items: center;
   gap: var(--space-xs);
   color: var(--amber);
-  font-size: 0.7rem;
+  font-size: var(--type-caption);
   font-weight: 700;
   padding: 4px 0;
 }
@@ -2749,7 +2754,7 @@ textarea:focus {
   align-items: center;
   gap: 6px;
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: var(--type-caption);
 }
 
 .boundaryStrip svg { color: var(--muted); }
@@ -2767,7 +2772,7 @@ textarea:focus {
 .phaseFooter > span {
   max-width: 62ch;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--type-caption);
   text-align: right;
 }
 
@@ -2895,7 +2900,7 @@ textarea:focus {
 
 .modeCardTop em {
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: var(--type-caption);
   font-style: normal;
   font-weight: 700;
 }
@@ -2999,8 +3004,8 @@ textarea:focus {
   padding: 8px 0;
 }
 
-.launchReview dt { color: var(--muted); font-size: 0.73rem; }
-.launchReview dd { margin: 0; color: var(--text-soft); font-size: 0.74rem; font-weight: 600; text-align: right; }
+.launchReview dt { color: var(--muted); font-size: var(--type-caption); }
+.launchReview dd { margin: 0; color: var(--text-soft); font-size: var(--type-caption); font-weight: 600; text-align: right; }
 .profileContext > button { width: 100%; margin-top: var(--space-sm); }
 
 .profileContext .repoPathNotice {
@@ -3014,7 +3019,7 @@ textarea:focus {
 }
 
 .profileContext .repoPathNotice p { margin: 0 0 var(--space-xs); color: var(--text-soft); font-size: var(--type-meta); line-height: 1.55; }
-.profileContext .repoPathNotice strong { display: block; margin-bottom: var(--space-xs); color: var(--text-soft); font-size: 0.74rem; }
+.profileContext .repoPathNotice strong { display: block; margin-bottom: var(--space-xs); color: var(--text-soft); font-size: var(--type-caption); }
 .profileContext .repoPathValue {
   display: block;
   max-width: 100%;
@@ -3052,7 +3057,7 @@ textarea:focus {
   border-radius: 0;
   background: transparent;
   color: var(--text-soft);
-  font-size: 0.74rem;
+  font-size: var(--type-caption);
   padding: 9px 12px 9px 0;
 }
 
@@ -3121,7 +3126,7 @@ textarea:focus {
 }
 
 .credentialPrompt > span { display: grid; width: 24px; height: 24px; place-items: center; background: transparent; color: var(--muted); }
-.credentialPrompt strong { color: var(--text-soft); font-size: 0.7rem; }
+.credentialPrompt strong { color: var(--text-soft); font-size: var(--type-caption); }
 .credentialPrompt p { margin: var(--space-2xs) 0 0; color: var(--text-soft); font-size: var(--type-meta); line-height: 1.5; }
 .credentialPrompt .textButton { grid-column: 2; justify-self: start; }
 
@@ -3418,7 +3423,7 @@ textarea:focus {
 .productPage .riskScoreCard > strong {
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: 1.75rem;
+  font-size: var(--type-display);
 }
 
 .productPage .metricCard-danger > div > strong {
@@ -3430,6 +3435,10 @@ textarea:focus {
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   background: var(--border);
+}
+
+.productPage .overviewSplit {
+  align-items: stretch;
 }
 
 .productPage :is(.overviewSplit, .riskDashboardGrid, .intelligenceGrid, .findingsLayout) > :is(.panel, .reportPanel, .aiPanel) {
@@ -3498,7 +3507,7 @@ textarea:focus {
 }
 
 .productPage .filterButton {
-  border-radius: 4px !important;
+  border-radius: var(--radius-sm) !important;
 }
 
 .severityBars > div:nth-child(1) .severityTrack i,
@@ -3741,6 +3750,58 @@ textarea:focus {
   animation: loading-slide 1.2s var(--ease-out) infinite alternate;
 }
 
+.historicalAuditNotice,
+.evidenceLoadingState {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  padding: var(--space-sm) 2px;
+}
+
+.historicalAuditNotice {
+  margin-bottom: var(--space-lg);
+}
+
+.historicalAuditNotice > svg,
+.evidenceLoadingIcon {
+  color: var(--accent-strong);
+}
+
+.historicalAuditNotice strong,
+.evidenceLoadingState strong {
+  color: var(--text-soft);
+  font-size: var(--type-meta);
+}
+
+.historicalAuditNotice p,
+.evidenceLoadingState p {
+  margin: var(--space-2xs) 0 0;
+  color: var(--muted);
+  font-size: var(--type-meta);
+}
+
+.evidenceLoadingState {
+  margin: 0 0 var(--space-md);
+  padding: var(--space-lg) 2px;
+}
+
+.evidenceLoadingIcon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+}
+
+.inlineMutationStatus {
+  color: var(--accent-strong);
+  font-size: var(--type-caption);
+  font-weight: var(--weight-semibold);
+}
+
 .firstRunState {
   min-height: 150px;
 }
@@ -3786,12 +3847,13 @@ textarea:focus {
   color: var(--muted);
   font-size: var(--type-meta);
   padding: var(--space-sm) 0;
-  transition: color 160ms var(--ease-out), padding 160ms var(--ease-out);
+  transform: translateX(0);
+  transition: color 160ms var(--ease-out), transform 160ms var(--ease-out);
 }
 
 .guideContents a:hover {
   color: var(--text);
-  padding-left: var(--space-xs);
+  transform: translateX(var(--space-xs));
 }
 
 .guideContent {
@@ -4281,7 +4343,7 @@ button.changeListDisclosure:hover:not(:disabled) {
   grid-template-columns: auto 1fr;
   gap: 16px;
   border: 1px solid var(--border-strong);
-  border-radius: 17px;
+  border-radius: var(--radius-lg);
   background: var(--surface-solid);
   box-shadow: var(--dialog-shadow);
   padding: 23px;
@@ -4293,29 +4355,29 @@ button.changeListDisclosure:hover:not(:disabled) {
   width: 44px;
   height: 44px;
   place-items: center;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--danger-soft);
   color: var(--danger);
 }
 
 .confirmDialog h3 {
   margin: 0 0 8px;
-  font-size: 1.18rem;
+  font-size: var(--type-subheading);
 }
 
 .confirmDialog p {
   margin-bottom: 13px;
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: var(--type-caption);
 }
 
 .historyPreserved {
   gap: 8px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-field);
   background: var(--accent-soft);
   color: var(--text-soft);
-  font-size: 0.74rem;
+  font-size: var(--type-caption);
   padding: 9px;
 }
 
@@ -4336,6 +4398,19 @@ button.changeListDisclosure:hover:not(:disabled) {
   justify-content: flex-end;
   border-top: 1px solid var(--border);
   padding-top: 16px;
+}
+
+button:active:not(:disabled):not([aria-disabled="true"]) {
+  filter: brightness(0.96);
+  transform: translateY(1px);
+}
+
+button:disabled:not(.primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .findingSelectButton, .modeCard) {
+  border-color: var(--border);
+  background: var(--surface-soft);
+  box-shadow: none;
+  color: var(--muted);
+  opacity: 0.68;
 }
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
@@ -4540,6 +4615,12 @@ button.changeListDisclosure:hover:not(:disabled) {
 }
 
 @media (max-width: 680px) {
+  :root,
+  :root[data-theme="dark"],
+  :root[data-theme="light"] {
+    --type-caption: 0.875rem;
+  }
+
   .appShell {
     width: min(100% - 20px, 1460px);
     padding-top: 10px;
@@ -4567,11 +4648,11 @@ button.changeListDisclosure:hover:not(:disabled) {
   }
 
   .commandHero h1 {
-    font-size: 1.75rem;
+    font-size: var(--type-display);
   }
 
   .heroSummary {
-    font-size: 0.9rem;
+    font-size: var(--type-meta);
   }
 
   .scopeField {
@@ -4620,7 +4701,7 @@ button.changeListDisclosure:hover:not(:disabled) {
   }
 
   .metricCard > div > strong {
-    font-size: 1.65rem;
+    font-size: var(--type-display);
   }
 
   .panel,
@@ -4786,15 +4867,6 @@ button.changeListDisclosure:hover:not(:disabled) {
     grid-column: 1;
   }
 
-  .auditPhaseTab small,
-  .contextBadge,
-  .statusPill,
-  .stateBadge,
-  .severity,
-  .panelKicker {
-    font-size: 0.72rem;
-  }
-
   .productPage .metricCard {
     min-height: 125px;
     gap: var(--space-xs);
@@ -4816,12 +4888,15 @@ button.changeListDisclosure:hover:not(:disabled) {
 
   .richEmptyState,
   .workspaceLoadingState,
-  .firstRunState {
+  .firstRunState,
+  .historicalAuditNotice,
+  .evidenceLoadingState {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
   .richEmptyState > button,
-  .firstRunState > button {
+  .firstRunState > button,
+  .historicalAuditNotice > button {
     width: 100%;
     grid-row: auto;
     grid-column: 1 / -1;
@@ -4952,6 +5027,12 @@ button.changeListDisclosure:hover:not(:disabled) {
 
   .filterButton {
     min-height: 44px !important;
+  }
+
+  .findingSelectButton,
+  .reportList li button,
+  button.changeListDisclosure {
+    min-height: 44px;
   }
 
   .advancedFindingControls summary {

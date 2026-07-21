@@ -81,7 +81,7 @@ export function AiExplanationsPanel({ explanation, message }: { explanation: AiE
           ) : null}
         </>
       ) : (
-        <p className="emptyState">{message}</p>
+        <p className="emptyState" role="status" aria-live="polite">{message}</p>
       )}
     </div>
   );

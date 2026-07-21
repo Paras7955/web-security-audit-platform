@@ -67,6 +67,7 @@ export type WorkspaceView = (typeof workspaceViews)[number]["id"];
 
 type AuditPhase = "ready" | "scope" | "profile" | "authorize" | "run" | "review";
 type ActionFeedback = { tone: "info" | "success" | "error"; text: string };
+type PendingReportAction = { reportId: string; action: "view" | "download" } | null;
 
 const auditPhases: Array<{ id: AuditPhase; label: string; icon: "operations" | "target" | "scan" | "shield" | "activity" | "finding" }> = [
   { id: "ready", label: "Preflight", icon: "operations" },
@@ -103,6 +104,7 @@ export function TargetSetup({
   const [scanProfileId, setScanProfileId] = useState("passive-web");
   const [acknowledgements, setAcknowledgements] = useState<string[]>([]);
   const [selectedScanId, setSelectedScanId] = useState("");
+  const [currentAuditScanId, setCurrentAuditScanId] = useState("");
   const [scanHistory, setScanHistory] = useState<Scan[]>([]);
   const [toolRuns, setToolRuns] = useState<ScannerToolRun[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
@@ -156,7 +158,13 @@ export function TargetSetup({
   const [isRefreshingActivity, setIsRefreshingActivity] = useState(false);
   const [isComparingScans, setIsComparingScans] = useState(false);
   const [isSuppressingFinding, setIsSuppressingFinding] = useState(false);
+  const [updatingFindingId, setUpdatingFindingId] = useState("");
+  const [isCreatingTag, setIsCreatingTag] = useState(false);
+  const [isAssigningTag, setIsAssigningTag] = useState(false);
+  const [isLoadingScanEvidence, setIsLoadingScanEvidence] = useState(false);
+  const [isLoadingTargetRisk, setIsLoadingTargetRisk] = useState(false);
   const [isGeneratingReports, setIsGeneratingReports] = useState(false);
+  const [pendingReportAction, setPendingReportAction] = useState<PendingReportAction>(null);
   const [isCancellingScan, setIsCancellingScan] = useState(false);
   const [platformHealthCheckedAt, setPlatformHealthCheckedAt] = useState("");
   const [auditLogCheckedAt, setAuditLogCheckedAt] = useState("");
@@ -170,6 +178,7 @@ export function TargetSetup({
 
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
   const selectedScan = scanHistory.find((scan) => scan.id === selectedScanId) ?? null;
+  const currentAuditScan = scanHistory.find((scan) => scan.id === currentAuditScanId) ?? null;
   const selectedScanTarget = targets.find((target) => target.id === selectedScan?.target_id) ?? null;
   const selectedProfile = SCAN_PROFILES.find((profile) => profile.id === scanProfileId) ?? SCAN_PROFILES[0];
   const platformReady = platformHealth?.status === "ok";
@@ -186,7 +195,16 @@ export function TargetSetup({
   );
   const canStartScan = authorizationReady && platformReady && !isBusy;
   const reviewReady = Boolean(selectedScan && ["completed", "completed_with_warnings"].includes(selectedScan.status));
+  const currentAuditReviewReady = Boolean(currentAuditScan && ["completed", "completed_with_warnings"].includes(currentAuditScan.status));
+  const selectedScanMatchesDraft = Boolean(
+    selectedScan && selectedTarget && selectedScan.target_id === selectedTarget.id && selectedScan.scan_profile_id === scanProfileId
+  );
+  const viewingPastAudit = Boolean(selectedScan && selectedScan.id !== currentAuditScanId);
   const hasCompletedScan = scanHistory.some((scan) => ["completed", "completed_with_warnings"].includes(scan.status));
+  const hasComparableScansForSelectedTarget = useMemo(
+    () => hasComparableScanCoverage(scanHistory, selectedTargetId),
+    [scanHistory, selectedTargetId]
+  );
   const displayFindings = findings;
   const displayAiExplanation = useMemo(() => uniqueAiExplanation(aiExplanation, findings), [aiExplanation, findings]);
   const filteredFindings = useMemo(() => {
@@ -280,41 +298,52 @@ export function TargetSetup({
     centerActivePhase();
     window.addEventListener("resize", centerActivePhase);
     return () => window.removeEventListener("resize", centerActivePhase);
-  }, [auditPhase]);
+  }, [activeView, auditPhase, isBootstrapping]);
 
   useEffect(() => {
     const scanDrivesHero = activeView === "scanning" && (auditPhase === "run" || auditPhase === "review");
+    const heroScan = currentAuditScan ?? selectedScan;
     onHeroStateChange({
       activeProfile: scanProfileId,
-      currentStep: scanDrivesHero ? selectedScan?.current_step ?? null : null,
-      status: scanDrivesHero && selectedScan ? selectedScan.status : platformHealth?.status === "ok" ? "ready" : "validating"
+      currentStep: scanDrivesHero ? heroScan?.current_step ?? null : null,
+      status: scanDrivesHero && heroScan ? heroScan.status : platformHealth?.status === "ok" ? "ready" : "validating"
     });
-  }, [activeView, auditPhase, onHeroStateChange, platformHealth?.status, scanProfileId, selectedScan?.current_step, selectedScan?.status]);
+  }, [activeView, auditPhase, currentAuditScan?.current_step, currentAuditScan?.status, onHeroStateChange, platformHealth?.status, scanProfileId, selectedScan?.current_step, selectedScan?.status]);
 
   useEffect(() => {
     setSuppressionReason("");
   }, [selectedFindingId]);
 
   useEffect(() => {
-    if (!selectedScan || terminalStatuses.has(selectedScan.status)) {
+    const scansToPoll = [currentAuditScan, selectedScan].filter(
+      (scan, index, scans): scan is Scan => Boolean(
+        scan && !terminalStatuses.has(scan.status) && scans.findIndex((candidate) => candidate?.id === scan.id) === index
+      )
+    );
+    if (scansToPoll.length === 0) {
       return;
     }
 
     const timer = window.setInterval(() => {
-      void refreshScan(selectedScan.id);
+      scansToPoll.forEach((scan) => void refreshScan(scan.id));
     }, 1500);
     return () => window.clearInterval(timer);
-  }, [selectedScan]);
+  }, [currentAuditScan?.id, currentAuditScan?.status, selectedScan?.id, selectedScan?.status]);
 
   useEffect(() => {
+    findingsRequestIdRef.current += 1;
+    setFindings([]);
+    setReports([]);
+    setToolRuns([]);
+    setAiExplanation(null);
+    setSelectedFindingId("");
     if (!selectedScanId) {
-      setFindings([]);
-      setReports([]);
-      setToolRuns([]);
-      setAiExplanation(null);
-      setSelectedFindingId("");
+      setIsLoadingScanEvidence(false);
       return;
     }
+    setIsLoadingScanEvidence(true);
+    setReportMessage("Loading reports for the selected audit…");
+    setAiMessage("Loading explanations for the selected audit…");
     void loadToolRuns(selectedScanId, { onlyIfSelected: true });
     if (selectedScan && canUseReports(selectedScan)) {
       void loadReports(selectedScanId, { onlyIfSelected: true });
@@ -335,10 +364,11 @@ export function TargetSetup({
 
   useEffect(() => {
     if (!selectedScanId) {
-      setFindings([]);
-      setSelectedFindingId("");
+      setIsLoadingScanEvidence(false);
       return;
     }
+    findingsRequestIdRef.current += 1;
+    setIsLoadingScanEvidence(true);
     const timer = window.setTimeout(() => {
       void loadFindings(selectedScanId, { onlyIfSelected: true });
     }, 250);
@@ -364,16 +394,28 @@ export function TargetSetup({
   ]);
 
   useEffect(() => {
+    setTargetDashboard(null);
+    setScanComparison(null);
+    setBaselineScanId("");
+    setComparisonScanId("");
     if (!selectedTargetId) {
-      setTargetDashboard(null);
-      setScanComparison(null);
-      setBaselineScanId("");
-      setComparisonScanId("");
+      setIsLoadingTargetRisk(false);
       return;
     }
-    void loadTargetDashboard(selectedTargetId);
-    void loadLatestComparison(selectedTargetId);
-  }, [selectedTargetId]);
+    setIsLoadingTargetRisk(true);
+    setRiskMessage("Loading target risk data…");
+    const loaders = [loadTargetDashboard(selectedTargetId)];
+    if (hasComparableScansForSelectedTarget) {
+      loaders.push(loadLatestComparison(selectedTargetId));
+    } else {
+      setRiskMessage("Complete at least two audits with the same profile to compare matching coverage.");
+    }
+    void Promise.allSettled(loaders).finally(() => {
+      if (selectedTargetIdRef.current === selectedTargetId) {
+        setIsLoadingTargetRisk(false);
+      }
+    });
+  }, [hasComparableScansForSelectedTarget, selectedTargetId]);
 
   async function loadInitialData() {
     setBootstrapError("");
@@ -534,6 +576,8 @@ export function TargetSetup({
         })
       });
       const scan = await readJson<Scan>(response, "Scan creation failed.");
+      setScanHistory((current) => mergeScan(current, scan));
+      setCurrentAuditScanId(scan.id);
       setSelectedScanId(scan.id);
       setFindings([]);
       setToolRuns([]);
@@ -797,6 +841,13 @@ export function TargetSetup({
   }
 
   async function loadLatestComparison(targetId: string) {
+    if (!hasComparableScanCoverage(scanHistory, targetId)) {
+      if (selectedTargetIdRef.current === targetId) {
+        setScanComparison(null);
+        setRiskMessage("Complete at least two audits with the same profile to compare matching coverage.");
+      }
+      return;
+    }
     try {
       const response = await apiFetch(`${apiBaseUrl}/targets/${targetId}/latest-comparison`);
       if (!response.ok) {
@@ -930,6 +981,10 @@ export function TargetSetup({
       }
       setFindings([]);
       setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Findings could not be loaded." });
+    } finally {
+      if (requestId === findingsRequestIdRef.current && (!options.onlyIfSelected || selectedScanIdRef.current === scanId)) {
+        setIsLoadingScanEvidence(false);
+      }
     }
   }
 
@@ -986,6 +1041,11 @@ export function TargetSetup({
   }
 
   async function updateFindingLifecycle(findingId: string, lifecycleStatus: string) {
+    if (updatingFindingId) {
+      return;
+    }
+    setUpdatingFindingId(findingId);
+    setActionFeedback({ tone: "info", text: "Saving finding lifecycle…" });
     try {
       const response = await apiFetch(`${apiBaseUrl}/findings/${findingId}/lifecycle`, {
         method: "PATCH",
@@ -999,6 +1059,8 @@ export function TargetSetup({
       setActionFeedback({ tone: "success", text: "Finding lifecycle updated." });
     } catch (error) {
       setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Finding lifecycle update failed." });
+    } finally {
+      setUpdatingFindingId("");
     }
   }
 
@@ -1034,9 +1096,11 @@ export function TargetSetup({
   }
 
   async function createTag() {
-    if (!tagLabel.trim()) {
+    if (!tagLabel.trim() || isCreatingTag) {
       return;
     }
+    setIsCreatingTag(true);
+    setActionFeedback({ tone: "info", text: "Creating tag…" });
     try {
       const response = await apiFetch(`${apiBaseUrl}/tags`, {
         method: "POST",
@@ -1049,14 +1113,18 @@ export function TargetSetup({
       setActionFeedback({ tone: "success", text: "Tag created and selected for assignment." });
     } catch (error) {
       setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Tag creation failed." });
+    } finally {
+      setIsCreatingTag(false);
     }
   }
 
   async function assignTag() {
     const resourceId = tagResourceType === "scan" ? selectedFinding?.scan_id : selectedFinding?.target_id;
-    if (!assignmentTagId || !resourceId) {
+    if (!assignmentTagId || !resourceId || isAssigningTag) {
       return;
     }
+    setIsAssigningTag(true);
+    setActionFeedback({ tone: "info", text: `Assigning tag to the selected ${tagResourceType}…` });
     try {
       const response = await apiFetch(`${apiBaseUrl}/tags/assignments`, {
         method: "POST",
@@ -1074,6 +1142,8 @@ export function TargetSetup({
       setActionFeedback({ tone: "success", text: `Tag assigned to the selected ${tagResourceType}.` });
     } catch (error) {
       setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Tag assignment failed." });
+    } finally {
+      setIsAssigningTag(false);
     }
   }
 
@@ -1153,6 +1223,17 @@ export function TargetSetup({
   }
 
   async function viewReport(report: ReportArtifact) {
+    if (pendingReportAction) {
+      return;
+    }
+    const previewWindow = window.open("about:blank", "_blank");
+    if (!previewWindow) {
+      setReportMessage("The browser blocked the report preview. Allow pop-ups for this local workspace or use Download.");
+      return;
+    }
+    previewWindow.opener = null;
+    setPendingReportAction({ reportId: report.id, action: "view" });
+    setReportMessage(`Opening the ${report.report_type.toUpperCase()} report…`);
     try {
       const response = await apiFetch(`${apiOrigin}${report.view_url}`);
       if (!response.ok) {
@@ -1161,20 +1242,23 @@ export function TargetSetup({
       const content = await response.text();
       const mediaType = report.report_type === "html" ? "text/html" : "text/markdown";
       const url = window.URL.createObjectURL(new Blob([content], { type: mediaType }));
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.target = "_blank";
-      anchor.rel = "noopener noreferrer";
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
+      previewWindow.location.replace(url);
       window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+      setReportMessage("Report opened in a new tab.");
     } catch (error) {
+      previewWindow.close();
       setReportMessage(error instanceof Error ? error.message : "Report view failed.");
+    } finally {
+      setPendingReportAction(null);
     }
   }
 
   async function downloadReport(report: ReportArtifact) {
+    if (pendingReportAction) {
+      return;
+    }
+    setPendingReportAction({ reportId: report.id, action: "download" });
+    setReportMessage(`Preparing the ${report.report_type.toUpperCase()} report download…`);
     try {
       const response = await apiFetch(`${apiOrigin}${report.download_url}`);
       if (!response.ok) {
@@ -1190,12 +1274,18 @@ export function TargetSetup({
       anchor.click();
       anchor.remove();
       window.setTimeout(() => window.URL.revokeObjectURL(url), 1_000);
+      setReportMessage("Report download started.");
     } catch (error) {
       setReportMessage(error instanceof Error ? error.message : "Report download failed.");
+    } finally {
+      setPendingReportAction(null);
     }
   }
 
   function renderFindingsDashboard() {
+    if (isLoadingScanEvidence) {
+      return <EvidenceLoadingState />;
+    }
     return (
       <FindingsDashboard
         findings={filteredFindings}
@@ -1223,6 +1313,9 @@ export function TargetSetup({
         tagResourceType={tagResourceType}
         suppressionReason={suppressionReason}
         isSuppressing={isSuppressingFinding}
+        updatingFindingId={updatingFindingId}
+        isCreatingTag={isCreatingTag}
+        isAssigningTag={isAssigningTag}
         onSeverityFilter={setSeverityFilter}
         onLifecycleFilter={setLifecycleFilter}
         onSuppressionFilter={setSuppressionFilter}
@@ -1251,13 +1344,36 @@ export function TargetSetup({
     );
   }
 
+  function renderHistoricalAuditNotice() {
+    if (!viewingPastAudit || !selectedScan) {
+      return null;
+    }
+    return (
+      <aside className="historicalAuditNotice" aria-label="Historical audit context">
+        <AppIcon name="activity" size={18} />
+        <div>
+          <strong>Viewing a past audit</strong>
+          <p>
+            {selectedScanTarget?.name ?? "Historical target"} · {formatScanProfileLabel(selectedScan.scan_profile_id)} · {formatShortDate(selectedScan.completed_at ?? selectedScan.created_at)}.
+            This evidence does not mark the audit you are configuring as complete.
+          </p>
+        </div>
+        {currentAuditScan ? (
+          <button type="button" className="secondaryButton" onClick={() => setSelectedScanId(currentAuditScan.id)}>
+            Return to current audit
+          </button>
+        ) : null}
+      </aside>
+    );
+  }
+
   const phaseComplete: Record<AuditPhase, boolean> = {
     ready: platformReady,
     scope: Boolean(selectedTarget),
     profile: profileReady,
     authorize: authorizationReady,
-    run: reviewReady,
-    review: reviewReady
+    run: currentAuditReviewReady,
+    review: currentAuditReviewReady
   };
 
   if (isBootstrapping) {
@@ -1319,8 +1435,8 @@ export function TargetSetup({
               {auditPhases.map((phase, index) => {
                 const isActive = auditPhase === phase.id;
                 const isComplete = phaseComplete[phase.id] && !isActive;
-                const isRunInterrupted = phase.id === "run" && Boolean(selectedScan && ["failed", "cancelled"].includes(selectedScan.status));
-                const phaseState = auditPhaseState(phase.id, isActive, isComplete, selectedScan);
+                const isRunInterrupted = phase.id === "run" && Boolean(currentAuditScan && ["failed", "cancelled"].includes(currentAuditScan.status));
+                const phaseState = auditPhaseState(phase.id, isActive, isComplete, currentAuditScan);
                 return (
                   <button
                     ref={isActive ? activeAuditPhaseRef : undefined}
@@ -1430,7 +1546,7 @@ export function TargetSetup({
                     onAttachRepoPath={updateSelectedTargetRepoPath}
                     onContinue={() => setAuditPhase("authorize")}
                   />
-                  {reviewReady && filteredFindings.length > 0 ? (
+                  {reviewReady && selectedScanMatchesDraft && filteredFindings.length > 0 ? (
                     <section className="recentFindingsPreview" aria-labelledby="recent-findings-title">
                       <div className="recentFindingsHeader">
                         <div><h3 id="recent-findings-title">Recent normalized findings</h3><p>{selectedScanTarget?.name ?? "Selected target"} · {selectedScan ? formatScanProfileLabel(selectedScan.scan_profile_id) : "Completed audit"} · {selectedScan ? formatShortDate(selectedScan.completed_at ?? selectedScan.created_at) : "Recent"}. Open Review for evidence and triage.</p></div>
@@ -1482,11 +1598,12 @@ export function TargetSetup({
                     isBusy={isBusy}
                     onStartScan={startScan}
                   />
+                  {renderHistoricalAuditNotice()}
                   <div className="runWorkspaceGrid">
                     {selectedScan ? <ScanProgress scan={selectedScan} targetName={selectedScanTarget?.name ?? "Historical target"} toolRuns={toolRuns} isCancelling={isCancellingScan} onCancel={cancelSelectedScan} /> : <div className="emptyState richEmptyState"><AppIcon name="activity" size={24} /><strong>No scan selected</strong><span>Launch this audit or choose a historical scan to monitor it.</span></div>}
                     <ScanHistory scans={scanHistory} selectedScanId={selectedScanId} onSelectScan={setSelectedScanId} />
                   </div>
-                  <div className="phaseFooter"><span>{reviewReady ? "Normalized results are ready for triage." : "Review unlocks after a scan completes or completes with warnings."}</span><button type="button" onClick={() => setAuditPhase("review")} disabled={!reviewReady}>Review findings <AppIcon name="arrow" size={15} /></button></div>
+                  <div className="phaseFooter"><span>{currentAuditReviewReady ? "The current audit's normalized results are ready for triage." : "Review unlocks after the current audit completes or completes with warnings."}</span><button type="button" onClick={() => { if (currentAuditScan) setSelectedScanId(currentAuditScan.id); setAuditPhase("review"); }} disabled={!currentAuditReviewReady}>Review current findings <AppIcon name="arrow" size={15} /></button></div>
                 </div>
               ) : null}
 
@@ -1499,9 +1616,10 @@ export function TargetSetup({
                       <button type="button" className="secondaryButton" onClick={resetFindingFilters}>Reset filters</button>
                     </div>
                   </div>
+                  {renderHistoricalAuditNotice()}
                   {reviewReady ? renderFindingsDashboard() : <div className="emptyState richEmptyState"><AppIcon name="finding" size={24} /><strong>No completed audit selected</strong><span>Choose a completed scan in Run to review its normalized findings.</span><button type="button" onClick={() => setAuditPhase("run")}>Open scan history</button></div>}
                   <div className="reviewOutputs">
-                    <ReportsPanel scan={selectedScan} reports={reports} message={reportMessage} isGenerating={isGeneratingReports} onGenerate={generateReports} onViewReport={viewReport} onDownloadReport={downloadReport} />
+                    <ReportsPanel scan={selectedScan} reports={reports} message={reportMessage} isGenerating={isGeneratingReports} pendingAction={pendingReportAction} onGenerate={generateReports} onViewReport={viewReport} onDownloadReport={downloadReport} />
                     <AiExplanationsPanel explanation={displayAiExplanation} message={aiMessage} />
                   </div>
                 </div>
@@ -1548,6 +1666,7 @@ export function TargetSetup({
               comparison={scanComparison}
               message={riskMessage}
               isComparing={isComparingScans}
+              isLoading={isLoadingTargetRisk}
               onBaselineScanChange={(scanId) => {
                 setBaselineScanId(scanId);
                 const baselineProfile = scanHistory.find((scan) => scan.id === scanId)?.scan_profile_id;
@@ -1571,6 +1690,7 @@ export function TargetSetup({
                 reports={reports}
                 message={reportMessage}
                 isGenerating={isGeneratingReports}
+                pendingAction={pendingReportAction}
                 onGenerate={generateReports}
                 onViewReport={viewReport}
                 onDownloadReport={downloadReport}
@@ -1719,6 +1839,19 @@ function WorkspaceLoadingState() {
   );
 }
 
+function EvidenceLoadingState() {
+  return (
+    <div className="evidenceLoadingState" role="status" aria-live="polite">
+      <span className="evidenceLoadingIcon"><AppIcon name="activity" size={20} /></span>
+      <div>
+        <strong>Loading normalized evidence</strong>
+        <p>Refreshing findings and triage context for the selected audit.</p>
+      </div>
+      <span className="workspaceLoadingPulse" aria-hidden="true" />
+    </div>
+  );
+}
+
 function EvidenceFirstRunState({ onStartAudit }: { onStartAudit: () => void }) {
   return (
     <div className="firstRunState">
@@ -1735,6 +1868,17 @@ function EvidenceFirstRunState({ onStartAudit }: { onStartAudit: () => void }) {
 
 function formatShortDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+}
+
+function hasComparableScanCoverage(scans: Scan[], targetId: string) {
+  const profileCounts = new Map<string, number>();
+  scans.forEach((scan) => {
+    if (scan.target_id !== targetId || !["completed", "completed_with_warnings"].includes(scan.status)) {
+      return;
+    }
+    profileCounts.set(scan.scan_profile_id, (profileCounts.get(scan.scan_profile_id) ?? 0) + 1);
+  });
+  return [...profileCounts.values()].some((count) => count >= 2);
 }
 
 function auditPhaseState(phase: AuditPhase, isActive: boolean, isComplete: boolean, selectedScan: Scan | null) {
