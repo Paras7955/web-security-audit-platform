@@ -20,11 +20,6 @@ x-backend-runtime: &backend-runtime
     OSV_CONFIG_PATH: /app/config/osv-scanner.toml
     OSV_DATABASE_PATH: /var/lib/osv-scanner
     ZAP_BASE_URL: http://zap:8080
-  volumes:
-    - ./config:/app/config:ro
-    - ./:/app/repositories/security-project:ro
-    - app-artifacts:/app/artifacts
-    - osv-cache:/var/lib/osv-scanner:ro
 
 services:
   postgres:
@@ -110,13 +105,15 @@ services:
       retries: 18
 
   migrate:
-    <<: [*container-hardening, *backend-runtime]
+    <<: *container-hardening
     build:
       context: .
       dockerfile: backend/Dockerfile
       target: api
     user: "10001:10001"
     read_only: true
+    environment:
+      DATABASE_URL: postgresql+psycopg://security_audit:${POSTGRES_PASSWORD:?Run python3 scripts/bootstrap_env.py}@postgres:5432/security_audit
     command: ["alembic", "upgrade", "head"]
     networks:
       - data
@@ -136,6 +133,10 @@ services:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     tmpfs:
       - /tmp:size=128m,mode=1777
+    volumes:
+      - ./config:/app/config:ro
+      - ./:/app/repositories/security-project:ro
+      - app-artifacts:/app/artifacts
     networks:
       - data
       - operator-access
@@ -239,17 +240,19 @@ services:
       - --no-resolve
       - --allow-no-lockfiles
       - --lockfile
-      - /app/repositories/security-project/frontend/package-lock.json
+      - /inputs/package-lock.json
       - --lockfile
-      - /app/repositories/security-project/backend/requirements.txt
+      - /inputs/requirements.txt
       - --lockfile
-      - /app/repositories/security-project/backend/requirements-dev.txt
+      - /inputs/requirements-dev.txt
     environment:
       HOME: /tmp
       OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY: /var/lib/osv-scanner
     volumes:
       - osv-cache:/var/lib/osv-scanner
-      - ./:/app/repositories/security-project:ro
+      - ./frontend/package-lock.json:/inputs/package-lock.json:ro
+      - ./backend/requirements.txt:/inputs/requirements.txt:ro
+      - ./backend/requirements-dev.txt:/inputs/requirements-dev.txt:ro
     tmpfs:
       - /tmp:size=64m,mode=0700,uid=10001,gid=10001
     networks:

@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
@@ -188,6 +189,53 @@ class RepositoryAssetApiTests(unittest.TestCase):
 
         self.assertEqual(detail.status_code, 404)
         self.assertEqual(launch.status_code, 404)
+
+    def test_repository_dashboard_and_comparison_use_repository_subject(self) -> None:
+        created = self.create_asset()
+        baseline_id = str(uuid4())
+        comparison_id = str(uuid4())
+        self.scan_ids.extend((baseline_id, comparison_id))
+        with SessionLocal() as db:
+            for offset, scan_id in enumerate((baseline_id, comparison_id)):
+                completed_at = datetime(2026, 7, 29, tzinfo=UTC) + timedelta(minutes=offset)
+                db.add(
+                    Scan(
+                        id=scan_id,
+                        workspace_id=DEV_WORKSPACE_ID,
+                        created_by_user_id=DEV_USER_ID,
+                        repository_asset_id=created["id"],
+                        repo_path_snapshot="example-repository",
+                        mode="repository",
+                        scan_profile_id="repository",
+                        status="completed",
+                        current_step="normalizing_findings",
+                        status_message="Completed.",
+                        progress_percent=100,
+                        started_at=completed_at - timedelta(seconds=1),
+                        completed_at=completed_at,
+                        created_at=completed_at - timedelta(seconds=2),
+                    )
+                )
+            db.commit()
+
+        dashboard = self.client.get(
+            f"/api/v1/repository-assets/{created['id']}/dashboard",
+            headers=DEV_AUTH_HEADERS,
+        )
+        comparison = self.client.get(
+            f"/api/v1/repository-assets/{created['id']}/latest-comparison",
+            headers=DEV_AUTH_HEADERS,
+        )
+
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(dashboard.json()["repository_asset_id"], created["id"])
+        self.assertEqual(dashboard.json()["posture_basis"], "latest completed scan per subject and profile")
+        self.assertEqual(dashboard.json()["current_posture_score"]["scoring_model_version"], "posture-v1")
+        self.assertEqual(comparison.status_code, 200)
+        self.assertEqual(comparison.json()["subject_type"], "repository_asset")
+        self.assertEqual(comparison.json()["repository_asset_id"], created["id"])
+        self.assertEqual(comparison.json()["baseline_scan_id"], baseline_id)
+        self.assertEqual(comparison.json()["comparison_scan_id"], comparison_id)
 
 
 if __name__ == "__main__":

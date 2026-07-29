@@ -31,7 +31,18 @@ jobs:
           NEXT_PUBLIC_DEV_AUTH_TOKEN: scopeharbor-ci-development-token
           AUTH_PROFILE_SECRET_KEY: QyZiRES0KAYWYtkLanwPjjEbVZiKA8tLRoNxxgxqG5M=
           ZAP_API_KEY: 0123456789abcdef0123456789abcdef
+          SCAN_RELAY_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef
         run: docker compose config --quiet
+
+      - name: Enforce Compose network and privilege boundaries
+        env:
+          SCOPEHARBOR_ENV_FILE: /dev/null
+          POSTGRES_PASSWORD: scopeharbor-ci-database
+          DEV_AUTH_TOKEN: scopeharbor-ci-development-token
+          AUTH_PROFILE_SECRET_KEY: QyZiRES0KAYWYtkLanwPjjEbVZiKA8tLRoNxxgxqG5M=
+          ZAP_API_KEY: 0123456789abcdef0123456789abcdef
+          SCAN_RELAY_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef
+        run: python scripts/check_compose_hardening.py
 
       - name: Build API image
         run: docker build --file backend/Dockerfile --target api --tag scopeharbor-api:ci .
@@ -39,8 +50,45 @@ jobs:
       - name: Build scanner worker image
         run: docker build --file backend/Dockerfile --target worker --tag scopeharbor-worker:ci .
 
+      - name: Build guarded relay image
+        run: docker build --file backend/Dockerfile --target relay --tag scopeharbor-relay:ci .
+
       - name: Build frontend image
         run: >-
           docker build --file frontend/Dockerfile --tag scopeharbor-frontend:ci
           --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
           --build-arg NEXT_PUBLIC_DEV_AUTH_TOKEN=scopeharbor-ci-development-token .
+
+      - name: Scan images with digest-pinned Trivy
+        run: |
+          for image in scopeharbor-api:ci scopeharbor-worker:ci scopeharbor-relay:ci scopeharbor-frontend:ci; do
+            docker run --rm \
+              --volume /var/run/docker.sock:/var/run/docker.sock \
+              ghcr.io/aquasecurity/trivy:0.70.0@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e \
+              image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL "$image"
+          done
+
+      - name: Generate CycloneDX SBOMs
+        run: |
+          mkdir -p "${{ runner.temp }}/scopeharbor-sbom"
+          for image in api worker relay frontend; do
+            docker run --rm \
+              --volume /var/run/docker.sock:/var/run/docker.sock \
+              --volume "${{ runner.temp }}/scopeharbor-sbom:/output" \
+              ghcr.io/aquasecurity/trivy:0.70.0@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e \
+              image --format cyclonedx --output "/output/$image.cdx.json" "scopeharbor-$image:ci"
+            test -s "${{ runner.temp }}/scopeharbor-sbom/$image.cdx.json"
+          done
+
+      - name: Compose readiness smoke test
+        env:
+          SCOPEHARBOR_ENV_FILE: /dev/null
+          POSTGRES_PASSWORD: scopeharbor-ci-database
+          DEV_AUTH_TOKEN: scopeharbor-ci-development-token
+          AUTH_PROFILE_SECRET_KEY: QyZiRES0KAYWYtkLanwPjjEbVZiKA8tLRoNxxgxqG5M=
+          ZAP_API_KEY: 0123456789abcdef0123456789abcdef
+          SCAN_RELAY_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef
+        run: |
+          docker compose up --build --detach --wait
+          curl --fail --silent --show-error http://127.0.0.1:8000/ready
+          docker compose down --volumes

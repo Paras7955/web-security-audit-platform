@@ -46,7 +46,7 @@ def verify_configuration(*, apply: bool) -> MaintenanceResult:
         return MaintenanceResult("verify", False, 1, 0, "Would validate configuration, database head, and scanner versions.")
     validate_auth_settings(settings)
     validate_auth_profile_secret_settings(settings)
-    validate_runtime_settings(settings)
+    validate_runtime_settings(settings, require_scanner_files=True)
     check_database_ready()
     verify_repo_tools(settings)
     return MaintenanceResult("verify", True, 1, 1, "Configuration, database head, and scanner versions are valid.")

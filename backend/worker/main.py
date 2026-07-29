@@ -147,7 +147,7 @@ def main() -> None:
 def validate_worker_startup() -> None:
     validate_auth_settings(settings)
     validate_auth_profile_secret_settings(settings)
-    validate_runtime_settings(settings)
+    validate_runtime_settings(settings, require_scanner_files=True)
     verify_repo_tools(settings)
 
 

@@ -1,4 +1,5 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -337,6 +338,72 @@ class AuthProfileApiTests(unittest.TestCase):
             headers=DEV_AUTH_HEADERS,
         )
         self.assertEqual(rotate_revoked.status_code, 409)
+
+    def test_concurrent_launch_and_revocation_are_deadlock_free_and_consistent(self) -> None:
+        profile = self.client.post(
+            "/api/v1/auth-profiles",
+            json={"label": "Concurrent", "profile_type": "bearer_token", "secret": "concurrent-secret"},
+            headers=DEV_AUTH_HEADERS,
+        )
+        self.assertEqual(profile.status_code, 201)
+        profile_id = profile.json()["id"]
+        self.created_auth_profile_ids.append(profile_id)
+        target = self.client.post(
+            "/api/v1/targets",
+            json={
+                "target_url": "http://juice-shop:3000",
+                "permission_confirmed": True,
+                "auth_profile_id": profile_id,
+            },
+            headers=DEV_AUTH_HEADERS,
+        )
+        self.assertEqual(target.status_code, 201)
+        target_id = target.json()["id"]
+        self.created_target_ids.append(target_id)
+
+        def launch_scan():
+            with TestClient(app) as client:
+                return client.post(
+                    "/api/v1/scans",
+                    json={
+                        "target_id": target_id,
+                        "scan_profile_id": "passive-web",
+                        "acknowledgements": ["authorized_target"],
+                    },
+                    headers=DEV_AUTH_HEADERS,
+                )
+
+        def revoke_profile():
+            with TestClient(app) as client:
+                return client.post(
+                    f"/api/v1/auth-profiles/{profile_id}/revoke",
+                    headers=DEV_AUTH_HEADERS,
+                )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            launch_future = executor.submit(launch_scan)
+            revoke_future = executor.submit(revoke_profile)
+            launch = launch_future.result(timeout=10)
+            revoked = revoke_future.result(timeout=10)
+
+        self.assertIn(launch.status_code, {201, 409})
+        self.assertIn(revoked.status_code, {200, 409})
+        self.assertTrue(launch.status_code == 201 or revoked.status_code == 200)
+        launched_scan_id = launch.json().get("id") if launch.status_code == 201 else None
+        if launched_scan_id:
+            self.created_scan_ids.append(launched_scan_id)
+        with SessionLocal() as db:
+            stored_profile = db.get(AuthProfile, profile_id)
+            self.assertIsNotNone(stored_profile)
+            assert stored_profile is not None
+            stored_scan = db.get(Scan, launched_scan_id) if launched_scan_id else None
+            if revoked.status_code == 200:
+                self.assertIsNotNone(stored_profile.revoked_at)
+                if stored_scan is not None:
+                    self.assertIsNone(stored_scan.auth_profile_id)
+            if stored_scan is not None and stored_scan.auth_profile_id == profile_id:
+                self.assertEqual(revoked.status_code, 409)
+                self.assertIsNone(stored_profile.revoked_at)
 
 
 def credential_request(

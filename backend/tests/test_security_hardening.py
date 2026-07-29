@@ -170,7 +170,7 @@ class SecurityHardeningTests(unittest.TestCase):
                 osv_config_path=str(osv),
                 osv_database_path=str(root_path / "osv-db"),
             )
-            validate_runtime_settings(base)
+            validate_runtime_settings(base, require_scanner_files=True)
             invalid = (
                 base.model_copy(update={"zap_api_key": "short"}),
                 base.model_copy(update={"zap_base_url": "https://zap:8080/path?key=x"}),
@@ -182,7 +182,7 @@ class SecurityHardeningTests(unittest.TestCase):
             )
             for config in invalid:
                 with self.assertRaises(RuntimeConfigurationError):
-                    validate_runtime_settings(config)
+                    validate_runtime_settings(config, require_scanner_files=True)
 
 
 if __name__ == "__main__":

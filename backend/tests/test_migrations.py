@@ -8,11 +8,14 @@ from uuid import uuid4
 from alembic import command
 from alembic.config import Config
 from app.core.config import settings
-from app.db.session import engine
+from app.db.session import check_database_ready, engine
 from sqlalchemy import create_engine, inspect, text
 
 
 class MigrationTests(unittest.TestCase):
+    def test_runtime_readiness_matches_migration_head(self) -> None:
+        self.assertTrue(check_database_ready())
+
     def test_clean_upgrade_from_zero_reaches_head(self) -> None:
         with isolated_schema() as (database_url, migration_config):
             with patch("app.core.config.settings.database_url", database_url):

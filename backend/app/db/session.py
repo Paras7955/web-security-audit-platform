@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 
-EXPECTED_MIGRATION_HEAD = "0011_target_archiving"
+EXPECTED_MIGRATION_HEAD = "0012_portfolio_readiness"
 engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
@@ -25,7 +25,8 @@ def check_database_ready() -> bool:
             "finding_occurrence_states",
             "tags",
             "tag_assignments",
-            "evidence_artifacts",
+            "repository_assets",
+            "artifact_cleanup_tasks",
             "report_artifacts",
             "ai_request_logs",
             "ai_explanation_cache",

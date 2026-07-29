@@ -12,7 +12,7 @@ class RuntimeConfigurationError(ValueError):
     pass
 
 
-def validate_runtime_settings(config: Settings = settings) -> None:
+def validate_runtime_settings(config: Settings = settings, *, require_scanner_files: bool = False) -> None:
     if len(config.zap_api_key) < 32 or config.zap_api_key.lower() in {"changeme", "dev-token", "example"}:
         raise RuntimeConfigurationError("ZAP_API_KEY must be a generated secret with at least 32 characters.")
     zap_url = urlsplit(config.zap_base_url)
@@ -98,11 +98,12 @@ def validate_runtime_settings(config: Settings = settings) -> None:
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         if not path.is_dir() or path.is_symlink():
             raise RuntimeConfigurationError("Runtime storage paths must be real directories.")
-    for raw_path in (config.gitleaks_config_path, config.osv_config_path):
-        path = Path(raw_path)
-        if not path.is_file() or path.is_symlink():
-            raise RuntimeConfigurationError("Trusted scanner configuration files must exist as regular files.")
-    osv_database = Path(config.osv_database_path)
-    osv_database.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if not osv_database.is_dir() or osv_database.is_symlink():
-        raise RuntimeConfigurationError("OSV database path must be a real directory.")
+    if require_scanner_files:
+        for raw_path in (config.gitleaks_config_path, config.osv_config_path):
+            path = Path(raw_path)
+            if not path.is_file() or path.is_symlink():
+                raise RuntimeConfigurationError("Trusted scanner configuration files must exist as regular files.")
+        osv_database = Path(config.osv_database_path)
+        osv_database.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if not osv_database.is_dir() or osv_database.is_symlink():
+            raise RuntimeConfigurationError("OSV database path must be a real directory.")
