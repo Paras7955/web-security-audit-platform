@@ -142,6 +142,13 @@ Secrets are write-only. Responses include only a short hint and lifecycle
 metadata. Rotation/revocation return `409` while a nonterminal scan references
 the profile.
 
+Create and rotate payloads contain the target application's token or static
+header value, never `AUTH_PROFILE_SECRET_KEY`. Plain HTTP is accepted only for
+the local-only workflow. Non-local credential submission must arrive over
+HTTPS. If TLS terminates at a reverse proxy, list only that immediate proxy's
+exact IP in `TRUSTED_PROXY_IPS`; forwarded scheme headers from other peers are
+ignored. All API responses carry `Cache-Control: no-store`.
+
 ### Scans and findings
 
 | Method | Path | Purpose |
@@ -181,11 +188,14 @@ Suppressions are history-preserving rules, not finding deletion.
 | GET | `/dashboard/overview` | Workspace totals and recent scans |
 | GET | `/targets/{target_id}/dashboard` | Target risk/findings summary |
 | GET | `/scans/{scan_id}/risk-score` | Read `risk-v1` score |
-| GET | `/scans/{scan_id}/comparison?baseline_scan_id=...` | Compare completed scans |
-| GET | `/targets/{target_id}/latest-comparison` | Compare latest two completed scans |
+| GET | `/scans/{scan_id}/comparison?baseline_scan_id=...` | Compare completed scans from the same target and audit profile |
+| GET | `/targets/{target_id}/latest-comparison` | Compare the latest scan with its newest same-profile baseline |
 
 Scores are written when scans finish. Legacy missing scores may be calculated
 in memory during reads; GET requests do not persist them.
+
+Comparison deliberately requires matching target and `scan_profile_id` so an
+absence outside one profile's coverage is never mislabeled as resolved.
 
 ### Reports and AI
 

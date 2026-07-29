@@ -2,10 +2,13 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
+from app.api.auth_profiles import require_secure_credential_transport
 from app.auth_profiles import decrypt_secret
+from app.core.config import Settings
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import AuthProfile, Scan, Target, Workspace
+from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
@@ -43,6 +46,7 @@ class AuthProfileApiTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.headers["cache-control"], "no-store")
         body = response.json()
         self.created_auth_profile_ids.append(body["id"])
         self.assertEqual(body["profile_type"], "bearer_token")
@@ -56,6 +60,51 @@ class AuthProfileApiTests(unittest.TestCase):
             assert profile is not None
             self.assertNotEqual(profile.encrypted_secret, "demo-secret-token")
             self.assertEqual(decrypt_secret(profile.encrypted_secret), "demo-secret-token")
+
+    def test_secret_mutations_require_https_outside_local_access(self) -> None:
+        production = Settings(_env_file=None, app_env="production", trusted_proxy_ips=[])
+        insecure_remote = credential_request(scheme="http", client_host="198.51.100.20", host="audit.example")
+
+        with self.assertRaises(HTTPException) as raised:
+            require_secure_credential_transport(insecure_remote, production)
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertEqual(getattr(raised.exception, "code", None), "credential_https_required")
+        require_secure_credential_transport(
+            credential_request(scheme="https", client_host="198.51.100.20", host="audit.example"),
+            production,
+        )
+        require_secure_credential_transport(
+            credential_request(scheme="http", client_host="127.0.0.1", host="audit.example"),
+            production,
+        )
+
+    def test_forwarded_https_is_honored_only_from_an_exact_trusted_proxy(self) -> None:
+        request = credential_request(
+            scheme="http",
+            client_host="192.0.2.10",
+            host="audit.example",
+            forwarded_proto="http, https",
+        )
+        untrusted = Settings(_env_file=None, app_env="production", trusted_proxy_ips=[])
+        trusted = Settings(_env_file=None, app_env="production", trusted_proxy_ips=["192.0.2.10"])
+
+        with self.assertRaises(HTTPException):
+            require_secure_credential_transport(request, untrusted)
+        require_secure_credential_transport(request, trusted)
+
+        with self.assertRaises(ValueError):
+            Settings(_env_file=None, trusted_proxy_ips=["proxy.internal"])
+
+    def test_local_docker_endpoint_remains_available_over_loopback_bound_http(self) -> None:
+        local = Settings(_env_file=None, app_env="local", trusted_proxy_ips=[])
+        docker_bridge_request = credential_request(
+            scheme="http",
+            client_host="172.20.0.1",
+            host="localhost:8000",
+        )
+
+        require_secure_credential_transport(docker_bridge_request, local)
 
     def test_create_custom_header_profile_validates_header(self) -> None:
         for header_name in ("X-API-Key", "Api-Key", "X-Auth-Token", "X-Access-Token"):
@@ -234,6 +283,7 @@ class AuthProfileApiTests(unittest.TestCase):
             headers=DEV_AUTH_HEADERS,
         )
         self.assertEqual(rotated.status_code, 200)
+        self.assertEqual(rotated.headers["cache-control"], "no-store")
         self.assertEqual(rotated.json()["rotation_count"], 1)
         self.assertEqual(rotated.json()["secret_hint"], "****cret")
         self.assertNotIn("secret", rotated.json())
@@ -286,6 +336,33 @@ class AuthProfileApiTests(unittest.TestCase):
             headers=DEV_AUTH_HEADERS,
         )
         self.assertEqual(rotate_revoked.status_code, 409)
+
+
+def credential_request(
+    *,
+    scheme: str,
+    client_host: str,
+    host: str,
+    forwarded_proto: str | None = None,
+) -> Request:
+    headers = [(b"host", host.encode("ascii"))]
+    if forwarded_proto is not None:
+        headers.append((b"x-forwarded-proto", forwarded_proto.encode("ascii")))
+    return Request(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": scheme,
+            "path": "/api/v1/auth-profiles",
+            "raw_path": b"/api/v1/auth-profiles",
+            "query_string": b"",
+            "headers": headers,
+            "client": (client_host, 50000),
+            "server": (host.split(":", 1)[0], 443 if scheme == "https" else 80),
+        }
+    )
 
 
 if __name__ == "__main__":

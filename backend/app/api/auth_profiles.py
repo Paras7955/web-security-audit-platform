@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
+from ipaddress import ip_address
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session
 
@@ -9,6 +10,7 @@ from app.api.deps import get_current_principal, get_db
 from app.api.pagination import PageRequest, page_items, page_request
 from app.api.schemas import AuthProfileCreate, AuthProfileRead, AuthProfileRotate, CursorPage
 from app.auth_profiles import AuthProfileError, encrypt_secret, secret_hint, validate_profile_input
+from app.core.config import Settings, settings
 from app.models import AuthProfile, Scan, Target
 from app.ops.audit import record_audit_event
 from app.security.auth import AuthenticatedPrincipal
@@ -22,9 +24,11 @@ NONTERMINAL_SCAN_STATUSES = {"queued", "validating", "running", "normalizing"}
 @router.post("", response_model=AuthProfileRead, status_code=status.HTTP_201_CREATED)
 def create_auth_profile(
     payload: AuthProfileCreate,
+    request: Request,
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> AuthProfileRead:
+    require_secure_credential_transport(request)
     label = (sanitize_text(payload.label, maximum=200) or "").strip()
     if not label:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Auth profile label is required.")
@@ -99,9 +103,11 @@ def get_auth_profile(
 def rotate_auth_profile(
     auth_profile_id: str,
     payload: AuthProfileRotate,
+    request: Request,
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> AuthProfileRead:
+    require_secure_credential_transport(request)
     profile = _locked_profile(db, auth_profile_id, principal.workspace_id)
     if profile.revoked_at is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Revoked auth profiles cannot be rotated.")
@@ -205,3 +211,53 @@ def auth_profile_to_read(profile: AuthProfile) -> AuthProfileRead:
         rotation_count=profile.rotation_count,
         created_at=profile.created_at,
     )
+
+
+def require_secure_credential_transport(request: Request, config: Settings = settings) -> None:
+    """Reject plaintext credential submission outside the local-only workflow."""
+
+    if request.url.scheme.lower() == "https" or _is_local_request(request, config):
+        return
+    if _trusted_forwarded_scheme(request, config) == "https":
+        return
+
+    error = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Target credential secrets require HTTPS unless ScopeHarbor is accessed through its local-only endpoint.",
+    )
+    error.code = "credential_https_required"  # type: ignore[attr-defined]
+    raise error
+
+
+def _is_local_request(request: Request, config: Settings) -> bool:
+    client_host = request.client.host if request.client is not None else ""
+    try:
+        if ip_address(client_host).is_loopback:
+            return True
+    except ValueError:
+        pass
+
+    # Docker Desktop may expose a loopback-bound host port through a bridge IP.
+    # This exception is limited to explicit local mode and an exact local Host.
+    return config.app_env.strip().lower() == "local" and request.url.hostname in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        "testserver",
+    }
+
+
+def _trusted_forwarded_scheme(request: Request, config: Settings) -> str | None:
+    client_host = request.client.host if request.client is not None else ""
+    try:
+        normalized_client = ip_address(client_host).compressed
+    except ValueError:
+        return None
+    if normalized_client not in config.trusted_proxy_ips:
+        return None
+
+    # The nearest trusted proxy is the final hop. Operators must configure that
+    # proxy to replace, rather than preserve, externally supplied scheme values.
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    nearest_scheme = forwarded_proto.rsplit(",", 1)[-1].strip().lower()
+    return nearest_scheme if nearest_scheme in {"http", "https"} else None

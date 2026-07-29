@@ -35,6 +35,7 @@ export function TargetLibrary({
         <div>
           <p className="panelKicker">Authorized inventory</p>
           <h3>Saved targets</h3>
+          <p>Select the exact web service or repository-backed target this audit may inspect.</p>
         </div>
         <span className="contextBadge">{targets.length}</span>
       </div>

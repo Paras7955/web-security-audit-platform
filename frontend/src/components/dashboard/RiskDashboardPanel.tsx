@@ -1,7 +1,12 @@
+"use client";
+
+import { useState } from "react";
+
 import type { DashboardOverview, Scan, ScanComparison, Target, TargetDashboard } from "@/lib/securityAuditApi";
 
 const completedStatuses = new Set(["completed", "completed_with_warnings"]);
 const severityOrder = ["critical", "high", "medium", "low", "info"];
+const comparisonPreviewSize = 4;
 
 export function RiskDashboardPanel({
   overview,
@@ -13,6 +18,8 @@ export function RiskDashboardPanel({
   comparisonScanId,
   comparison,
   message,
+  isComparing,
+  isLoading,
   onBaselineScanChange,
   onComparisonScanChange,
   onCompare
@@ -26,6 +33,8 @@ export function RiskDashboardPanel({
   comparisonScanId: string;
   comparison: ScanComparison | null;
   message: string;
+  isComparing: boolean;
+  isLoading: boolean;
   onBaselineScanChange: (scanId: string) => void;
   onComparisonScanChange: (scanId: string) => void;
   onCompare: () => void;
@@ -33,12 +42,26 @@ export function RiskDashboardPanel({
   const comparableScans = scans
     .filter((scan) => scan.target_id === selectedTargetId && completedStatuses.has(scan.status))
     .sort((left, right) => scanCompletionTime(right).localeCompare(scanCompletionTime(left)));
+  const profileCounts = comparableScans.reduce<Map<string, number>>((counts, scan) => {
+    counts.set(scan.scan_profile_id, (counts.get(scan.scan_profile_id) ?? 0) + 1);
+    return counts;
+  }, new Map());
+  const eligibleProfiles = new Set(
+    [...profileCounts.entries()].filter(([, count]) => count >= 2).map(([profileId]) => profileId)
+  );
+  const eligibleBaselineScans = comparableScans.filter((scan) => eligibleProfiles.has(scan.scan_profile_id));
+  const selectedBaseline = eligibleBaselineScans.find((scan) => scan.id === baselineScanId) ?? null;
+  const eligibleComparisonScans = selectedBaseline
+    ? eligibleBaselineScans.filter((scan) => scan.scan_profile_id === selectedBaseline.scan_profile_id && scan.id !== selectedBaseline.id)
+    : [];
+  const displayedBaselineScanId = selectedBaseline?.id ?? "";
+  const displayedComparisonScanId = eligibleComparisonScans.some((scan) => scan.id === comparisonScanId) ? comparisonScanId : "";
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
   const latestScore = targetDashboard?.latest_risk_score ?? null;
 
   return (
-    <div className="riskDashboard">
-      <div className="riskMetricGrid">
+    <div className="riskDashboard" aria-busy={isLoading}>
+      <div className="riskMetricGrid" aria-label="Risk overview">
         <RiskScoreCard title="Latest scan risk" score={overview?.latest_risk_score ?? null} />
         <RiskScoreCard title="Target risk" score={latestScore} />
         <MetricCard label="Targets" value={overview?.targets_count ?? 0} context="Workspace" />
@@ -48,7 +71,7 @@ export function RiskDashboardPanel({
       <div className="riskDashboardGrid">
         <div className="panel">
           <div className="panelHeader">
-            <h3>Workspace Dashboard</h3>
+            <div><h3>Workspace posture</h3><p>Severity distribution and the latest completed audits across this workspace.</p></div>
             <span className="contextBadge">{overview?.findings_count ?? 0} findings</span>
           </div>
           <SeverityBars counts={overview?.severity_counts ?? {}} />
@@ -57,10 +80,12 @@ export function RiskDashboardPanel({
 
         <div className="panel">
           <div className="panelHeader">
-            <h3>Target Dashboard</h3>
+            <div><h3>Selected target posture</h3><p>Current risk inputs for the authorized target selected in this workspace.</p></div>
             <span className="contextBadge">{selectedTarget?.name ?? "No target"}</span>
           </div>
-          {targetDashboard ? (
+          {isLoading ? (
+            <p className="emptyState" role="status">Loading target posture…</p>
+          ) : targetDashboard ? (
             <>
               <dl className="scanMeta">
                 <div>
@@ -80,44 +105,52 @@ export function RiskDashboardPanel({
               <ScoreInputs dashboard={targetDashboard} />
             </>
           ) : (
-            <p className="emptyState">Select a target to load target risk data.</p>
+            <p className="emptyState">{selectedTarget ? "Complete an audit to generate target risk data." : "Select a target to load target risk data."}</p>
           )}
         </div>
       </div>
 
       <div className="panel comparisonPanel">
         <div className="panelHeader">
-          <h3>Scan Comparison</h3>
-          <span className="contextBadge">Same target only</span>
+          <div><h3>Compare completed scans</h3><p>See what appeared, changed, resolved, or remained between two audits with matching coverage.</p></div>
+          <span className="contextBadge">Same target + profile</span>
         </div>
-        <div className="comparisonControls">
-          <label className="selectLabel">
-            Baseline scan
-            <select value={baselineScanId} onChange={(event) => onBaselineScanChange(event.target.value)}>
-              <option value="">Select baseline</option>
-              {comparableScans.map((scan) => (
-                <option key={scan.id} value={scan.id}>
-                  {scan.scan_profile_id} · {formatDate(scan.created_at)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="selectLabel">
-            Comparison scan
-            <select value={comparisonScanId} onChange={(event) => onComparisonScanChange(event.target.value)}>
-              <option value="">Select comparison</option>
-              {comparableScans.map((scan) => (
-                <option key={scan.id} value={scan.id}>
-                  {scan.scan_profile_id} · {formatDate(scan.created_at)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="button" onClick={onCompare} disabled={!baselineScanId || !comparisonScanId || baselineScanId === comparisonScanId}>
-            Compare scans
-          </button>
-        </div>
-        <p className="formMessage">{message}</p>
+        {eligibleBaselineScans.length >= 2 ? (
+          <div className="comparisonControls">
+            <label className="selectLabel">
+              Baseline scan
+              <select value={displayedBaselineScanId} onChange={(event) => onBaselineScanChange(event.target.value)}>
+                <option value="">Select baseline</option>
+                {eligibleBaselineScans.map((scan) => (
+                  <option key={scan.id} value={scan.id}>
+                    {scan.scan_profile_id} · {formatDate(scan.created_at)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="selectLabel">
+              Comparison scan
+              <select
+                value={displayedComparisonScanId}
+                onChange={(event) => onComparisonScanChange(event.target.value)}
+                disabled={!selectedBaseline}
+              >
+                <option value="">{selectedBaseline ? `Select another ${selectedBaseline.scan_profile_id} audit` : "Choose a baseline first"}</option>
+                {eligibleComparisonScans.map((scan) => (
+                  <option key={scan.id} value={scan.id}>
+                    {scan.scan_profile_id} · {formatDate(scan.created_at)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" onClick={onCompare} disabled={isComparing || !displayedBaselineScanId || !displayedComparisonScanId}>
+              {isComparing ? "Comparing…" : "Compare scans"}
+            </button>
+          </div>
+        ) : (
+          <p className="emptyState">Complete at least two audits with the same profile for this target to unlock a coverage-equivalent comparison.</p>
+        )}
+        {eligibleBaselineScans.length >= 2 ? <p className="formMessage" role="status" aria-live="polite">{message}</p> : null}
         {comparison ? <ComparisonSummary comparison={comparison} /> : null}
       </div>
     </div>
@@ -154,7 +187,7 @@ function SeverityBars({ counts }: { counts: Record<string, number> }) {
           <div key={severity}>
             <span>{severity}</span>
             <div className="severityTrack">
-              <i style={{ width: `${Math.max(4, (count / max) * 100)}%` }} />
+              <i style={{ width: count === 0 ? "0%" : `${(count / max) * 100}%` }} />
             </div>
             <strong>{count}</strong>
           </div>
@@ -227,32 +260,50 @@ function ComparisonSummary({ comparison }: { comparison: ScanComparison }) {
         <MetricCard label="Model" value={comparison.scoring_model_version} context="Version" />
       </div>
       <div className="changeGrid">
-        <ChangeList title="New" items={comparison.new_findings} />
-        <ChangeList title="Resolved" items={comparison.resolved_findings} />
-        <ChangeList title="Severity changed" items={comparison.severity_changed_findings} />
-        <ChangeList title="Unchanged" items={comparison.unchanged_findings.slice(0, 6)} />
+        <ChangeList key={`${comparison.baseline_scan_id}:${comparison.comparison_scan_id}:new`} title="New" items={comparison.new_findings} />
+        <ChangeList key={`${comparison.baseline_scan_id}:${comparison.comparison_scan_id}:resolved`} title="Resolved" items={comparison.resolved_findings} />
+        <ChangeList key={`${comparison.baseline_scan_id}:${comparison.comparison_scan_id}:severity`} title="Severity changed" items={comparison.severity_changed_findings} />
+        <ChangeList key={`${comparison.baseline_scan_id}:${comparison.comparison_scan_id}:unchanged`} title="Unchanged" items={comparison.unchanged_findings} />
       </div>
     </div>
   );
 }
 
 function ChangeList({ title, items }: { title: string; items: ScanComparison["new_findings"] }) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleItems = expanded ? items : items.slice(0, comparisonPreviewSize);
+  const remainingCount = Math.max(0, items.length - visibleItems.length);
+  const listId = `comparison-${title.toLowerCase().replaceAll(" ", "-")}-findings`;
+
   return (
     <div className="changeList">
       <h4>
         {title} <span>{items.length}</span>
       </h4>
       {items.length > 0 ? (
-        <ul>
-          {items.map((item) => (
-            <li key={`${title}-${item.dedupe_key}`}>
-              <strong>{item.title}</strong>
-              <small>
-                {item.previous_severity ?? "-"} {"->"} {item.current_severity ?? "-"}
-              </small>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul id={listId}>
+            {visibleItems.map((item) => (
+              <li key={`${title}-${item.dedupe_key}`}>
+                <strong>{item.title}</strong>
+                <small>
+                  {item.previous_severity ?? "none"} {"→"} {item.current_severity ?? "none"}
+                </small>
+              </li>
+            ))}
+          </ul>
+          {items.length > comparisonPreviewSize ? (
+            <button
+              type="button"
+              className="secondaryButton changeListDisclosure"
+              aria-controls={listId}
+              aria-expanded={expanded}
+              onClick={() => setExpanded((currentValue) => !currentValue)}
+            >
+              {expanded ? "Show fewer" : `Show ${remainingCount} more`}
+            </button>
+          ) : null}
+        </>
       ) : (
         <p className="emptyState">None</p>
       )}

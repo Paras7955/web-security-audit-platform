@@ -7,24 +7,27 @@ export function WorkspaceOverview({
   health,
   selectedScan,
   selectedTarget,
-  onNavigate
+  onNavigate,
+  onOpenScanHistory
 }: {
   overview: DashboardOverview | null;
   health: PlatformHealth | null;
   selectedScan: Scan | null;
   selectedTarget: Target | null;
   onNavigate: (view: string) => void;
+  onOpenScanHistory: () => void;
 }) {
   const criticalCount = overview?.severity_counts.critical ?? 0;
   const highCount = overview?.severity_counts.high ?? 0;
   const riskScore = overview?.latest_risk_score?.score;
 
   return (
-    <div className="overviewWorkspace">
+    <div className="overviewWorkspace productPage">
+      <div className="viewIntro"><div><h2>Workspace overview</h2><p>See current risk, platform readiness, authorized scope, and the latest audit activity at a glance.</p></div></div>
       <section className="metricGrid" aria-label="Workspace metrics">
         <MetricCard icon="target" label="Saved targets" value={overview?.targets_count ?? "—"} detail="Exact allowlist only" tone="cyan" />
         <MetricCard icon="scan" label="Total scans" value={overview?.scans_count ?? "—"} detail={`${overview?.completed_scans_count ?? 0} completed`} tone="blue" />
-        <MetricCard icon="finding" label="Open evidence" value={overview?.findings_count ?? "—"} detail={`${criticalCount + highCount} high priority`} tone={criticalCount ? "danger" : "violet"} />
+        <MetricCard icon="finding" label="Open evidence" value={overview?.findings_count ?? "—"} detail={`${criticalCount + highCount} high priority`} tone={criticalCount ? "danger" : "accent"} />
         <MetricCard icon="activity" label="Latest risk" value={riskScore ?? "—"} detail={overview?.latest_risk_score?.label ?? "Awaiting completed scan"} tone="amber" />
       </section>
 
@@ -34,6 +37,7 @@ export function WorkspaceOverview({
             <div>
               <p className="panelKicker">Current focus</p>
               <h3>{selectedTarget?.name ?? "Choose an authorized target"}</h3>
+              <p>The saved target currently driving profile availability and audit actions.</p>
             </div>
             <span className={health?.status === "ok" ? "healthBadge healthBadgeOk" : "healthBadge"}>
               <span className="statusDot" /> {health?.status === "ok" ? "Systems ready" : "Check readiness"}
@@ -68,6 +72,7 @@ export function WorkspaceOverview({
             <div>
               <p className="panelKicker">Latest activity</p>
               <h3>Scan signal</h3>
+              <p>Progress and state for the selected or most recent audit.</p>
             </div>
             {selectedScan ? <span className={`statusPill status-${selectedScan.status}`}>{formatStatus(selectedScan.status)}</span> : null}
           </div>
@@ -97,8 +102,9 @@ export function WorkspaceOverview({
           <div>
             <p className="panelKicker">Workspace trail</p>
             <h3>Recent scans</h3>
+            <p>Use this short history to reopen monitoring or continue into result review.</p>
           </div>
-          <button className="textButton" type="button" onClick={() => onNavigate("scanning")}>View scan history <AppIcon name="arrow" size={15} /></button>
+          <button className="textButton" type="button" onClick={onOpenScanHistory}>View scan history <AppIcon name="arrow" size={15} /></button>
         </div>
         {overview?.recent_scans.length ? (
           <div className="activityTableWrap">

@@ -12,6 +12,7 @@ export const terminalStatuses = new Set(["completed", "completed_with_warnings",
 export const reportableStatuses = new Set(["completed", "completed_with_warnings"]);
 type ScanProfileMetadata = (typeof SCAN_PROFILES)[number];
 const profilesById: Map<string, ScanProfileMetadata> = new Map(SCAN_PROFILES.map((profile) => [profile.id, profile]));
+const receiptPreviewCount = 4;
 
 export function scanProfileForScan(scan: Scan) {
   return profilesById.get(scan.scan_profile_id) ?? null;
@@ -40,32 +41,26 @@ export function mergeScan(scans: Scan[], updatedScan: Scan): Scan[] {
   return scans.map((scan) => (scan.id === updatedScan.id ? updatedScan : scan));
 }
 
-export function ScanLauncher({
+export function ScanProfileSelector({
   targets,
   selectedTargetId,
   repoPath,
   scanProfileId,
-  acknowledgements,
-  canStartScan,
   isBusy,
   onSelectTarget,
   onSelectScanProfile,
   onAttachRepoPath,
-  onAcknowledgementChange,
-  onStartScan
+  onContinue
 }: {
   targets: Target[];
   selectedTargetId: string;
   repoPath: string;
   scanProfileId: string;
-  acknowledgements: string[];
-  canStartScan: boolean;
   isBusy: boolean;
   onSelectTarget: (targetId: string) => void;
   onSelectScanProfile: (profileId: string) => void;
   onAttachRepoPath: () => void;
-  onAcknowledgementChange: (code: string, acknowledged: boolean) => void;
-  onStartScan: () => void;
+  onContinue: () => void;
 }) {
   const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
   const selectedProfile = profilesById.get(scanProfileId) ?? SCAN_PROFILES[0];
@@ -75,90 +70,208 @@ export function ScanLauncher({
   const canAttachRepoPath = Boolean(selectedTarget && repoPath.trim() && !isBusy);
 
   return (
-    <div className="panel">
-      <div className="panelHeader">
-        <h3>Scan Profile</h3>
-        <span className="contextBadge">Exact allowlist</span>
-      </div>
-
-      <label className="selectLabel">
-        <span>Saved target</span>
-        <select value={selectedTargetId} onChange={(event) => onSelectTarget(event.target.value)}>
-          <option value="">No saved targets</option>
-          {targets.map((target) => (
-            <option key={target.id} value={target.id}>
-              {target.name} - {target.base_url}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {selectedTarget?.auth_profile_id ? (
-        <p className="formMessage">Selected target has an auth profile. Authenticated scanner requests are available for Passive Web only.</p>
-      ) : null}
-
-      <div className="modeGrid" aria-label="Scan profile safety controls">
-        {SCAN_PROFILES.map((profile) => (
-          <button
-            key={profile.id}
-            type="button"
-            className={scanProfileId === profile.id ? "modeCard modeCardActive" : "modeCard"}
-            onClick={() => onSelectScanProfile(profile.id)}
-          >
-            <strong>{profile.label}</strong>
-            <span>{profile.description}</span>
-          </button>
-        ))}
-      </div>
-
-      {selectedProfile.required_acknowledgements.map((code) => (
-        <label className="checkboxRow scanModeAck" key={code}>
-          <input
-            type="checkbox"
-            checked={acknowledgements.includes(code)}
-            onChange={(event) => onAcknowledgementChange(code, event.target.checked)}
-          />
-          <span>{ACKNOWLEDGEMENT_LABELS[code] ?? code}</span>
+    <div className="profileWorkspace">
+      <div className="profileSelectorHeader">
+        <div>
+          <h2>Choose how to audit this target</h2>
+          <p>Each profile uses a different bounded tool path. Availability is enforced by the selected target.</p>
+        </div>
+        <label className="selectLabel compactSelect">
+          <span>Selected target</span>
+          <select value={selectedTargetId} onChange={(event) => onSelectTarget(event.target.value)}>
+            <option value="">No saved targets</option>
+            {targets.map((target) => (
+              <option key={target.id} value={target.id}>{target.name}</option>
+            ))}
+          </select>
+          {selectedTarget ? <small className="compactSelectMeta">{selectedTarget.base_url}</small> : null}
         </label>
-      ))}
+      </div>
 
-      {selectedProfile.requires_repo_path ? (
-        <div className="repoPathNotice">
-          <p className="formMessage">
-            Repo scans use the saved local repo path for this target and do not clone, install dependencies, or execute repo code.
-          </p>
-          {selectedTarget ? (
-            <dl>
-              <div>
-                <dt>Repository access</dt>
-                <dd>{selectedTarget.has_repo_path ? "Configured" : "Not configured"}</dd>
-              </div>
-            </dl>
-          ) : null}
-          {repoPathMissing ? (
-            <div className="inlineAction">
-              <p>Attach the repo path from the target form before starting this repo scan.</p>
-              <button type="button" onClick={onAttachRepoPath} disabled={!canAttachRepoPath}>
-                Attach Repo Path
+      <div className="profileDecisionGrid">
+        <div className="modeGrid" role="group" aria-label="Audit profile choices">
+          {SCAN_PROFILES.map((profile) => {
+            const isAvailable = selectedTarget?.available_scan_profile_ids.includes(profile.id) ?? false;
+            const isUnavailable = Boolean(selectedTarget && !isAvailable);
+            const isSelected = scanProfileId === profile.id;
+            const capabilities = profileCapabilities(profile);
+            return (
+              <button
+                key={profile.id}
+                type="button"
+                aria-pressed={isSelected}
+                aria-disabled={isUnavailable}
+                disabled={isUnavailable}
+                className={`modeCard${isSelected && !isUnavailable ? " modeCardActive" : ""}${isUnavailable ? " modeCardUnavailable" : ""}`}
+                onClick={() => onSelectScanProfile(profile.id)}
+              >
+                <span className="modeCardIcon"><AppIcon name={profileIcon(profile.id)} size={28} /></span>
+                <span className="modeCardTop">
+                  <strong>{profile.label}</strong>
+                  <em>{!selectedTarget ? "Needs target" : isUnavailable ? "Unavailable" : isSelected ? "Selected" : "Available"}</em>
+                </span>
+                <span>{profileDecisionCopy(profile.id)}</span>
+                <span className="profileMeta">{capabilities.join(" · ")}</span>
               </button>
+            );
+          })}
+        </div>
+
+        <aside className="profileContext" aria-live="polite">
+          <div className="profileContextHeading">
+            <span className="profileContextIcon"><AppIcon name={selectedProfile.mode === "repo" ? "intelligence" : "scan"} size={20} /></span>
+            <div><span>Selected profile</span><h3>{selectedProfile.label}</h3></div>
+          </div>
+          <ul className="profileAssuranceList">
+            <li><AppIcon name="shield" size={17} /><span><strong>Guarded eligibility</strong><small>{selectedTargetSupportsProfile ? "Allowed for the selected target" : "Not allowed for the selected target"}</small></span></li>
+            <li><AppIcon name="intelligence" size={17} /><span><strong>Sanitized outputs</strong><small>{selectedProfile.reports_enabled ? `Reports${selectedProfile.ai_enabled ? " and explanations" : ""} available` : "No reports or explanations"}</small></span></li>
+            <li><AppIcon name="credential" size={17} /><span><strong>Credential boundary</strong><small>{selectedProfile.mode === "passive" ? "Optional guarded credential" : "Credentials are never used"}</small></span></li>
+          </ul>
+          {selectedProfile.requires_repo_path ? (
+            <div className="repoPathNotice">
+              <p>Repository scans stage bounded regular files only. ScopeHarbor never clones, builds, installs, runs hooks, or executes repository code.</p>
+              <strong>{selectedTarget?.has_repo_path ? "Repository path attached" : "Repository path required"}</strong>
+              <small className="repoPathValue">{repoPath.trim() || "No repository path entered in Scope."}</small>
+              {repoPathMissing ? <button type="button" onClick={onAttachRepoPath} disabled={!canAttachRepoPath}>Attach this repository path</button> : null}
             </div>
           ) : null}
-        </div>
-      ) : null}
-
-      <div className="actions">
-        <button type="button" onClick={onStartScan} disabled={!canStartScan || isBusy}>
-          Start {selectedProfile.label} Scan
-        </button>
+          {authProfileUnsupported ? <p className="formMessage errorText">Detach the target credential or choose Passive Web. Credentials never enter active, browser, or repository scans.</p> : null}
+          <button type="button" onClick={onContinue} disabled={!selectedTargetSupportsProfile || repoPathMissing || authProfileUnsupported}>
+            Continue to authorization <AppIcon name="arrow" size={15} />
+          </button>
+        </aside>
       </div>
-      {selectedTarget && !selectedTargetSupportsProfile ? (
-        <p className="formMessage">This scan profile is not allowed for the selected target.</p>
-      ) : null}
-      {authProfileUnsupported ? (
-        <p className="formMessage errorText">Auth profiles are currently supported only for passive-web scans.</p>
-      ) : null}
     </div>
   );
+}
+
+export function ScanAuthorization({
+  target,
+  scanProfileId,
+  acknowledgements,
+  profileReady,
+  onAcknowledgementChange,
+  onOpenCredentials,
+  onContinue
+}: {
+  target: Target | null;
+  scanProfileId: string;
+  acknowledgements: string[];
+  profileReady: boolean;
+  onAcknowledgementChange: (code: string, acknowledged: boolean) => void;
+  onOpenCredentials: () => void;
+  onContinue: () => void;
+}) {
+  const profile = profilesById.get(scanProfileId) ?? SCAN_PROFILES[0];
+  const allConfirmed = profile.required_acknowledgements.every((code) => acknowledgements.includes(code));
+  const authProfileUnsupported = Boolean(target?.auth_profile_id && profile.mode !== "passive");
+
+  return (
+    <div className="authorizationLayout">
+      <section className="authorizationChecklist">
+        <div className="panelHeader">
+          <div><p className="panelKicker">Explicit permission</p><h2>Confirm the audit boundary</h2></div>
+          <span className="contextBadge">Required</span>
+        </div>
+        <p>ScopeHarbor records these confirmations with the scan request. They do not broaden the backend allowlist.</p>
+        <div className="authorizationSummary">
+          <span><AppIcon name="target" size={16} />{target?.name ?? "No target selected"}</span>
+          <span><AppIcon name="scan" size={16} />{profile.label}</span>
+        </div>
+        <div className="acknowledgementList">
+          {profile.required_acknowledgements.map((code) => (
+            <label className="checkboxRow scanModeAck" key={code}>
+              <input
+                type="checkbox"
+                checked={acknowledgements.includes(code)}
+                onChange={(event) => onAcknowledgementChange(code, event.target.checked)}
+              />
+              <span>{ACKNOWLEDGEMENT_LABELS[code] ?? code}</span>
+            </label>
+          ))}
+        </div>
+        {authProfileUnsupported ? <p className="formMessage errorText">This target has a credential attached. Credentials are limited to guarded Passive Web requests, so detach it before continuing.</p> : null}
+        <button type="button" onClick={onContinue} disabled={!profileReady || !allConfirmed || authProfileUnsupported}>
+          Continue to launch review <AppIcon name="arrow" size={15} />
+        </button>
+      </section>
+
+      <aside className="boundarySummary">
+        <p className="panelKicker">What remains enforced</p>
+        <h3>Permission does not replace policy</h3>
+        <ul>
+          <li><AppIcon name="check" size={15} /><span><strong>Exact destination</strong>Scanner traffic remains bound to the configured Docker service.</span></li>
+          <li><AppIcon name="check" size={15} /><span><strong>Redirect checks</strong>Every redirect is revalidated; automatic redirects stay disabled.</span></li>
+          <li><AppIcon name="check" size={15} /><span><strong>Sanitized output</strong>Queries, fragments, secrets, and raw bodies do not cross report or AI boundaries.</span></li>
+        </ul>
+        {profile.mode === "passive" ? (
+          <div className="credentialPrompt">
+            <span><AppIcon name="credential" size={18} /></span>
+            <div><strong>Optional passive credential</strong><p>Attach an encrypted bearer token or static header only if this target needs guarded authenticated requests.</p></div>
+            <button type="button" className="textButton" onClick={onOpenCredentials}>Manage credentials</button>
+          </div>
+        ) : null}
+      </aside>
+    </div>
+  );
+}
+
+export function ScanLaunchPanel({
+  target,
+  scanProfileId,
+  canStartScan,
+  platformReady,
+  isBusy,
+  onStartScan
+}: {
+  target: Target | null;
+  scanProfileId: string;
+  canStartScan: boolean;
+  platformReady: boolean;
+  isBusy: boolean;
+  onStartScan: () => void;
+}) {
+  const profile = profilesById.get(scanProfileId) ?? SCAN_PROFILES[0];
+  return (
+    <section className="launchReview">
+      <div>
+        <p className="panelKicker">Launch review</p>
+        <h2>{profile.label} is ready to queue</h2>
+        <p>Review the exact target and profile once more. The worker will revalidate workspace, target, and policy context before any tool runs.</p>
+      </div>
+      <dl>
+        <div><dt>Target</dt><dd>{target?.name ?? "Not selected"}</dd></div>
+        <div><dt>Canonical address</dt><dd>{target?.base_url ?? "—"}</dd></div>
+        <div><dt>Profile</dt><dd>{profile.label}</dd></div>
+        <div><dt>Platform</dt><dd>{platformReady ? "Ready" : "Needs attention"}</dd></div>
+      </dl>
+      <button type="button" onClick={onStartScan} disabled={!canStartScan || isBusy}>
+        {isBusy ? "Queuing audit…" : `Launch ${profile.label}`} <AppIcon name="arrow" size={15} />
+      </button>
+      {!platformReady ? <p className="formMessage errorText">Confirm platform readiness before launch. Run Preflight again after the worker and database are healthy.</p> : null}
+    </section>
+  );
+}
+
+function profileCapabilities(profile: ScanProfileMetadata) {
+  const capabilities = [profile.local_demo_only ? "Local demo" : profile.mode === "repo" ? "Offline" : "Allowlisted"];
+  if (profile.reports_enabled) capabilities.push(profile.ai_enabled ? "Reports + AI" : "Reports");
+  else capabilities.push("No reports");
+  return capabilities;
+}
+
+function profileDecisionCopy(profileId: string): string {
+  if (profileId === "active-demo") return "Bounded ZAP testing for local demos.";
+  if (profileId === "modern-web-crawl") return "Client Spider crawl for local demos.";
+  if (profileId === "repo") return "Gitleaks and offline OSV; code is never run.";
+  return "Passive checks for allowlisted targets.";
+}
+
+function profileIcon(profileId: string): "target" | "operations" | "activity" | "intelligence" {
+  if (profileId === "active-demo") return "operations";
+  if (profileId === "modern-web-crawl") return "activity";
+  if (profileId === "repo") return "intelligence";
+  return "target";
 }
 
 export function ScanHistory({
@@ -191,7 +304,7 @@ export function ScanHistory({
   return (
     <div className="panel historyPanel">
       <div className="panelHeader">
-        <div><p className="panelKicker">Audit trail</p><h3>Scan history</h3></div>
+        <div><p className="panelKicker">Audit trail</p><h3>Scan history</h3><p>Filter previous audits, then select one to monitor progress or reopen its normalized results.</p></div>
         <span className="contextBadge">{filteredScans.length}/{scans.length}</span>
       </div>
 
@@ -243,36 +356,45 @@ function formatScanDate(value: string) {
 
 export function ScanProgress({
   scan,
+  targetName,
   toolRuns,
   isCancelling,
   onCancel
 }: {
   scan: Scan;
+  targetName: string;
   toolRuns: ScannerToolRun[];
   isCancelling: boolean;
   onCancel: () => void;
 }) {
   const displayedProgress = useSmoothedProgress(scan);
   const canCancel = !terminalStatuses.has(scan.status) && !scan.cancellation_requested_at;
+  const visibleToolRuns = toolRuns.slice(0, receiptPreviewCount);
+  const remainingToolRuns = toolRuns.slice(receiptPreviewCount);
 
   return (
     <div className="scanPanel">
       <div className="scanHeader">
         <div>
           <h3>Selected scan</h3>
+          <p>Live status, bounded worker progress, and sanitized scanner receipts for this audit.</p>
           <small>{scan.id}</small>
         </div>
         <span className={`statusPill status-${scan.status}`}>{scan.status}</span>
       </div>
       <div className="scanActions">
         <button type="button" className="secondaryButton" onClick={onCancel} disabled={!canCancel || isCancelling}>
-          {scan.cancellation_requested_at ? "Cancellation Requested" : "Cancel Scan"}
+          {isCancelling ? "Requesting cancellation…" : scan.cancellation_requested_at ? "Cancellation requested" : "Cancel scan"}
         </button>
       </div>
-      <div className="progressTrack" aria-label="Scan progress">
+      <div className="progressTrack" role="progressbar" aria-label="Scan progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={displayedProgress}>
         <span style={{ width: `${displayedProgress}%` }} />
       </div>
       <dl className="scanMeta">
+        <div>
+          <dt>Target</dt>
+          <dd>{targetName}</dd>
+        </div>
         <div>
           <dt>Profile</dt>
           <dd>{formatScanProfileLabel(scan.scan_profile_id)}</dd>
@@ -286,28 +408,40 @@ export function ScanProgress({
           <dd>{displayedProgress}%</dd>
         </div>
       </dl>
-      <p>{scan.status_message}</p>
+      <p role="status">{scan.status_message}</p>
       {scan.cancellation_requested_at ? <p className="formMessage">Cancellation requested. Worker will stop at a safe checkpoint.</p> : null}
       {scan.failure ? <p className="errorText">{scan.failure.message} ({scan.failure.code})</p> : null}
       {toolRuns.length > 0 ? (
         <div className="toolRunPanel">
-          <h4>Scanner receipts</h4>
-          <ul className="opsList">
-            {toolRuns.map((toolRun) => (
-              <li key={toolRun.id}>
-                <span className={`statusDot status-${toolRun.status}`} />
-                <strong>{toolRun.tool_name}</strong>
-                <em>{toolRun.status}</em>
-                <small>
-                  {toolRun.tool_version ?? "version unavailable"} · {toolRun.finding_count} finding(s)
-                  {toolRun.warning_code ? ` · ${toolRun.warning_code}` : ""}
-                </small>
-              </li>
-            ))}
-          </ul>
+          <div className="toolRunHeading"><h4>Scanner receipts</h4><p>Safe execution metadata only; raw tool output is never shown here.</p></div>
+          <ToolRunList toolRuns={visibleToolRuns} />
+          {remainingToolRuns.length > 0 ? (
+            <details className="scannerReceiptOverflow">
+              <summary>Show {remainingToolRuns.length} more scanner receipt{remainingToolRuns.length === 1 ? "" : "s"}</summary>
+              <ToolRunList toolRuns={remainingToolRuns} />
+            </details>
+          ) : null}
         </div>
       ) : null}
     </div>
+  );
+}
+
+function ToolRunList({ toolRuns }: { toolRuns: ScannerToolRun[] }) {
+  return (
+    <ul className="opsList">
+      {toolRuns.map((toolRun) => (
+        <li key={toolRun.id}>
+          <span className={`statusDot status-${toolRun.status}`} />
+          <strong>{toolRun.tool_name}</strong>
+          <em>{toolRun.status}</em>
+          <small>
+            {toolRun.tool_version ?? "version unavailable"} · {toolRun.finding_count} finding(s)
+            {toolRun.warning_code ? ` · ${toolRun.warning_code}` : ""}
+          </small>
+        </li>
+      ))}
+    </ul>
   );
 }
 

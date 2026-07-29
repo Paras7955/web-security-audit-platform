@@ -32,7 +32,7 @@ export function TargetForm({
   return (
     <div className="panel">
       <div className="panelHeader">
-        <h3>Target</h3>
+        <div><h3>Validate a target</h3><p>Confirm the exact allowlist match and optional approved repository path before saving scope.</p></div>
         <span className="contextBadge">Allowlisted</span>
       </div>
 
@@ -89,6 +89,10 @@ export function TargetForm({
             <div>
               <dt>Redirect Cap</dt>
               <dd>{validation.max_redirects}</dd>
+            </div>
+            <div>
+              <dt>Target Class</dt>
+              <dd>{validation.local_demo ? "Local demo" : "Allowlisted service"}</dd>
             </div>
           </dl>
         </div>
