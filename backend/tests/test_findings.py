@@ -1,11 +1,12 @@
 import unittest
+from unittest.mock import patch
 from uuid import uuid4
 
 from app.core.contracts import Confidence, Severity
 from app.db.session import SessionLocal
-from app.findings.redaction import EVIDENCE_SNIPPET_CAP, prepare_evidence_snippet, redact_text
+from app.findings.redaction import EVIDENCE_SNIPPET_CAP, prepare_evidence_snippet, redact_text, truncate_utf8
 from app.findings.schemas import NormalizedFindingInput
-from app.findings.service import build_dedupe_key, persist_normalized_findings
+from app.findings.service import FindingPersistenceError, build_dedupe_key, persist_normalized_findings
 from app.models import LEGACY_WORKSPACE_ID, Finding, FindingOccurrenceState, FindingState, Scan, Target
 from pydantic import ValidationError
 from sqlalchemy import delete
@@ -95,6 +96,11 @@ class FindingsTests(unittest.TestCase):
         self.assertNotIn("abc123", redacted)
         self.assertNotIn("secret-value", redacted)
 
+    def test_redaction_helpers_handle_missing_and_partial_unicode_input(self) -> None:
+        self.assertEqual(redact_text(None), (None, False))
+        self.assertEqual(prepare_evidence_snippet(None), (None, False))
+        self.assertEqual(truncate_utf8("é", 1), "")
+
     def test_dedupe_key_uses_source_location_title_and_cwe(self) -> None:
         finding = NormalizedFindingInput(
             title="  Missing  Content Security Policy ",
@@ -155,6 +161,35 @@ class FindingsTests(unittest.TestCase):
             state_count = db.query(FindingState).filter(FindingState.target_id == self.target_id).count()
             self.assertEqual(occurrence_count, 2)
             self.assertEqual(state_count, 2)
+
+    def test_persist_normalized_findings_requires_workspace_scoped_scan(self) -> None:
+        with SessionLocal() as db:
+            with self.assertRaisesRegex(FindingPersistenceError, "scan not found"):
+                persist_normalized_findings(
+                    db,
+                    workspace_id=str(uuid4()),
+                    scan_id=self.scan_id,
+                    findings=[],
+                )
+
+    def test_persist_normalized_findings_rolls_back_partial_write(self) -> None:
+        finding_input = NormalizedFindingInput(**ZAP_FIXTURE)
+
+        with SessionLocal() as db:
+            with patch(
+                "app.findings.service.initialize_finding_management_state",
+                side_effect=RuntimeError("simulated management-state failure"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "simulated management-state failure"):
+                    persist_normalized_findings(
+                        db,
+                        workspace_id=LEGACY_WORKSPACE_ID,
+                        scan_id=self.scan_id,
+                        findings=[finding_input],
+                    )
+
+        with SessionLocal() as db:
+            self.assertEqual(db.query(Finding).filter(Finding.scan_id == self.scan_id).count(), 0)
 
 
 if __name__ == "__main__":

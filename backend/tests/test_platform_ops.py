@@ -179,7 +179,8 @@ class PlatformOpsTests(unittest.TestCase):
             with SessionLocal() as db:
                 record_worker_heartbeat(db, worker_id="test-worker-health", status="polling")
 
-            with patch("app.api.ops.settings.artifact_root", temp_dir), patch("app.api.ops.httpx.get") as get:
+            with patch("app.api.ops.settings.artifact_root", temp_dir), patch("app.api.ops.httpx.Client") as client:
+                get = client.return_value.__enter__.return_value.get
                 get.return_value.raise_for_status.return_value = None
                 response = self.client.get("/api/v1/ops/health", headers=DEV_AUTH_HEADERS)
 
@@ -192,6 +193,7 @@ class PlatformOpsTests(unittest.TestCase):
         self.assertEqual(body["artifact_root"]["detail"], "artifact root writable")
         self.assertNotIn(temp_dir, body["artifact_root"]["detail"])
         self.assertGreaterEqual(body["queue_depth"], 0)
+        client.assert_called_once_with(trust_env=False, follow_redirects=False)
 
     def test_rate_limit_scope_uses_transaction_advisory_lock_on_postgres(self) -> None:
         class FakeDialect:
