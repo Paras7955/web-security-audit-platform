@@ -154,6 +154,17 @@ class ZapPassiveTests(unittest.TestCase):
         self.assertFalse(calls[0][3])
         self.assertFalse(calls[0][4])
 
+    def test_retired_ajax_execution_methods_are_absent(self) -> None:
+        for method_name in (
+            "set_ajax_max_duration",
+            "set_ajax_max_crawl_depth",
+            "ajax_scan",
+            "ajax_status",
+            "stop_ajax",
+        ):
+            with self.subTest(method_name=method_name):
+                self.assertFalse(hasattr(ZapApiClient, method_name))
+
     def test_zap_api_alerts_paginates_without_warning_at_exact_cap(self) -> None:
         def handler(url, *, params, headers, timeout, follow_redirects, trust_env):
             del url, headers, timeout
