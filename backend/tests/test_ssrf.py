@@ -69,6 +69,47 @@ class SsrfGuardTests(unittest.TestCase):
         with self.assertRaises(SsrfGuardError):
             validate_destination(match.url, match.allowlist_target, resolver_for(["93.184.216.34", "127.0.0.1"]))
 
+    def test_public_addresses_are_denied_for_every_connection_policy(self) -> None:
+        match = match_allowlisted_target("http://juice-shop:3000", ALLOWLIST)
+        with self.assertRaises(SsrfGuardError):
+            validate_destination(match.url, match.allowlist_target, resolver_for(["8.8.8.8"]))
+
+    def test_host_gateway_requires_an_exact_expected_address(self) -> None:
+        allowlist = ScanAllowlist.model_validate(
+            {
+                "version": 2,
+                "targets": [
+                    {
+                        "id": "host-app",
+                        "name": "Host App",
+                        "base_url": "http://localhost:8080/",
+                        "connection": {
+                            "kind": "host_gateway",
+                            "host": "scopeharbor-host",
+                            "port": 18080,
+                            "expected_ips": ["192.168.65.2"],
+                        },
+                        "profile_engines": {"passive-web": ["scopeharbor-passive"]},
+                        "disposable_demo": False,
+                        "max_redirects": 1,
+                    }
+                ],
+            }
+        )
+        match = match_allowlisted_target("http://localhost:8080/", allowlist)
+
+        destination = validate_destination(
+            match.url,
+            match.allowlist_target,
+            resolver_for(["192.168.65.2"]),
+        )
+        self.assertEqual(destination.connection_host, "scopeharbor-host")
+        self.assertEqual(destination.connection_port, 18080)
+        self.assertEqual(destination.connection_ip, "192.168.65.2")
+        for denied in ("192.168.65.3", "10.0.0.4", "8.8.8.8"):
+            with self.subTest(denied=denied), self.assertRaises(SsrfGuardError):
+                validate_destination(match.url, match.allowlist_target, resolver_for([denied]))
+
 
 if __name__ == "__main__":
     unittest.main()

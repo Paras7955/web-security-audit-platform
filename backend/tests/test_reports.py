@@ -8,7 +8,13 @@ from uuid import uuid4
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import AiRequestLog, Finding, ReportArtifact, Scan, ScannerToolRun, Target, Workspace
-from app.reports.service import ReportGenerationError, generate_report_artifacts, read_report_artifact_file
+from app.reports.service import (
+    ReportGenerationError,
+    fenced_block,
+    generate_report_artifacts,
+    markdown_inline,
+    read_report_artifact_file,
+)
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
 
@@ -83,7 +89,13 @@ class ReportsTests(unittest.TestCase):
     def test_generate_report_artifacts_writes_markdown_and_html(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with SessionLocal() as db:
-                artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                artifacts = generate_report_artifacts(
+                    db,
+                    scan_id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    artifact_root=temp_dir,
+                    ai_provider="template",
+                )
 
                 self.assertEqual({artifact.report_type for artifact in artifacts}, {"markdown", "html"})
                 markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
@@ -91,7 +103,7 @@ class ReportsTests(unittest.TestCase):
                 markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
                 html_content = read_report_artifact_file(html, artifact_root=temp_dir)
 
-            self.assertIn("Target allowlist ID: juice-shop", markdown_content)
+            self.assertIn("Subject policy: juice-shop", markdown_content)
             self.assertNotIn("+00:00Z", markdown_content)
             self.assertIn("ZAP passive analysis: used for allowlisted URLs.", markdown_content)
             self.assertIn("ZAP active scan: not used.", markdown_content)
@@ -100,12 +112,31 @@ class ReportsTests(unittest.TestCase):
             self.assertIn("Provider used: template", markdown_content)
             self.assertIn(f"Finding {self.finding_id}", markdown_content)
             self.assertIn("Redaction applied: yes", markdown_content)
+            self.assertIn("&lt;script&gt;", markdown_content)
+            self.assertNotIn("<script>alert('xss')</script>", markdown_content)
             self.assertNotIn("+00:00Z", html_content)
             self.assertIn("<h2>AI Explanations</h2>", html_content)
             self.assertIn("ZAP passive analysis: used for allowlisted URLs.", html_content)
             self.assertIn("generated with template provider", html_content)
             self.assertIn("&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;", html_content)
             self.assertNotIn("<script>alert('xss')</script>", html_content)
+
+    def test_markdown_dynamic_values_cannot_inject_structure(self) -> None:
+        rendered = markdown_inline("safe\n## injected *emphasis* <script>")
+
+        self.assertNotIn("\n", rendered)
+        self.assertIn("\\#\\# injected", rendered)
+        self.assertIn("\\*emphasis\\*", rendered)
+        self.assertIn("&lt;script&gt;", rendered)
+
+    def test_markdown_fence_is_longer_than_any_embedded_backtick_run(self) -> None:
+        value = "before `````` after"
+        rendered = fenced_block(value)
+        lines = rendered.splitlines()
+
+        self.assertEqual(lines[0], "```````text")
+        self.assertEqual(lines[-1], "```````")
+        self.assertIn(value, rendered)
 
     def test_reports_include_safe_scanner_tool_receipts_without_raw_output(self) -> None:
         tool_run_id = str(uuid4())
@@ -125,7 +156,13 @@ class ReportsTests(unittest.TestCase):
                 )
             )
             db.commit()
-            artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+            artifacts = generate_report_artifacts(
+                db,
+                scan_id=self.scan_id,
+                workspace_id=DEV_WORKSPACE_ID,
+                artifact_root=temp_dir,
+                ai_provider="template",
+            )
             markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
             content = read_report_artifact_file(markdown, artifact_root=temp_dir)
 
@@ -210,7 +247,13 @@ class ReportsTests(unittest.TestCase):
             try:
                 with SessionLocal() as db:
                     with self.assertRaises(ReportGenerationError):
-                        generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                        generate_report_artifacts(
+                            db,
+                            scan_id=self.scan_id,
+                            workspace_id=DEV_WORKSPACE_ID,
+                            artifact_root=temp_dir,
+                            ai_provider="template",
+                        )
             finally:
                 with SessionLocal() as db:
                     target = db.get(Target, self.target_id)
@@ -243,7 +286,13 @@ class ReportsTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with SessionLocal() as db:
-                artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                artifacts = generate_report_artifacts(
+                    db,
+                    scan_id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    artifact_root=temp_dir,
+                    ai_provider="template",
+                )
                 markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
                 markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
 
@@ -300,7 +349,13 @@ class ReportsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("app.reports.service.generate_ai_explanations") as ai_provider:
                 with SessionLocal() as db:
-                    artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                    artifacts = generate_report_artifacts(
+                        db,
+                        scan_id=self.scan_id,
+                        workspace_id=DEV_WORKSPACE_ID,
+                        artifact_root=temp_dir,
+                        ai_provider="template",
+                    )
                     markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
                     markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
 
@@ -326,7 +381,13 @@ class ReportsTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with SessionLocal() as db:
-                artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                artifacts = generate_report_artifacts(
+                    db,
+                    scan_id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    artifact_root=temp_dir,
+                    ai_provider="template",
+                )
                 markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
                 html = next(artifact for artifact in artifacts if artifact.report_type == "html")
                 markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
@@ -357,7 +418,13 @@ class ReportsTests(unittest.TestCase):
     def test_completed_historical_ajax_report_artifacts_remain_readable(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
             with SessionLocal() as db:
-                artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                artifacts = generate_report_artifacts(
+                    db,
+                    scan_id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    artifact_root=temp_dir,
+                    ai_provider="template",
+                )
                 markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
                 artifact_id = markdown.id
                 scan = db.get(Scan, self.scan_id)
@@ -378,7 +445,13 @@ class ReportsTests(unittest.TestCase):
     def test_report_artifact_api_rejects_non_completed_scans(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, patch("app.api.reports.settings.artifact_root", temp_dir):
             with SessionLocal() as db:
-                artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                artifacts = generate_report_artifacts(
+                    db,
+                    scan_id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    artifact_root=temp_dir,
+                    ai_provider="template",
+                )
                 markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
                 artifact_id = markdown.id
                 scan = db.get(Scan, self.scan_id)
@@ -418,7 +491,13 @@ class ReportsTests(unittest.TestCase):
             reports_link.symlink_to(outside_dir, target_is_directory=True)
 
             with SessionLocal() as db, self.assertRaises(ValueError):
-                generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                generate_report_artifacts(
+                    db,
+                    scan_id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    artifact_root=temp_dir,
+                    ai_provider="template",
+                )
 
             self.assertFalse((Path(outside_dir) / "report.md").exists())
 
@@ -448,7 +527,13 @@ class ReportsTests(unittest.TestCase):
             (reports_dir / "report.md").symlink_to(outside_report)
 
             with SessionLocal() as db, self.assertRaises(ValueError):
-                generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                generate_report_artifacts(
+                    db,
+                    scan_id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    artifact_root=temp_dir,
+                    ai_provider="template",
+                )
 
             self.assertEqual(outside_report.read_text(encoding="utf-8"), "outside")
 
@@ -496,7 +581,13 @@ class ReportsTests(unittest.TestCase):
             scan_link.symlink_to(sibling_scan_dir, target_is_directory=True)
 
             with SessionLocal() as db, self.assertRaises(ValueError):
-                generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                generate_report_artifacts(
+                    db,
+                    scan_id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    artifact_root=temp_dir,
+                    ai_provider="template",
+                )
 
             self.assertFalse((sibling_scan_dir / "reports" / "report.md").exists())
 
@@ -522,11 +613,23 @@ class ReportsTests(unittest.TestCase):
     def test_regeneration_reuses_rows_and_keeps_report_content_stable(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with SessionLocal() as db:
-                first_artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                first_artifacts = generate_report_artifacts(
+                    db,
+                    scan_id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    artifact_root=temp_dir,
+                    ai_provider="template",
+                )
                 first_markdown = next(artifact for artifact in first_artifacts if artifact.report_type == "markdown")
                 first_content = read_report_artifact_file(first_markdown, artifact_root=temp_dir)
 
-                second_artifacts = generate_report_artifacts(db, scan_id=self.scan_id, artifact_root=temp_dir, ai_provider="template")
+                second_artifacts = generate_report_artifacts(
+                    db,
+                    scan_id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    artifact_root=temp_dir,
+                    ai_provider="template",
+                )
                 second_markdown = next(artifact for artifact in second_artifacts if artifact.report_type == "markdown")
                 second_content = read_report_artifact_file(second_markdown, artifact_root=temp_dir)
                 artifacts = db.scalars(select(ReportArtifact).where(ReportArtifact.scan_id == self.scan_id)).all()

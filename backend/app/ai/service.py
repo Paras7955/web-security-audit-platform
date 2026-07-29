@@ -1,12 +1,12 @@
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from hashlib import sha256
+from hashlib import blake2b, sha256
 from typing import Protocol
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -30,6 +30,7 @@ CONFIDENCE_PRIORITY = {
     "low": 1,
 }
 EVIDENCE_PROVIDER_CAP = 1000
+OPENAI_RESPONSE_MAX_BYTES = 262_144
 ELIGIBLE_SCAN_STATUSES = {
     ScanStatus.COMPLETED.value,
     ScanStatus.COMPLETED_WITH_WARNINGS.value,
@@ -194,25 +195,81 @@ class OpenAiProvider:
                 },
             ],
             "text": {"format": {"type": "json_object"}},
+            "stream": True,
         }
-        response = httpx.post(
-            "https://api.openai.com/v1/responses",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
+        with httpx.Client(
             timeout=self.timeout_seconds,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            with client.stream(
+                "POST",
+                "https://api.openai.com/v1/responses",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Accept": "text/event-stream",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            ) as response:
+                response.raise_for_status()
+                body = read_openai_stream(response, maximum_bytes=OPENAI_RESPONSE_MAX_BYTES)
+        return parse_openai_response(scan_id=scan_id, findings=findings, body=body, provider_name=self.provider_name)
+
+
+def read_ai_explanations(
+    db: Session,
+    *,
+    scan_id: str,
+    workspace_id: str,
+    action: str = "interactive_ai_explanations",
+    provider_name: str,
+    openai_model: str | None,
+    cache_enabled: bool | None = None,
+    cache_context_version: str | None = None,
+) -> AiExplanationResult:
+    scan = require_ai_scan(db, scan_id=scan_id, workspace_id=workspace_id)
+    normalized_action = normalize_action(action)
+    normalized_provider = provider_name.strip().lower()
+    model_label = openai_model or ""
+    raw_findings = load_findings(db, scan_id=scan_id, workspace_id=scan.workspace_id)
+    safe_findings = bound_ai_findings(tuple(safe_finding_input(finding) for finding in raw_findings))
+    fingerprint = build_ai_input_fingerprint(
+        db,
+        scan=scan,
+        findings=raw_findings,
+        safe_findings=safe_findings,
+        cache_context_version=cache_context_version,
+    )
+    use_cache = settings.ai_cache_enabled if cache_enabled is None else cache_enabled
+    if use_cache and normalized_provider in {"template", "openai"}:
+        cached = load_cached_explanation(
+            db,
+            scan=scan,
+            action=normalized_action,
+            provider=normalized_provider,
+            model=model_label,
+            config_hash=ai_config_hash(provider_name=normalized_provider, model=model_label),
+            input_fingerprint=fingerprint,
         )
-        response.raise_for_status()
-        return parse_openai_response(scan_id=scan_id, findings=findings, body=response.json(), provider_name=self.provider_name)
+        if cached is not None:
+            return replace_result_metadata(result_from_cache(cached.payload), input_fingerprint=fingerprint, cache_hit=True)
+
+    template_result = TemplateAiProvider().explain(scan_id=scan_id, findings=safe_findings)
+    return enrich_result(
+        template_result,
+        scan=scan,
+        findings=raw_findings,
+        input_fingerprint=fingerprint,
+        cache_hit=False,
+    )
 
 
 def generate_ai_explanations(
     db: Session,
     *,
     scan_id: str,
-    workspace_id: str | None = None,
+    workspace_id: str,
     user_id: str | None = None,
     action: str = "interactive_ai_explanations",
     provider_name: str,
@@ -223,16 +280,7 @@ def generate_ai_explanations(
     rate_limit_window_seconds: int | None = None,
     rate_limit_max_requests: int | None = None,
 ) -> AiExplanationResult:
-    scan = db.get(Scan, scan_id)
-    if scan is None:
-        raise AiExplanationError("Scan not found.")
-    if workspace_id is not None and scan.workspace_id != workspace_id:
-        raise AiExplanationError("Scan not found.")
-    profile = scan_profile_for_values(scan.scan_profile_id, scan.mode)
-    if profile is None or not profile.ai_enabled:
-        raise AiExplanationError("AI explanations can only be generated for passive and Active Demo scans.")
-    if scan.status not in ELIGIBLE_SCAN_STATUSES:
-        raise AiExplanationError("AI explanations can only be generated for completed scans.")
+    scan = require_ai_scan(db, scan_id=scan_id, workspace_id=workspace_id)
 
     template_provider = TemplateAiProvider()
     provider = build_provider(provider_name=provider_name, openai_api_key=openai_api_key, openai_model=openai_model)
@@ -276,7 +324,7 @@ def generate_ai_explanations(
 
     max_requests = settings.ai_rate_limit_max_requests if rate_limit_max_requests is None else rate_limit_max_requests
     window_seconds = settings.ai_rate_limit_window_seconds if rate_limit_window_seconds is None else rate_limit_window_seconds
-    if is_rate_limited(
+    reserve_ai_request(
         db,
         workspace_id=scan.workspace_id,
         user_id=user_id,
@@ -284,22 +332,10 @@ def generate_ai_explanations(
         provider=provider.provider_name,
         model=model_label,
         config_hash=config_hash,
+        input_fingerprint=fingerprint,
         window_seconds=window_seconds,
         max_requests=max_requests,
-    ):
-        log_ai_request(
-            db,
-            workspace_id=scan.workspace_id,
-            user_id=user_id,
-            action=normalized_action,
-            provider=provider.provider_name,
-            model=model_label,
-            config_hash=config_hash,
-            input_fingerprint=fingerprint,
-            cache_hit=False,
-            allowed=False,
-        )
-        raise AiRateLimitExceeded("AI rate limit exceeded for this workspace and action.")
+    )
 
     try:
         result = provider.explain(scan_id=scan_id, findings=safe_findings)
@@ -332,19 +368,19 @@ def generate_ai_explanations(
             input_fingerprint=fingerprint,
             result=result,
         )
-    log_ai_request(
-        db,
-        workspace_id=scan.workspace_id,
-        user_id=user_id,
-        action=normalized_action,
-        provider=provider.provider_name,
-        model=model_label,
-        config_hash=config_hash,
-        input_fingerprint=fingerprint,
-        cache_hit=False,
-        allowed=True,
-    )
     return result
+
+
+def require_ai_scan(db: Session, *, scan_id: str, workspace_id: str) -> Scan:
+    scan = db.scalar(select(Scan).where(Scan.id == scan_id, Scan.workspace_id == workspace_id))
+    if scan is None:
+        raise AiExplanationError("Scan not found.")
+    profile = scan_profile_for_values(scan.scan_profile_id, scan.mode)
+    if profile is None or not profile.ai_enabled:
+        raise AiExplanationError("AI explanations can only be generated for passive and Active Demo scans.")
+    if scan.status not in ELIGIBLE_SCAN_STATUSES:
+        raise AiExplanationError("AI explanations can only be generated for completed scans.")
+    return scan
 
 
 def build_provider(*, provider_name: str, openai_api_key: str | None, openai_model: str | None) -> AiProvider:
@@ -461,6 +497,49 @@ def default_remediation(finding: SafeFindingInput) -> str:
     return "Review the affected location, confirm the finding, apply the relevant secure configuration or code change, and rescan."
 
 
+def read_openai_stream(response: httpx.Response, *, maximum_bytes: int) -> dict[str, object]:
+    if maximum_bytes <= 0:
+        raise AiExplanationError("OpenAI response size limit is invalid.")
+
+    encoded = bytearray()
+    for chunk in response.iter_bytes():
+        if len(encoded) + len(chunk) > maximum_bytes:
+            raise AiExplanationError("OpenAI response exceeded the configured size limit.")
+        encoded.extend(chunk)
+
+    try:
+        body = encoded.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise AiExplanationError("OpenAI streaming response was malformed.") from exc
+
+    completed_response: dict[str, object] | None = None
+    for raw_event in body.replace("\r\n", "\n").split("\n\n"):
+        data_lines = [line.removeprefix("data:").lstrip() for line in raw_event.splitlines() if line.startswith("data:")]
+        if not data_lines:
+            continue
+        data = "\n".join(data_lines)
+        if data == "[DONE]":
+            continue
+        try:
+            event = json.loads(data)
+        except json.JSONDecodeError as exc:
+            raise AiExplanationError("OpenAI streaming response was malformed.") from exc
+        if not isinstance(event, dict):
+            raise AiExplanationError("OpenAI streaming response was malformed.")
+        event_type = event.get("type")
+        if event_type == "response.completed":
+            response_body = event.get("response")
+            if not isinstance(response_body, dict):
+                raise AiExplanationError("OpenAI streaming response was malformed.")
+            completed_response = response_body
+        elif event_type in {"error", "response.failed", "response.incomplete"}:
+            raise AiExplanationError("OpenAI response did not complete successfully.")
+
+    if completed_response is None:
+        raise AiExplanationError("OpenAI response did not complete successfully.")
+    return completed_response
+
+
 def parse_openai_response(
     *,
     scan_id: str,
@@ -471,7 +550,10 @@ def parse_openai_response(
     raw_text = body.get("output_text")
     if not isinstance(raw_text, str):
         raw_text = extract_response_text(body)
-    parsed = json.loads(raw_text)
+    try:
+        parsed = json.loads(raw_text)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise AiExplanationError("OpenAI response did not contain valid JSON output.") from exc
     if not isinstance(parsed, dict):
         raise AiExplanationError("OpenAI response was not a JSON object.")
 
@@ -602,6 +684,7 @@ def build_ai_input_fingerprint(
         "scan": {
             "id": scan.id,
             "target_id": scan.target_id,
+            "repository_asset_id": scan.repository_asset_id,
             "mode": scan.mode,
             "scan_profile_id": scan.scan_profile_id,
             "status": scan.status,
@@ -627,6 +710,7 @@ def load_state_inputs(db: Session, *, scan: Scan, findings: list[Finding], findi
         .where(
             FindingState.workspace_id == scan.workspace_id,
             FindingState.target_id == scan.target_id,
+            FindingState.repository_asset_id == scan.repository_asset_id,
             FindingState.dedupe_key.in_(dedupe_keys),
         )
         .order_by(FindingState.dedupe_key.asc())
@@ -638,7 +722,11 @@ def load_state_inputs(db: Session, *, scan: Scan, findings: list[Finding], findi
     ).all() if finding_ids else []
     suppression_rules = db.scalars(
         select(SuppressionRule)
-        .where(SuppressionRule.workspace_id == scan.workspace_id, SuppressionRule.target_id == scan.target_id)
+        .where(
+            SuppressionRule.workspace_id == scan.workspace_id,
+            SuppressionRule.target_id == scan.target_id,
+            SuppressionRule.repository_asset_id == scan.repository_asset_id,
+        )
         .order_by(SuppressionRule.created_at.asc(), SuppressionRule.id.asc())
     ).all()
     now = datetime.now(UTC)
@@ -668,6 +756,8 @@ def load_state_inputs(db: Session, *, scan: Scan, findings: list[Finding], findi
                 "severity": rule.severity,
                 "source_tool": rule.source_tool,
                 "expires_at": iso_or_none(rule.expires_at),
+                "revoked_at": iso_or_none(rule.revoked_at),
+                "revoked": rule.revoked_at is not None,
                 "expired": is_expired(rule.expires_at, now),
                 "created_at": iso_or_none(rule.created_at),
             }
@@ -730,6 +820,76 @@ def store_cached_explanation(
         db.rollback()
 
 
+def reserve_ai_request(
+    db: Session,
+    *,
+    workspace_id: str,
+    user_id: str | None,
+    action: str,
+    provider: str,
+    model: str,
+    config_hash: str,
+    input_fingerprint: str,
+    window_seconds: int,
+    max_requests: int,
+) -> None:
+    lock_ai_rate_limit_scope(
+        db,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        action=action,
+        provider=provider,
+        model=model,
+        config_hash=config_hash,
+    )
+    allowed = not is_rate_limited(
+        db,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        action=action,
+        provider=provider,
+        model=model,
+        config_hash=config_hash,
+        window_seconds=window_seconds,
+        max_requests=max_requests,
+    )
+    log_ai_request(
+        db,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        action=action,
+        provider=provider,
+        model=model,
+        config_hash=config_hash,
+        input_fingerprint=input_fingerprint,
+        cache_hit=False,
+        allowed=allowed,
+    )
+    if not allowed:
+        raise AiRateLimitExceeded("AI rate limit exceeded for this workspace and action.")
+
+
+def lock_ai_rate_limit_scope(
+    db: Session,
+    *,
+    workspace_id: str,
+    user_id: str | None,
+    action: str,
+    provider: str,
+    model: str,
+    config_hash: str,
+) -> None:
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+    digest = blake2b(
+        f"{workspace_id}:{user_id or '*'}:{action}:{provider}:{model}:{config_hash}".encode(),
+        digest_size=8,
+    ).digest()
+    lock_key = int.from_bytes(digest, byteorder="big", signed=True)
+    db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
+
+
 def is_rate_limited(
     db: Session,
     *,
@@ -747,19 +907,23 @@ def is_rate_limited(
     if window_seconds <= 0:
         return False
     cutoff = datetime.now(UTC) - timedelta(seconds=window_seconds)
-    query = select(AiRequestLog).where(
-        AiRequestLog.workspace_id == workspace_id,
-        AiRequestLog.action == action,
-        AiRequestLog.provider == provider,
-        AiRequestLog.model == model,
-        AiRequestLog.config_hash == config_hash,
-        AiRequestLog.cache_hit.is_(False),
-        AiRequestLog.allowed.is_(True),
-        AiRequestLog.created_at >= cutoff,
+    query = (
+        select(func.count())
+        .select_from(AiRequestLog)
+        .where(
+            AiRequestLog.workspace_id == workspace_id,
+            AiRequestLog.action == action,
+            AiRequestLog.provider == provider,
+            AiRequestLog.model == model,
+            AiRequestLog.config_hash == config_hash,
+            AiRequestLog.cache_hit.is_(False),
+            AiRequestLog.allowed.is_(True),
+            AiRequestLog.created_at >= cutoff,
+        )
     )
     if user_id is not None:
         query = query.where(AiRequestLog.user_id == user_id)
-    return len(db.scalars(query).all()) >= max_requests
+    return int(db.scalar(query) or 0) >= max_requests
 
 
 def log_ai_request(

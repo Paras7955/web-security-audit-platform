@@ -1,9 +1,11 @@
+from collections.abc import Callable
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 from app import __version__
@@ -18,7 +20,7 @@ from app.repo_scanner.staging import StagedRepository, StagingLimits
 from app.risk import persist_scan_risk_score
 from app.scanner.passive import run_passive_scan
 from app.scans.artifacts import ensure_scan_artifact_dir
-from app.security.allowlist import ScanAllowlist
+from app.security.allowlist import AllowlistTarget, ScanAllowlist, ScanEngine
 from app.zap.active import run_zap_active_demo_scan
 from app.zap.client_spider import ZapClientSpiderCancelled, run_zap_client_spider_scan
 from app.zap.passive import run_zap_passive_scan
@@ -36,8 +38,27 @@ class ScanDeadlineExceeded(ScanLifecycleError):
     code = "scan_deadline_exceeded"
 
 
+class ScanLeaseLostError(ScanLifecycleError):
+    code = "worker_interrupted"
+
+
 ZAP_DAEMON_LOCK_KEY = 9001
 ZAP_TOOL_VERSION = "2.17.0"
+LEASED_SCAN_STATUSES = {
+    ScanStatus.VALIDATING.value,
+    ScanStatus.RUNNING.value,
+    ScanStatus.NORMALIZING.value,
+}
+
+
+@dataclass(frozen=True)
+class WebScanAuthority:
+    target_id: str
+    target_url: str
+    allowlist_id: str
+    policy_fingerprint: str
+    auth_profile_id: str | None
+    allowlist_target: AllowlistTarget
 
 
 def claim_next_queued_scan(db: Session, *, worker_id: str | None = None) -> Scan | None:
@@ -95,37 +116,83 @@ def recover_stale_scan_leases(db: Session) -> int:
     return len(stale)
 
 
+def renew_scan_lease(
+    db: Session,
+    *,
+    scan_id: str,
+    worker_id: str,
+    lease_seconds: int | None = None,
+) -> bool:
+    now = datetime.now(UTC)
+    renewed_scan_id = db.scalar(
+        update(Scan)
+        .where(
+            Scan.id == scan_id,
+            Scan.lease_owner == worker_id,
+            Scan.status.in_(LEASED_SCAN_STATUSES),
+            Scan.lease_expires_at.is_not(None),
+            Scan.lease_expires_at >= now,
+        )
+        .values(
+            lease_heartbeat_at=now,
+            lease_expires_at=now + timedelta(seconds=lease_seconds or settings.worker_lease_seconds),
+        )
+        .returning(Scan.id)
+    )
+    if renewed_scan_id != scan_id:
+        db.rollback()
+        return False
+    db.commit()
+    return True
+
+
 def run_passive_scan_job(
     db: Session,
     scan: Scan,
     artifact_root: str,
     allowlist: ScanAllowlist,
     zap_base_url: str | None = None,
+    execution_checkpoint: Callable[[], None] | None = None,
 ) -> None:
+    lease_owner = scan.lease_owner
+
+    def checkpoint() -> None:
+        checkpoint_scan_execution(
+            db,
+            scan,
+            expected_lease_owner=lease_owner,
+            execution_checkpoint=execution_checkpoint,
+        )
+
     try:
         tool_receipts: list[ToolReceipt] = []
         validate_scan_job(scan)
-        check_scan_cancelled(db, scan)
-        if scan.target is None:
-            raise ScanLifecycleError("Scan target no longer exists.")
-        allowlist_target = allowlist.get_target(scan.target.allowlist_id)
-        if allowlist_target is None:
-            raise ScanLifecycleError("Scan target is not present in the allowlist.")
+        checkpoint()
+        authority = load_web_scan_authority(scan, allowlist)
+        allowlist_target = authority.allowlist_target
+        target_url = authority.target_url
+        engines = set(allowlist_target.engines_for_profile(scan.scan_profile_id))
+        if ScanEngine.SCOPEHARBOR_PASSIVE not in engines:
+            raise ScanLifecycleError("Scan policy does not authorize the ScopeHarbor passive engine.")
         active_demo = scan.mode == ScanMode.ACTIVE_DEMO.value
         modern_web_crawl = scan.mode == ScanMode.MODERN_WEB_CRAWL.value
-        if scan.mode not in set(allowlist_target.allowed_modes):
-            raise ScanLifecycleError("Scan mode is no longer allowed for this target.")
         auth_headers = load_scan_auth_headers(db, scan)
         if active_demo:
             if not allowlist_target.local_demo:
                 raise ScanLifecycleError("Active Demo scan target must be a local/demo allowlist target.")
+            if ScanEngine.ZAP_ACTIVE not in engines:
+                raise ScanLifecycleError("Scan policy does not authorize the ZAP active engine.")
             if not zap_base_url:
                 raise ScanLifecycleError("Active Demo scans require a configured ZAP daemon.")
         if modern_web_crawl:
             if not allowlist_target.local_demo:
                 raise ScanLifecycleError("Modern web crawl target must be a local/demo allowlist target.")
+            if ScanEngine.ZAP_CLIENT_SPIDER not in engines:
+                raise ScanLifecycleError("Scan policy does not authorize the ZAP Client Spider engine.")
             if not zap_base_url:
                 raise ScanLifecycleError("Modern web crawls require a configured ZAP daemon.")
+        if ScanEngine.ZAP_PASSIVE in engines and not zap_base_url:
+            raise ScanLifecycleError("This scan policy requires a configured ZAP daemon.")
 
         update_scan_progress(
             db,
@@ -134,8 +201,9 @@ def run_passive_scan_job(
             current_step=ScanStep.TARGET_VALIDATION,
             status_message=f"Validated target and allowlist entry for {format_scan_mode(scan.mode)} scan.",
             progress_percent=10,
+            expected_lease_owner=lease_owner,
         )
-        check_scan_cancelled(db, scan)
+        checkpoint()
         update_scan_progress(
             db,
             scan,
@@ -143,15 +211,18 @@ def run_passive_scan_job(
             current_step=ScanStep.CUSTOM_CRAWL,
             status_message="Running bounded passive crawl with guarded requests.",
             progress_percent=30,
+            expected_lease_owner=lease_owner,
         )
 
+        checkpoint()
         passive_started_at = datetime.now(UTC)
         result = run_passive_scan(
             scan_id=scan.id,
-            target_url=scan.target.base_url,
+            target_url=target_url,
             allowlist_target=allowlist_target,
             artifact_root=artifact_root,
             auth_headers=auth_headers,
+            execution_checkpoint=checkpoint,
         )
         tool_receipts.append(
             completed_tool_receipt(
@@ -162,7 +233,7 @@ def run_passive_scan_job(
                 warning_code="passive_scan_warning" if result.errors else None,
             )
         )
-        check_scan_cancelled(db, scan)
+        checkpoint()
 
         update_scan_progress(
             db,
@@ -171,6 +242,7 @@ def run_passive_scan_job(
             current_step=ScanStep.CUSTOM_CHECKS,
             status_message=f"Completed passive checks for {len(result.pages)} crawled pages.",
             progress_percent=70,
+            expected_lease_owner=lease_owner,
         )
 
         zap_findings = ()
@@ -179,7 +251,9 @@ def run_passive_scan_job(
         active_errors = ()
         client_spider_findings = ()
         client_spider_errors = ()
-        if zap_base_url:
+        if ScanEngine.ZAP_PASSIVE in engines:
+            if zap_base_url is None:
+                raise ScanLifecycleError("This scan policy requires a configured ZAP daemon.")
             update_scan_progress(
                 db,
                 scan,
@@ -187,16 +261,18 @@ def run_passive_scan_job(
                 current_step=ScanStep.ZAP_PASSIVE,
                 status_message="Running scoped ZAP passive analysis for allowlisted URLs.",
                 progress_percent=76,
+                expected_lease_owner=lease_owner,
             )
             zap_passive_started_at = datetime.now(UTC)
             with zap_daemon_lock(db):
-                check_scan_cancelled(db, scan)
+                checkpoint()
                 zap_result = run_zap_passive_scan(
                     scan_id=scan.id,
-                    target_url=scan.target.base_url,
+                    target_url=target_url,
                     allowlist_target=allowlist_target,
                     zap_base_url=zap_base_url,
                     observed_urls=tuple(page.url for page in result.pages),
+                    checkpoint=checkpoint,
                 )
             zap_findings = zap_result.findings
             zap_errors = zap_result.errors
@@ -211,7 +287,7 @@ def run_passive_scan_job(
             )
 
             if active_demo:
-                check_scan_cancelled(db, scan)
+                checkpoint()
                 update_scan_progress(
                     db,
                     scan,
@@ -219,15 +295,17 @@ def run_passive_scan_job(
                     current_step=ScanStep.ZAP_ACTIVE,
                     status_message="Running bounded ZAP Active Demo scan against the local/demo target.",
                     progress_percent=82,
+                    expected_lease_owner=lease_owner,
                 )
                 active_started_at = datetime.now(UTC)
                 with zap_daemon_lock(db):
-                    check_scan_cancelled(db, scan)
+                    checkpoint()
                     active_result = run_zap_active_demo_scan(
                         scan_id=scan.id,
-                        target_url=scan.target.base_url,
+                        target_url=target_url,
                         allowlist_target=allowlist_target,
                         zap_base_url=zap_base_url,
+                        checkpoint=checkpoint,
                     )
                 active_findings = active_result.findings
                 active_errors = active_result.errors
@@ -242,7 +320,7 @@ def run_passive_scan_job(
                 )
 
             if modern_web_crawl:
-                check_scan_cancelled(db, scan)
+                checkpoint()
                 update_scan_progress(
                     db,
                     scan,
@@ -250,16 +328,17 @@ def run_passive_scan_job(
                     current_step=ScanStep.ZAP_CLIENT_SPIDER,
                     status_message="Running bounded ZAP Client Spider against the local/demo target.",
                     progress_percent=82,
+                    expected_lease_owner=lease_owner,
                 )
                 client_spider_started_at = datetime.now(UTC)
                 with zap_daemon_lock(db):
-                    check_scan_cancelled(db, scan)
+                    checkpoint()
                     client_spider_result = run_zap_client_spider_scan(
                         scan_id=scan.id,
-                        target_url=scan.target.base_url,
+                        target_url=target_url,
                         allowlist_target=allowlist_target,
                         zap_base_url=zap_base_url,
-                        should_cancel=lambda: cancellation_requested(db, scan),
+                        checkpoint=checkpoint,
                     )
                 client_spider_findings = client_spider_result.findings
                 client_spider_errors = client_spider_result.errors
@@ -275,8 +354,8 @@ def run_passive_scan_job(
 
         all_findings = tuple(result.findings) + tuple(zap_findings) + tuple(active_findings) + tuple(client_spider_findings)
         all_errors = tuple(result.errors) + tuple(zap_errors) + tuple(active_errors) + tuple(client_spider_errors)
-        check_scan_cancelled(db, scan)
-        persist_tool_receipts(db, scan, tuple(tool_receipts))
+        checkpoint()
+        persist_tool_receipts(db, scan, tuple(tool_receipts), expected_lease_owner=lease_owner)
         update_scan_progress(
             db,
             scan,
@@ -284,16 +363,19 @@ def run_passive_scan_job(
             current_step=ScanStep.NORMALIZING_FINDINGS,
             status_message=f"Persisting {len(all_findings)} normalized {format_scan_mode(scan.mode)} findings.",
             progress_percent=85,
+            expected_lease_owner=lease_owner,
         )
 
+        lock_scan_for_owned_write(db, scan, lease_owner)
         persisted_findings = persist_normalized_findings(
             db,
+            workspace_id=scan.workspace_id,
             scan_id=scan.id,
             findings=list(all_findings),
-            artifact_root=artifact_root,
         )
+        lock_scan_for_owned_write(db, scan, lease_owner)
         persist_scan_risk_score(db, scan, persisted_findings)
-        check_scan_cancelled(db, scan)
+        checkpoint()
 
         terminal_status = ScanStatus.COMPLETED_WITH_WARNINGS if all_errors else ScanStatus.COMPLETED
         status_message = (
@@ -309,13 +391,27 @@ def run_passive_scan_job(
             status_message=status_message,
             progress_percent=100,
             completed_at=datetime.now(UTC),
+            expected_lease_owner=lease_owner,
         )
     except (ScanCancelledError, ZapClientSpiderCancelled):
         if scan.status != ScanStatus.CANCELLED.value:
-            mark_scan_cancelled(db, scan, "Scan cancellation request was honored during browser cleanup.")
+            mark_scan_cancelled(
+                db,
+                scan,
+                "Scan cancellation request was honored during browser cleanup.",
+                expected_lease_owner=lease_owner,
+            )
+        return
+    except ScanLeaseLostError:
+        db.rollback()
+        db.expire_all()
         return
     except Exception as exc:
-        mark_scan_failed(db, scan, exc)
+        try:
+            mark_scan_failed(db, scan, exc, expected_lease_owner=lease_owner)
+        except ScanLeaseLostError:
+            db.rollback()
+            db.expire_all()
 
 
 def run_repo_scan_job(
@@ -323,20 +419,23 @@ def run_repo_scan_job(
     scan: Scan,
     artifact_root: str,
     repo_scan_root: str,
-    allowlist: ScanAllowlist,
+    execution_checkpoint: Callable[[], None] | None = None,
 ) -> None:
+    lease_owner = scan.lease_owner
+
+    def checkpoint() -> None:
+        checkpoint_scan_execution(
+            db,
+            scan,
+            expected_lease_owner=lease_owner,
+            execution_checkpoint=execution_checkpoint,
+        )
+
     try:
         validate_scan_job(scan)
-        check_scan_cancelled(db, scan)
+        checkpoint()
         if scan.mode != ScanMode.REPO.value:
             raise ScanLifecycleError("Repo scan worker only supports repo scan jobs.")
-        if scan.target is None:
-            raise ScanLifecycleError("Scan target no longer exists.")
-        allowlist_target = allowlist.get_target(scan.target.allowlist_id)
-        if allowlist_target is None:
-            raise ScanLifecycleError("Scan target is not present in the allowlist.")
-        if scan.mode not in set(allowlist_target.allowed_modes):
-            raise ScanLifecycleError("Scan mode is no longer allowed for this target.")
 
         update_scan_progress(
             db,
@@ -345,9 +444,10 @@ def run_repo_scan_job(
             current_step=ScanStep.TARGET_VALIDATION,
             status_message="Validating configured local repo path for repo scan.",
             progress_percent=10,
+            expected_lease_owner=lease_owner,
         )
-        check_scan_cancelled(db, scan)
-        repo_path = resolve_stored_repo_path(scan.target.repo_path, repo_scan_root=repo_scan_root)
+        checkpoint()
+        repo_path = resolve_stored_repo_path(scan.repo_path_snapshot, repo_scan_root=repo_scan_root)
         ensure_scan_artifact_dir(artifact_root, scan.id)
 
         update_scan_progress(
@@ -357,6 +457,7 @@ def run_repo_scan_job(
             current_step=ScanStep.REPO_SECRETS_SCAN,
             status_message="Staging bounded regular files and running Gitleaks with full redaction.",
             progress_percent=35,
+            expected_lease_owner=lease_owner,
         )
         limits = StagingLimits(
             max_files=settings.repo_max_files,
@@ -364,8 +465,9 @@ def run_repo_scan_job(
             max_total_bytes=settings.repo_max_total_bytes,
         )
         with StagedRepository(repo_path, Path(settings.repo_staging_root), limits) as staged:
-            result = run_repository_scan(staged.root, settings)
-        check_scan_cancelled(db, scan)
+            checkpoint()
+            result = run_repository_scan(staged.root, settings, checkpoint=checkpoint)
+        checkpoint()
 
         update_scan_progress(
             db,
@@ -374,8 +476,9 @@ def run_repo_scan_job(
             current_step=ScanStep.REPO_DEPENDENCY_SCAN,
             status_message="Completed offline dependency analysis without package execution.",
             progress_percent=65,
+            expected_lease_owner=lease_owner,
         )
-        persist_tool_receipts(db, scan, result.receipts)
+        persist_tool_receipts(db, scan, result.receipts, expected_lease_owner=lease_owner)
         update_scan_progress(
             db,
             scan,
@@ -383,15 +486,18 @@ def run_repo_scan_job(
             current_step=ScanStep.NORMALIZING_FINDINGS,
             status_message=f"Persisting {len(result.findings)} normalized repo findings.",
             progress_percent=85,
+            expected_lease_owner=lease_owner,
         )
+        lock_scan_for_owned_write(db, scan, lease_owner)
         persisted_findings = persist_normalized_findings(
             db,
+            workspace_id=scan.workspace_id,
             scan_id=scan.id,
             findings=list(result.findings),
-            artifact_root=artifact_root,
         )
+        lock_scan_for_owned_write(db, scan, lease_owner)
         persist_scan_risk_score(db, scan, persisted_findings)
-        check_scan_cancelled(db, scan)
+        checkpoint()
 
         terminal_status = ScanStatus.COMPLETED_WITH_WARNINGS if result.warning_codes else ScanStatus.COMPLETED
         status_message = (
@@ -407,11 +513,20 @@ def run_repo_scan_job(
             status_message=status_message,
             progress_percent=100,
             completed_at=datetime.now(UTC),
+            expected_lease_owner=lease_owner,
         )
     except ScanCancelledError:
         return
+    except ScanLeaseLostError:
+        db.rollback()
+        db.expire_all()
+        return
     except Exception as exc:
-        mark_scan_failed(db, scan, exc)
+        try:
+            mark_scan_failed(db, scan, exc, expected_lease_owner=lease_owner)
+        except ScanLeaseLostError:
+            db.rollback()
+            db.expire_all()
 
 
 @contextmanager
@@ -435,16 +550,65 @@ def validate_scan_job(scan: Scan) -> None:
         ScanMode.REPO.value,
     }:
         raise ScanLifecycleError("Worker does not support this scan profile.")
-    if scan.target is None:
-        raise ScanLifecycleError("Scan target no longer exists.")
-    if scan.workspace_id != scan.target.workspace_id:
-        raise ScanLifecycleError("Scan workspace does not match target workspace.")
     if not scan.created_by_user_id:
         raise ScanLifecycleError("Scan is missing persisted user context.")
-    if not scan.target.permission_confirmed:
-        raise ScanLifecycleError("Scan target authorization is not confirmed.")
+    if scan.mode == ScanMode.REPO.value:
+        if scan.repository_asset is None:
+            raise ScanLifecycleError("Scan repository asset no longer exists.")
+        if scan.workspace_id != scan.repository_asset.workspace_id:
+            raise ScanLifecycleError("Scan workspace does not match repository workspace.")
+        if not scan.repo_path_snapshot:
+            raise ScanLifecycleError("Scan is missing its repository path snapshot.")
+        if scan.authorization_snapshot.get("subject_type") != "repository_asset":
+            raise ScanLifecycleError("Scan is missing its immutable repository authorization snapshot.")
+        if scan.authorization_snapshot.get("subject_id") != scan.repository_asset_id:
+            raise ScanLifecycleError("Scan repository authorization snapshot does not match its subject.")
+        if scan.authorization_snapshot.get("relative_path") != scan.repo_path_snapshot:
+            raise ScanLifecycleError("Scan repository path snapshot is inconsistent.")
+    else:
+        if scan.target is None:
+            raise ScanLifecycleError("Scan target no longer exists.")
+        if scan.workspace_id != scan.target.workspace_id:
+            raise ScanLifecycleError("Scan workspace does not match target workspace.")
+        if scan.authorization_snapshot.get("subject_type") != "web_target":
+            raise ScanLifecycleError("Scan is missing its immutable target authorization snapshot.")
+        if scan.authorization_snapshot.get("subject_id") != scan.target_id:
+            raise ScanLifecycleError("Scan target authorization snapshot does not match its subject.")
     if scan.auth_profile_id is not None and scan.mode != ScanMode.PASSIVE.value:
         raise ScanLifecycleError("Auth profiles are currently supported only for passive-web scans.")
+
+
+def load_web_scan_authority(scan: Scan, allowlist: ScanAllowlist) -> WebScanAuthority:
+    snapshot = scan.authorization_snapshot
+    target_id = snapshot.get("subject_id")
+    target_url = snapshot.get("target_url")
+    allowlist_id = snapshot.get("allowlist_id")
+    fingerprint = snapshot.get("policy_fingerprint")
+    auth_profile_id = snapshot.get("auth_profile_id")
+    if (
+        not isinstance(target_id, str)
+        or not isinstance(target_url, str)
+        or not isinstance(allowlist_id, str)
+        or not isinstance(fingerprint, str)
+        or auth_profile_id is not None
+        and not isinstance(auth_profile_id, str)
+    ):
+        raise ScanLifecycleError("Scan target authorization snapshot is incomplete.")
+    if target_id != scan.target_id or fingerprint != scan.target_policy_fingerprint:
+        raise ScanLifecycleError("Scan target authorization snapshot is inconsistent.")
+    if auth_profile_id != scan.auth_profile_id:
+        raise ScanLifecycleError("Scan auth-profile snapshot is inconsistent.")
+    policy = allowlist.get_target(allowlist_id)
+    if policy is None or policy.policy_fingerprint != fingerprint:
+        raise ScanLifecycleError("Scan target policy changed after launch.")
+    return WebScanAuthority(
+        target_id=target_id,
+        target_url=target_url,
+        allowlist_id=allowlist_id,
+        policy_fingerprint=fingerprint,
+        auth_profile_id=auth_profile_id,
+        allowlist_target=policy,
+    )
 
 
 def load_scan_auth_headers(db: Session, scan: Scan) -> dict[str, str] | None:
@@ -488,7 +652,9 @@ def update_scan_progress(
     progress_percent: int,
     started_at: datetime | None = None,
     completed_at: datetime | None = None,
+    expected_lease_owner: str | None = None,
 ) -> None:
+    lock_scan_for_owned_write(db, scan, expected_lease_owner)
     scan.status = status.value
     scan.current_step = current_step.value if current_step else None
     scan.status_message = status_message
@@ -509,24 +675,49 @@ def update_scan_progress(
     db.refresh(scan)
 
 
-def check_scan_cancelled(db: Session, scan: Scan) -> None:
+def checkpoint_scan_execution(
+    db: Session,
+    scan: Scan,
+    *,
+    expected_lease_owner: str | None,
+    execution_checkpoint: Callable[[], None] | None = None,
+) -> None:
+    if execution_checkpoint is not None:
+        execution_checkpoint()
+    check_scan_cancelled(db, scan, expected_lease_owner=expected_lease_owner)
+
+
+def check_scan_cancelled(
+    db: Session,
+    scan: Scan,
+    *,
+    expected_lease_owner: str | None = None,
+) -> None:
     db.refresh(scan)
+    assert_scan_ownership(scan, expected_lease_owner)
     if scan.started_at is not None:
         started_at = scan.started_at if scan.started_at.tzinfo is not None else scan.started_at.replace(tzinfo=UTC)
         if datetime.now(UTC) > started_at + timedelta(seconds=int(DEFAULT_LIMITS["scan_timeout_seconds"])):
             raise ScanDeadlineExceeded("Scan exceeded its configured deadline.")
     if scan.cancellation_requested_at is None:
         return
-    mark_scan_cancelled(db, scan, "Scan cancellation request was honored at a worker checkpoint.")
+    mark_scan_cancelled(
+        db,
+        scan,
+        "Scan cancellation request was honored at a worker checkpoint.",
+        expected_lease_owner=expected_lease_owner,
+    )
     raise ScanCancelledError("Scan cancellation request was honored.")
 
 
-def cancellation_requested(db: Session, scan: Scan) -> bool:
-    db.refresh(scan)
-    return scan.cancellation_requested_at is not None
-
-
-def mark_scan_cancelled(db: Session, scan: Scan, message: str) -> None:
+def mark_scan_cancelled(
+    db: Session,
+    scan: Scan,
+    message: str,
+    *,
+    expected_lease_owner: str | None = None,
+) -> None:
+    lock_scan_for_owned_write(db, scan, expected_lease_owner)
     scan.status = ScanStatus.CANCELLED.value
     scan.status_message = message
     scan.progress_percent = min(scan.progress_percent or 0, 99)
@@ -541,7 +732,13 @@ def mark_scan_cancelled(db: Session, scan: Scan, message: str) -> None:
     db.refresh(scan)
 
 
-def mark_scan_failed(db: Session, scan: Scan, exc: Exception) -> None:
+def mark_scan_failed(
+    db: Session,
+    scan: Scan,
+    exc: Exception,
+    *,
+    expected_lease_owner: str | None = None,
+) -> None:
     code = str(getattr(exc, "code", "scan_worker_failed"))
     if code not in {
         "auth_profile_invalid",
@@ -559,10 +756,24 @@ def mark_scan_failed(db: Session, scan: Scan, exc: Exception) -> None:
         "worker_interrupted",
     }:
         code = "scan_worker_failed"
-    mark_scan_failed_code(db, scan, code=code, message="Scan worker job failed safely.")
+    mark_scan_failed_code(
+        db,
+        scan,
+        code=code,
+        message="Scan worker job failed safely.",
+        expected_lease_owner=expected_lease_owner,
+    )
 
 
-def mark_scan_failed_code(db: Session, scan: Scan, *, code: str, message: str) -> None:
+def mark_scan_failed_code(
+    db: Session,
+    scan: Scan,
+    *,
+    code: str,
+    message: str,
+    expected_lease_owner: str | None = None,
+) -> None:
+    lock_scan_for_owned_write(db, scan, expected_lease_owner)
     scan.status = ScanStatus.FAILED.value
     scan.status_message = message
     scan.progress_percent = min(scan.progress_percent or 0, 99)
@@ -577,7 +788,14 @@ def mark_scan_failed_code(db: Session, scan: Scan, *, code: str, message: str) -
     db.refresh(scan)
 
 
-def persist_tool_receipts(db: Session, scan: Scan, receipts: tuple[ToolReceipt, ...]) -> None:
+def persist_tool_receipts(
+    db: Session,
+    scan: Scan,
+    receipts: tuple[ToolReceipt, ...],
+    *,
+    expected_lease_owner: str | None = None,
+) -> None:
+    lock_scan_for_owned_write(db, scan, expected_lease_owner)
     for receipt in receipts:
         run = db.scalar(
             select(ScannerToolRun).where(
@@ -600,6 +818,33 @@ def persist_tool_receipts(db: Session, scan: Scan, receipts: tuple[ToolReceipt, 
         run.completed_at = receipt.completed_at
         db.add(run)
     db.commit()
+
+
+def lock_scan_for_owned_write(
+    db: Session,
+    scan: Scan,
+    expected_lease_owner: str | None,
+) -> None:
+    if expected_lease_owner is None:
+        return
+    db.refresh(scan, with_for_update=True)
+    assert_scan_ownership(scan, expected_lease_owner)
+
+
+def assert_scan_ownership(scan: Scan, expected_lease_owner: str | None) -> None:
+    if expected_lease_owner is None:
+        return
+    now = datetime.now(UTC)
+    lease_expires_at = scan.lease_expires_at
+    if lease_expires_at is not None and lease_expires_at.tzinfo is None:
+        lease_expires_at = lease_expires_at.replace(tzinfo=UTC)
+    if (
+        scan.lease_owner != expected_lease_owner
+        or scan.status not in LEASED_SCAN_STATUSES
+        or lease_expires_at is None
+        or lease_expires_at < now
+    ):
+        raise ScanLeaseLostError("Scan worker no longer owns this execution lease.")
 
 
 def completed_tool_receipt(

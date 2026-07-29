@@ -58,6 +58,46 @@ class TargetUrlTests(unittest.TestCase):
         with self.assertRaises(TargetUrlError):
             normalize_target_url("http://user:pass@juice-shop:3000")
 
+    def test_base_path_scope_uses_segment_boundaries(self) -> None:
+        allowlist = ScanAllowlist.model_validate(
+            {
+                "version": 2,
+                "targets": [
+                    {
+                        "id": "scoped-app",
+                        "name": "Scoped App",
+                        "base_url": "http://scoped-app:8080/app",
+                        "connection": {"kind": "compose_service", "host": "scoped-app", "port": 8080},
+                        "profile_engines": {"passive-web": ["scopeharbor-passive"]},
+                        "disposable_demo": False,
+                        "max_redirects": 2,
+                    }
+                ],
+            }
+        )
+
+        self.assertEqual(
+            match_allowlisted_target("http://scoped-app:8080/app/page?q=1", allowlist).allowlist_target.id,
+            "scoped-app",
+        )
+        for raw_url in (
+            "http://scoped-app:8080/",
+            "http://scoped-app:8080/application",
+            "http://scoped-app:8080/other",
+        ):
+            with self.subTest(raw_url=raw_url), self.assertRaises(TargetUrlError):
+                match_allowlisted_target(raw_url, allowlist)
+
+    def test_ambiguous_request_paths_are_rejected_before_matching(self) -> None:
+        for raw_url in (
+            "http://juice-shop:3000/a//b",
+            "http://juice-shop:3000/a/%2e%2e/b",
+            "http://juice-shop:3000/a/%2fb",
+            r"http://juice-shop:3000/a\b",
+        ):
+            with self.subTest(raw_url=raw_url), self.assertRaises(TargetUrlError):
+                normalize_target_url(raw_url)
+
 
 if __name__ == "__main__":
     unittest.main()

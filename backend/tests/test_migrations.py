@@ -20,10 +20,13 @@ class MigrationTests(unittest.TestCase):
             isolated_engine = create_engine(database_url)
             try:
                 with isolated_engine.connect() as connection:
-                    self.assertEqual(connection.scalar(text("SELECT version_num FROM alembic_version")), "0011_target_archiving")
+                    self.assertEqual(connection.scalar(text("SELECT version_num FROM alembic_version")), "0012_portfolio_readiness")
                     tables = set(inspect(connection).get_table_names())
                     self.assertIn("scanner_tool_runs", tables)
                     self.assertIn("auth_profiles", tables)
+                    self.assertIn("repository_assets", tables)
+                    self.assertIn("artifact_cleanup_tasks", tables)
+                    self.assertNotIn("evidence_artifacts", tables)
                     target_columns = {column["name"] for column in inspect(connection).get_columns("targets")}
                     self.assertIn("archived_at", target_columns)
                     self.assertIn("archived_by_user_id", target_columns)

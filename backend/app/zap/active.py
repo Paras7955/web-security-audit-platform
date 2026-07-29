@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from app.findings.schemas import NormalizedFindingInput
@@ -36,7 +37,11 @@ def run_zap_active_demo_scan(
     zap_base_url: str,
     client: ZapApiClient | None = None,
     resolver: Resolver | None = None,
+    checkpoint: Callable[[], None] | None = None,
 ) -> ZapActiveDemoResult:
+    zap_client: ZapApiClient | None = None
+    scan_id_from_zap: str | None = None
+    succeeded = False
     try:
         if not allowlist_target.local_demo:
             raise ZapPassiveError("ZAP Active Demo scans are restricted to local/demo allowlist targets.")
@@ -51,18 +56,37 @@ def run_zap_active_demo_scan(
         zap_client.delete_all_alerts()
         zap_client.access_url(url=target.pinned_url)
         scan_id_from_zap = zap_client.active_scan(url=target.pinned_url, context_id=context_id)
-        wait_for_active_scan(zap_client, scan_id=scan_id_from_zap)
+        wait_for_active_scan(zap_client, scan_id=scan_id_from_zap, checkpoint=checkpoint)
+        if checkpoint is not None:
+            checkpoint()
         alert_page = zap_client.alerts(base_url=target.pinned_url)
         url_map = {alert_url_map_key(target.pinned_url): target.original_url}
         findings = tuple(normalize_zap_alert(rewrite_alert_url(alert, url_map), source_tool="zap-active") for alert in alert_page.alerts)
         errors = ("ZAP alert results were truncated at the configured cap.",) if alert_page.truncated else ()
-        return ZapActiveDemoResult(findings=findings, errors=errors, submitted_url=target.original_url)
+        result = ZapActiveDemoResult(findings=findings, errors=errors, submitted_url=target.original_url)
+        succeeded = True
+        return result
     except (ZapPassiveError, TargetUrlError, SsrfGuardError) as exc:
         return ZapActiveDemoResult(findings=(), errors=(str(exc),), submitted_url=None)
+    finally:
+        if zap_client is not None and scan_id_from_zap is not None and not succeeded:
+            try:
+                zap_client.stop_active_scan(scan_id=scan_id_from_zap)
+            except ZapPassiveError:
+                # Cleanup is best-effort and must not replace the original safe
+                # scanner error or cancellation signal.
+                pass
 
 
-def wait_for_active_scan(client: ZapApiClient, *, scan_id: str) -> None:
+def wait_for_active_scan(
+    client: ZapApiClient,
+    *,
+    scan_id: str,
+    checkpoint: Callable[[], None] | None = None,
+) -> None:
     for _attempt in range(ZAP_ACTIVE_POLL_LIMIT):
+        if checkpoint is not None:
+            checkpoint()
         if client.active_scan_status(scan_id=scan_id) >= 100:
             return
         time.sleep(ZAP_ACTIVE_POLL_INTERVAL_SECONDS)

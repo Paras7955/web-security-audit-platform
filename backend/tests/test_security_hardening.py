@@ -81,20 +81,20 @@ class SecurityHardeningTests(unittest.TestCase):
         with self.assertRaises(SsrfGuardError):
             validate_destination(url, local_target, resolver=lambda _host, _port: [])
 
-        for changed in (
-            local_target.model_copy(update={"schemes": ["https"]}),
-            local_target.model_copy(update={"hosts": ["other"]}),
-            local_target.model_copy(update={"ports": [8080]}),
+        for changed_url in (
+            normalize_target_url("https://juice-shop:3000/"),
+            normalize_target_url("http://other:3000/"),
+            normalize_target_url("http://juice-shop:8080/"),
         ):
             with self.assertRaises(SsrfGuardError):
-                validate_destination(url, changed, resolver=lambda _host, _port: ["172.20.0.12"])
+                validate_destination(changed_url, local_target, resolver=lambda _host, _port: ["172.20.0.12"])
 
-        nonlocal_target = local_target.model_copy(update={"local_demo": False})
+        non_disposable_target = local_target.model_copy(update={"disposable_demo": False})
+        validate_destination(url, non_disposable_target, resolver=lambda _host, _port: ["10.0.0.4"])
         with self.assertRaises(SsrfGuardError):
-            validate_destination(url, nonlocal_target, resolver=lambda _host, _port: ["10.0.0.4"])
+            validate_ip_for_target(ipaddress.ip_address("198.18.0.1"), "juice-shop", non_disposable_target)
         with self.assertRaises(SsrfGuardError):
-            validate_ip_for_target(ipaddress.ip_address("198.18.0.1"), "juice-shop", nonlocal_target)
-        validate_ip_for_target(ipaddress.ip_address("8.8.8.8"), "juice-shop", nonlocal_target)
+            validate_ip_for_target(ipaddress.ip_address("8.8.8.8"), "juice-shop", non_disposable_target)
         self.assertTrue(is_local_demo_network_address(ipaddress.ip_address("fd00::1")))
 
     def test_persistence_sanitizers_cover_nested_and_malformed_inputs(self) -> None:

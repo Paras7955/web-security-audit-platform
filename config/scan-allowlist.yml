@@ -1,11 +1,19 @@
+version: 2
 targets:
   - id: juice-shop
     name: OWASP Juice Shop
-    base_url: "http://juice-shop:3000"
-    schemes: ["http"]
-    hosts: ["juice-shop"]
-    ports: [3000]
-    allowed_modes: ["passive", "active_demo", "modern_web_crawl", "repo"]
+    base_url: "http://juice-shop:3000/"
+    connection:
+      kind: compose_service
+      host: juice-shop
+      port: 3000
+    profile_engines:
+      passive-web: ["scopeharbor-passive", "zap-passive"]
+      active-demo: ["scopeharbor-passive", "zap-passive", "zap-active"]
+      modern-web-crawl: ["scopeharbor-passive", "zap-passive", "zap-client-spider"]
+      repository: ["repository"]
+    disposable_demo: true
+    tls:
+      trust: system
     max_redirects: 5
-    local_demo: true
     notes: "Local Docker Compose demo target. From the host browser, use http://localhost:3000."

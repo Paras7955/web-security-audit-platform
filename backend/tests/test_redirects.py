@@ -87,6 +87,45 @@ class RedirectValidationTests(unittest.TestCase):
 
         self.assertEqual([url.normalized_url for url in urls], ["http://juice-shop:3000/one", "http://juice-shop:3000/two"])
 
+    def test_redirects_cannot_escape_exact_origin_or_base_path(self) -> None:
+        allowlist = ScanAllowlist.model_validate(
+            {
+                "version": 2,
+                "targets": [
+                    {
+                        "id": "scoped-app",
+                        "name": "Scoped App",
+                        "base_url": "http://scoped-app:8080/app",
+                        "connection": {"kind": "compose_service", "host": "scoped-app", "port": 8080},
+                        "profile_engines": {"passive-web": ["scopeharbor-passive"]},
+                        "disposable_demo": False,
+                        "max_redirects": 2,
+                    }
+                ],
+            }
+        )
+        match = match_allowlisted_target("http://scoped-app:8080/app/start", allowlist)
+
+        allowed, _destination = validate_redirect_location(
+            match.url,
+            "/app/next",
+            match.allowlist_target,
+            resolver_for(["172.20.0.10"]),
+        )
+        self.assertEqual(allowed.normalized_url, "http://scoped-app:8080/app/next")
+        for location in (
+            "/outside",
+            "http://other-app:8080/app",
+            "https://scoped-app:8080/app",
+        ):
+            with self.subTest(location=location), self.assertRaises(RedirectValidationError):
+                validate_redirect_location(
+                    match.url,
+                    location,
+                    match.allowlist_target,
+                    resolver_for(["172.20.0.10"]),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

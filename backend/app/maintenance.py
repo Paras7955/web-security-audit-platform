@@ -9,7 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.auth_profiles import validate_auth_profile_secret_settings
@@ -20,6 +20,7 @@ from app.models import (
     AiExplanationCache,
     AiRequestLog,
     ApiRateLimitLog,
+    ArtifactCleanupTask,
     AuthProfile,
     Finding,
     RiskScore,
@@ -80,16 +81,71 @@ def cleanup_orphan_artifacts(db: Session, *, artifact_root: str | Path, apply: b
     )
 
 
+def cleanup_scheduled_artifacts(
+    db: Session,
+    *,
+    artifact_root: str | Path,
+    apply: bool,
+) -> MaintenanceResult:
+    tasks = list(
+        db.scalars(
+            select(ArtifactCleanupTask)
+            .where(ArtifactCleanupTask.completed_at.is_(None))
+            .order_by(ArtifactCleanupTask.created_at.asc(), ArtifactCleanupTask.id.asc())
+        ).all()
+    )
+    scans_root = Path(artifact_root).resolve() / "scans"
+    if scans_root.exists() and (scans_root.is_symlink() or not scans_root.is_dir()):
+        raise ValueError("Scan artifact root must be a real directory.")
+    changed = 0
+    if apply:
+        for task in tasks:
+            scan_dir = scans_root / task.scan_id
+            if scan_dir.is_symlink():
+                raise ValueError("Scheduled artifact cleanup refuses symlinked scan directories.")
+            resolved_scan_dir = scan_dir.resolve()
+            if scans_root != resolved_scan_dir and scans_root not in resolved_scan_dir.parents:
+                raise ValueError("Scheduled artifact cleanup escaped the artifact root.")
+            if task.action == "remove_invalidated_scan_artifacts":
+                if resolved_scan_dir.is_dir():
+                    shutil.rmtree(resolved_scan_dir)
+            elif task.action == "remove_passive_summary":
+                summary = resolved_scan_dir / "passive_scan_summary.txt"
+                if summary.is_symlink():
+                    raise ValueError("Scheduled artifact cleanup refuses symlinked artifacts.")
+                summary.unlink(missing_ok=True)
+            else:
+                raise ValueError("Scheduled artifact cleanup contains an unsupported action.")
+            task.completed_at = datetime.now(UTC)
+            changed += 1
+        db.commit()
+    return MaintenanceResult(
+        "scheduled-artifacts",
+        apply,
+        len(tasks),
+        changed,
+        "Migration-scheduled artifact cleanup runs only with --apply and stays within the scan artifact root.",
+    )
+
+
 def prune_operational_data(db: Session, *, older_than_days: int, apply: bool) -> MaintenanceResult:
     if older_than_days < 1:
         raise ValueError("older-than-days must be at least 1.")
     cutoff = datetime.now(UTC) - timedelta(days=older_than_days)
-    models = (AiRequestLog, ApiRateLimitLog, AiExplanationCache, WorkerHeartbeat)
-    candidates = sum(len(db.scalars(select(model.id).where(model.created_at < cutoff)).all()) for model in models)
+    models_and_timestamps = (
+        (AiRequestLog, AiRequestLog.created_at),
+        (ApiRateLimitLog, ApiRateLimitLog.created_at),
+        (AiExplanationCache, AiExplanationCache.created_at),
+        (WorkerHeartbeat, WorkerHeartbeat.last_seen_at),
+    )
+    candidates = sum(
+        int(db.scalar(select(func.count()).select_from(model).where(timestamp < cutoff)) or 0)
+        for model, timestamp in models_and_timestamps
+    )
     changed = 0
     if apply:
-        for model in models:
-            result = db.execute(delete(model).where(model.created_at < cutoff))
+        for model, timestamp in models_and_timestamps:
+            result = db.execute(delete(model).where(timestamp < cutoff))
             changed += int(getattr(result, "rowcount", 0) or 0)
         db.commit()
     return MaintenanceResult(
@@ -127,6 +183,7 @@ def backfill_legacy_risk_scores(db: Session, *, apply: bool) -> MaintenanceResul
                     id=str(uuid4()),
                     workspace_id=scan.workspace_id,
                     target_id=scan.target_id,
+                    repository_asset_id=scan.repository_asset_id,
                     scan_id=scan.id,
                     scoring_model_version=calculated.scoring_model_version,
                     score=calculated.score,
@@ -193,7 +250,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="ScopeHarbor dry-run-first maintenance utility")
     parser.add_argument(
         "action",
-        choices=("verify", "orphan-artifacts", "prune-operational", "backfill-risk", "reencrypt-auth-profiles"),
+        choices=(
+            "verify",
+            "orphan-artifacts",
+            "scheduled-artifacts",
+            "prune-operational",
+            "backfill-risk",
+            "reencrypt-auth-profiles",
+        ),
     )
     parser.add_argument("--apply", action="store_true", help="Apply the planned action. Without this flag, no state changes.")
     parser.add_argument("--older-than-days", type=int, default=30)
@@ -208,6 +272,8 @@ def main() -> None:
         with SessionLocal() as db:
             if args.action == "orphan-artifacts":
                 result = cleanup_orphan_artifacts(db, artifact_root=settings.artifact_root, apply=args.apply)
+            elif args.action == "scheduled-artifacts":
+                result = cleanup_scheduled_artifacts(db, artifact_root=settings.artifact_root, apply=args.apply)
             elif args.action == "prune-operational":
                 result = prune_operational_data(db, older_than_days=args.older_than_days, apply=args.apply)
             elif args.action == "backfill-risk":

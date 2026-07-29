@@ -97,6 +97,8 @@ class Target(Base):
     allowlist_id: Mapped[str] = mapped_column(String(100), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     base_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    policy_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    policy_scope_base_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     permission_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     repo_path: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     auth_profile_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("auth_profiles.id"), nullable=True)
@@ -116,6 +118,28 @@ class Target(Base):
     scans: Mapped[list["Scan"]] = relationship(back_populates="target")
 
 
+class RepositoryAsset(Base):
+    __tablename__ = "repository_assets"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "relative_path", name="uq_repository_assets_workspace_path"),
+        Index("ix_repository_assets_workspace_created_id", "workspace_id", "created_at", "id"),
+        Index("ix_repository_assets_workspace_active", "workspace_id", "archived_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(64), ForeignKey("workspaces.id"), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    relative_path: Mapped[str] = mapped_column(String(2048), nullable=False)
+    permission_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    authorization_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_by_user_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=True)
+
+    scans: Mapped[list["Scan"]] = relationship(back_populates="repository_asset")
+
+
 class Scan(Base):
     __tablename__ = "scans"
     __table_args__ = (
@@ -124,6 +148,7 @@ class Scan(Base):
         Index("ix_scans_workspace_id", "workspace_id"),
         Index("ix_scans_scan_profile_id", "scan_profile_id"),
         Index("ix_scans_auth_profile_id", "auth_profile_id"),
+        Index("ix_scans_repository_asset_id", "repository_asset_id"),
         Index("ix_scans_workspace_created_id", "workspace_id", "created_at", "id"),
         Index("ix_scans_status_lease", "status", "lease_expires_at"),
     )
@@ -143,7 +168,12 @@ class Scan(Base):
         default=LEGACY_USER_ID,
         server_default=LEGACY_USER_ID,
     )
-    target_id: Mapped[str] = mapped_column(String(64), ForeignKey("targets.id"), nullable=False)
+    target_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("targets.id"), nullable=True)
+    repository_asset_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("repository_assets.id"), nullable=True)
+    repo_path_snapshot: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    target_policy_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    acknowledgements_snapshot: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
+    authorization_snapshot: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
     auth_profile_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("auth_profiles.id"), nullable=True)
     mode: Mapped[str] = mapped_column(String(40), nullable=False)
     scan_profile_id: Mapped[str] = mapped_column(String(80), nullable=False, default="passive-web", server_default="passive-web")
@@ -163,7 +193,8 @@ class Scan(Base):
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    target: Mapped[Target] = relationship(back_populates="scans")
+    target: Mapped[Target | None] = relationship(back_populates="scans")
+    repository_asset: Mapped[RepositoryAsset | None] = relationship(back_populates="scans")
 
 
 class ScannerToolRun(Base):
@@ -185,32 +216,6 @@ class ScannerToolRun(Base):
     finding_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-
-class EvidenceArtifact(Base):
-    __tablename__ = "evidence_artifacts"
-    __table_args__ = (Index("ix_evidence_artifacts_workspace_id", "workspace_id"),)
-
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    workspace_id: Mapped[str] = mapped_column(
-        String(64),
-        ForeignKey("workspaces.id"),
-        nullable=False,
-        default=LEGACY_WORKSPACE_ID,
-        server_default=LEGACY_WORKSPACE_ID,
-    )
-    created_by_user_id: Mapped[str] = mapped_column(
-        String(64),
-        ForeignKey("platform_users.id"),
-        nullable=False,
-        default=LEGACY_USER_ID,
-        server_default=LEGACY_USER_ID,
-    )
-    scan_id: Mapped[str] = mapped_column(String(64), ForeignKey("scans.id"), nullable=False)
-    artifact_type: Mapped[str] = mapped_column(String(80), nullable=False)
-    path: Mapped[str] = mapped_column(String(2048), nullable=False)
-    redaction_applied: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
@@ -245,7 +250,6 @@ class Finding(Base):
     remediation: Mapped[str | None] = mapped_column(Text, nullable=True)
     false_positive_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     redaction_applied: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    raw_artifact_ref: Mapped[str | None] = mapped_column(String(64), ForeignKey("evidence_artifacts.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
@@ -253,12 +257,29 @@ class FindingState(Base):
     __tablename__ = "finding_states"
     __table_args__ = (
         UniqueConstraint("workspace_id", "target_id", "dedupe_key", name="uq_finding_states_identity"),
+        UniqueConstraint(
+            "workspace_id",
+            "repository_asset_id",
+            "dedupe_key",
+            name="uq_finding_states_repository_identity",
+        ),
+        CheckConstraint(
+            "(target_id IS NOT NULL) <> (repository_asset_id IS NOT NULL)",
+            name="ck_finding_states_exactly_one_subject",
+        ),
         Index("ix_finding_states_workspace_target_status", "workspace_id", "target_id", "lifecycle_status"),
+        Index(
+            "ix_finding_states_workspace_repository_status",
+            "workspace_id",
+            "repository_asset_id",
+            "lifecycle_status",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String(64), ForeignKey("workspaces.id"), nullable=False)
-    target_id: Mapped[str] = mapped_column(String(64), ForeignKey("targets.id"), nullable=False)
+    target_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("targets.id"), nullable=True)
+    repository_asset_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("repository_assets.id"), nullable=True)
     dedupe_key: Mapped[str] = mapped_column(String(500), nullable=False)
     lifecycle_status: Mapped[str] = mapped_column(String(40), nullable=False, default="open", server_default="open")
     updated_by_user_id: Mapped[str] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=False)
@@ -270,19 +291,27 @@ class SuppressionRule(Base):
     __tablename__ = "suppression_rules"
     __table_args__ = (
         Index("ix_suppression_rules_workspace_target", "workspace_id", "target_id"),
+        Index("ix_suppression_rules_workspace_repository", "workspace_id", "repository_asset_id"),
         Index("ix_suppression_rules_expires_at", "expires_at"),
         Index("ix_suppression_rules_workspace_created_id", "workspace_id", "created_at", "id"),
+        CheckConstraint(
+            "(target_id IS NOT NULL) <> (repository_asset_id IS NOT NULL)",
+            name="ck_suppression_rules_exactly_one_subject",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String(64), ForeignKey("workspaces.id"), nullable=False)
-    target_id: Mapped[str] = mapped_column(String(64), ForeignKey("targets.id"), nullable=False)
+    target_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("targets.id"), nullable=True)
+    repository_asset_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("repository_assets.id"), nullable=True)
     dedupe_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
     severity: Mapped[str | None] = mapped_column(String(40), nullable=True)
     source_tool: Mapped[str | None] = mapped_column(String(100), nullable=True)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     created_by_user_id: Mapped[str] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by_user_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
@@ -316,6 +345,8 @@ class Tag(Base):
     label: Mapped[str] = mapped_column(String(80), nullable=False)
     created_by_user_id: Mapped[str] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_by_user_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("platform_users.id"), nullable=True)
 
 
 class TagAssignment(Base):
@@ -338,6 +369,7 @@ class TagAssignment(Base):
 class ReportArtifact(Base):
     __tablename__ = "report_artifacts"
     __table_args__ = (
+        UniqueConstraint("workspace_id", "scan_id", "report_type", name="uq_report_artifacts_scan_type"),
         Index("ix_report_artifacts_workspace_id", "workspace_id"),
         Index("ix_report_artifacts_workspace_created_id", "workspace_id", "created_at", "id"),
         Index("ix_report_artifacts_workspace_scan_created_id", "workspace_id", "scan_id", "created_at", "id"),
@@ -464,16 +496,44 @@ class RiskScore(Base):
     __tablename__ = "risk_scores"
     __table_args__ = (
         UniqueConstraint("workspace_id", "target_id", "scan_id", "scoring_model_version", name="uq_risk_scores_scan_model"),
+        UniqueConstraint(
+            "workspace_id",
+            "repository_asset_id",
+            "scan_id",
+            "scoring_model_version",
+            name="uq_risk_scores_repository_scan_model",
+        ),
+        CheckConstraint(
+            "(target_id IS NOT NULL) <> (repository_asset_id IS NOT NULL)",
+            name="ck_risk_scores_exactly_one_subject",
+        ),
         Index("ix_risk_scores_workspace_target", "workspace_id", "target_id"),
+        Index("ix_risk_scores_workspace_repository", "workspace_id", "repository_asset_id"),
         Index("ix_risk_scores_scan_id", "scan_id"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String(64), ForeignKey("workspaces.id"), nullable=False)
-    target_id: Mapped[str] = mapped_column(String(64), ForeignKey("targets.id"), nullable=False)
+    target_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("targets.id"), nullable=True)
+    repository_asset_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("repository_assets.id"), nullable=True)
     scan_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("scans.id"), nullable=True)
     scoring_model_version: Mapped[str] = mapped_column(String(40), nullable=False)
     score: Mapped[int] = mapped_column(Integer, nullable=False)
     label: Mapped[str] = mapped_column(String(40), nullable=False)
     input_summary: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ArtifactCleanupTask(Base):
+    __tablename__ = "artifact_cleanup_tasks"
+    __table_args__ = (
+        UniqueConstraint("scan_id", "action", name="uq_artifact_cleanup_tasks_scan_action"),
+        Index("ix_artifact_cleanup_tasks_pending", "completed_at", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    scan_id: Mapped[str] = mapped_column(String(64), ForeignKey("scans.id"), nullable=False)
+    action: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

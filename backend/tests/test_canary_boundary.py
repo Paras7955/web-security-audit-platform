@@ -88,6 +88,7 @@ class CanaryBoundaryTests(unittest.TestCase):
             with SessionLocal() as db:
                 findings = persist_normalized_findings(
                     db,
+                    workspace_id=DEV_WORKSPACE_ID,
                     scan_id=self.scan_id,
                     findings=[
                         NormalizedFindingInput(
@@ -105,7 +106,6 @@ class CanaryBoundaryTests(unittest.TestCase):
                             redaction_applied=False,
                         )
                     ],
-                    artifact_root=temp_dir,
                 )
                 finding_id = findings[0].id
                 principal = AuthenticatedPrincipal(

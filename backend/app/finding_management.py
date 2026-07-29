@@ -3,13 +3,14 @@ from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.models import Finding, FindingOccurrenceState, FindingState, Scan, SuppressionRule, Tag, TagAssignment
 from app.security.sanitization import sanitize_text
 
 LIFECYCLE_STATUSES = {"open", "confirmed", "in_progress", "resolved", "suppressed", "false_positive"}
 SEVERITIES = {"critical", "high", "medium", "low", "info"}
-RESOURCE_TYPES = {"target", "scan", "report"}
+RESOURCE_TYPES = {"target", "repository_asset", "scan", "report"}
 
 
 def normalize_status(value: str) -> str:
@@ -44,16 +45,26 @@ def normalize_suppression_source_tool(value: str | None) -> str | None:
     return source_tool
 
 
-def finding_target_id(db: Session, finding: Finding) -> str | None:
-    scan = db.get(Scan, finding.scan_id)
-    return scan.target_id if scan is not None else None
+def scan_subject(scan: Scan) -> tuple[str | None, str | None]:
+    if (scan.target_id is None) == (scan.repository_asset_id is None):
+        raise RuntimeError("Scan must have exactly one authorized subject.")
+    return scan.target_id, scan.repository_asset_id
+
+
+def subject_filters(
+    model: type[FindingState] | type[SuppressionRule],
+    scan: Scan,
+) -> tuple[ColumnElement[bool], ColumnElement[bool]]:
+    target_id, repository_asset_id = scan_subject(scan)
+    return model.target_id == target_id, model.repository_asset_id == repository_asset_id
 
 
 def get_or_create_finding_state(db: Session, finding: Finding, scan: Scan, user_id: str) -> FindingState:
+    target_id, repository_asset_id = scan_subject(scan)
     state = db.scalar(
         select(FindingState).where(
             FindingState.workspace_id == finding.workspace_id,
-            FindingState.target_id == scan.target_id,
+            *subject_filters(FindingState, scan),
             FindingState.dedupe_key == finding.dedupe_key,
         )
     )
@@ -63,7 +74,8 @@ def get_or_create_finding_state(db: Session, finding: Finding, scan: Scan, user_
     state = FindingState(
         id=str(uuid4()),
         workspace_id=finding.workspace_id,
-        target_id=scan.target_id,
+        target_id=target_id,
+        repository_asset_id=repository_asset_id,
         dedupe_key=finding.dedupe_key,
         lifecycle_status="open",
         updated_by_user_id=user_id,
@@ -74,7 +86,12 @@ def get_or_create_finding_state(db: Session, finding: Finding, scan: Scan, user_
 
 
 def get_or_create_occurrence_state(db: Session, finding: Finding) -> FindingOccurrenceState:
-    occurrence = db.scalar(select(FindingOccurrenceState).where(FindingOccurrenceState.finding_id == finding.id))
+    occurrence = db.scalar(
+        select(FindingOccurrenceState).where(
+            FindingOccurrenceState.finding_id == finding.id,
+            FindingOccurrenceState.workspace_id == finding.workspace_id,
+        )
+    )
     if occurrence is not None:
         return occurrence
 
@@ -102,7 +119,7 @@ def active_suppression_for_finding(db: Session, finding: Finding, scan: Scan) ->
             select(SuppressionRule)
             .where(
                 SuppressionRule.workspace_id == finding.workspace_id,
-                SuppressionRule.target_id == scan.target_id,
+                *subject_filters(SuppressionRule, scan),
             )
             .order_by(SuppressionRule.created_at.desc())
         ).all()
@@ -131,15 +148,25 @@ def sync_occurrence_state(db: Session, finding: Finding, scan: Scan, user_id: st
 
 
 def occurrence_state_for_read(db: Session, finding: Finding, scan: Scan) -> FindingOccurrenceState | None:
-    occurrence = db.scalar(select(FindingOccurrenceState).where(FindingOccurrenceState.finding_id == finding.id))
+    occurrence = db.scalar(
+        select(FindingOccurrenceState).where(
+            FindingOccurrenceState.finding_id == finding.id,
+            FindingOccurrenceState.workspace_id == finding.workspace_id,
+        )
+    )
     if occurrence is not None:
         if occurrence.suppressed and occurrence.suppression_rule_id is not None:
-            rule = db.get(SuppressionRule, occurrence.suppression_rule_id)
+            rule = db.scalar(
+                select(SuppressionRule).where(
+                    SuppressionRule.id == occurrence.suppression_rule_id,
+                    SuppressionRule.workspace_id == finding.workspace_id,
+                )
+            )
             if rule is not None and not suppression_rule_is_active(rule):
                 state = db.scalar(
                     select(FindingState).where(
                         FindingState.workspace_id == finding.workspace_id,
-                        FindingState.target_id == scan.target_id,
+                        *subject_filters(FindingState, scan),
                         FindingState.dedupe_key == finding.dedupe_key,
                     )
                 )
@@ -156,7 +183,7 @@ def occurrence_state_for_read(db: Session, finding: Finding, scan: Scan) -> Find
     state = db.scalar(
         select(FindingState).where(
             FindingState.workspace_id == finding.workspace_id,
-            FindingState.target_id == scan.target_id,
+            *subject_filters(FindingState, scan),
             FindingState.dedupe_key == finding.dedupe_key,
         )
     )
@@ -173,6 +200,8 @@ def occurrence_state_for_read(db: Session, finding: Finding, scan: Scan) -> Find
 
 
 def suppression_rule_is_active(rule: SuppressionRule) -> bool:
+    if rule.revoked_at is not None:
+        return False
     expires_at = rule.expires_at
     if expires_at is None:
         return True
@@ -190,6 +219,7 @@ def tags_for_resource(db: Session, workspace_id: str, resource_type: str, resour
                 TagAssignment.workspace_id == workspace_id,
                 TagAssignment.resource_type == resource_type,
                 TagAssignment.resource_id == resource_id,
+                Tag.workspace_id == workspace_id,
             )
             .order_by(Tag.label.asc())
         ).all()

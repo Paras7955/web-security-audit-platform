@@ -1,5 +1,7 @@
+import os
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, Depends
@@ -82,12 +84,13 @@ def worker_status(db: Session) -> HealthComponentRead:
 
 def zap_status() -> HealthComponentRead:
     try:
-        response = httpx.get(
-            f"{settings.zap_base_url}/JSON/core/view/version/",
-            headers={"X-ZAP-API-Key": settings.zap_api_key},
-            timeout=settings.health_zap_timeout_seconds,
-        )
-        response.raise_for_status()
+        with httpx.Client(trust_env=False, follow_redirects=False) as client:
+            response = client.get(
+                f"{settings.zap_base_url}/JSON/core/view/version/",
+                headers={"X-ZAP-API-Key": settings.zap_api_key},
+                timeout=settings.health_zap_timeout_seconds,
+            )
+            response.raise_for_status()
         return HealthComponentRead(status="ok", detail="zap reachable")
     except Exception:
         return HealthComponentRead(status="degraded", detail="zap unavailable")
@@ -99,9 +102,14 @@ def artifact_root_status() -> HealthComponentRead:
         path.mkdir(parents=True, exist_ok=True)
         if not path.is_dir():
             return HealthComponentRead(status="degraded", detail="artifact root is not a directory")
-        marker = path / ".healthcheck"
-        marker.write_text("ok", encoding="utf-8")
-        marker.unlink(missing_ok=True)
+        marker = path / f".healthcheck-{uuid4()}"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(marker, flags, 0o600)
+        try:
+            os.write(descriptor, b"ok")
+        finally:
+            os.close(descriptor)
+            marker.unlink(missing_ok=True)
         return HealthComponentRead(status="ok", detail="artifact root writable")
     except Exception:
         return HealthComponentRead(status="degraded", detail="artifact root unavailable")

@@ -45,6 +45,7 @@ def run_zap_client_spider_scan(
     client: ZapApiClient | None = None,
     resolver: Resolver | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    checkpoint: Callable[[], None] | None = None,
 ) -> ZapClientSpiderResult:
     try:
         if not allowlist_target.local_demo:
@@ -65,8 +66,15 @@ def run_zap_client_spider_scan(
             page_load_seconds=CLIENT_SPIDER_PAGE_LOAD_SECONDS,
             number_of_browsers=CLIENT_SPIDER_BROWSERS,
         )
-        wait_for_client_spider(zap_client, spider_id, should_cancel=should_cancel)
-        wait_for_passive_records(zap_client)
+        wait_for_client_spider(
+            zap_client,
+            spider_id,
+            should_cancel=should_cancel,
+            checkpoint=checkpoint,
+        )
+        wait_for_passive_records(zap_client, checkpoint=checkpoint)
+        if checkpoint is not None:
+            checkpoint()
         alert_page = zap_client.alerts(base_url=target.pinned_url)
         findings = tuple(
             normalize_zap_alert(
@@ -88,11 +96,14 @@ def wait_for_client_spider(
     scan_id: str,
     *,
     should_cancel: Callable[[], bool] | None = None,
+    checkpoint: Callable[[], None] | None = None,
 ) -> None:
     deadline = time.monotonic() + CLIENT_SPIDER_TIMEOUT_SECONDS
     completed = False
     try:
         while time.monotonic() < deadline:
+            if checkpoint is not None:
+                checkpoint()
             if should_cancel and should_cancel():
                 raise ZapClientSpiderCancelled
             if client.client_spider_status(scan_id=scan_id) >= 100:
@@ -102,7 +113,12 @@ def wait_for_client_spider(
         raise ZapPassiveError("ZAP Client Spider exceeded its time limit.")
     finally:
         if not completed:
-            client.stop_client_spider(scan_id=scan_id)
+            try:
+                client.stop_client_spider(scan_id=scan_id)
+            except ZapPassiveError:
+                # Cleanup failure must not replace cancellation, deadline, or
+                # ownership-loss signals from the worker checkpoint.
+                pass
 
 
 def _rewrite_alert_origin(alert: dict[str, object], pinned_url: str, original_url: str) -> dict[str, object]:

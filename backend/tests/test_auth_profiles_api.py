@@ -74,10 +74,11 @@ class AuthProfileApiTests(unittest.TestCase):
             credential_request(scheme="https", client_host="198.51.100.20", host="audit.example"),
             production,
         )
-        require_secure_credential_transport(
-            credential_request(scheme="http", client_host="127.0.0.1", host="audit.example"),
-            production,
-        )
+        with self.assertRaises(HTTPException):
+            require_secure_credential_transport(
+                credential_request(scheme="http", client_host="127.0.0.1", host="audit.example"),
+                production,
+            )
 
     def test_forwarded_https_is_honored_only_from_an_exact_trusted_proxy(self) -> None:
         request = credential_request(

@@ -185,9 +185,10 @@ class CursorPaginationIsolationTests(unittest.TestCase):
                         created_at=now,
                     )
                 )
-            for report_id, scan_id, workspace_id, user_id in (
-                *[(item, self.dev_scan_ids[0], DEV_WORKSPACE_ID, DEV_USER_ID) for item in self.dev_report_ids],
-                (self.other_report_id, self.other_scan_id, self.other_workspace_id, self.other_user_id),
+            for report_id, scan_id, workspace_id, user_id, report_type in (
+                (self.dev_report_ids[0], self.dev_scan_ids[0], DEV_WORKSPACE_ID, DEV_USER_ID, "markdown"),
+                (self.dev_report_ids[1], self.dev_scan_ids[0], DEV_WORKSPACE_ID, DEV_USER_ID, "html"),
+                (self.other_report_id, self.other_scan_id, self.other_workspace_id, self.other_user_id, "markdown"),
             ):
                 db.add(
                     ReportArtifact(
@@ -195,7 +196,7 @@ class CursorPaginationIsolationTests(unittest.TestCase):
                         workspace_id=workspace_id,
                         created_by_user_id=user_id,
                         scan_id=scan_id,
-                        report_type="markdown",
+                        report_type=report_type,
                         path=f"/tmp/{report_id}.md",
                         created_at=now,
                     )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
@@ -114,6 +115,9 @@ class ZapApiClient:
         except ValueError as exc:
             raise ZapPassiveError("ZAP returned an invalid active scan status.") from exc
 
+    def stop_active_scan(self, *, scan_id: str) -> None:
+        self._zap_get("/JSON/ascan/action/stop/", {"scanId": scan_id})
+
     def set_ajax_max_duration(self, *, minutes: int) -> None:
         self._zap_get("/JSON/ajaxSpider/action/setOptionMaxDuration/", {"Integer": str(minutes)})
 
@@ -219,6 +223,8 @@ class ZapApiClient:
                 params=params,
                 headers={"X-ZAP-API-Key": self.api_key},
                 timeout=self.timeout_seconds,
+                follow_redirects=False,
+                trust_env=False,
             )
             response.raise_for_status()
             payload = response.json()
@@ -238,6 +244,7 @@ def run_zap_passive_scan(
     observed_urls: tuple[str, ...],
     client: ZapApiClient | None = None,
     resolver: Resolver | None = None,
+    checkpoint: Callable[[], None] | None = None,
 ) -> ZapPassiveResult:
     try:
         target = validate_zap_scope_url(target_url, allowlist_target, resolver=resolver)
@@ -257,9 +264,13 @@ def run_zap_passive_scan(
         zap_client.delete_all_alerts()
 
         for scoped_url in scoped_urls:
+            if checkpoint is not None:
+                checkpoint()
             zap_client.access_url(url=scoped_url.pinned_url)
 
-        wait_for_passive_records(zap_client)
+        wait_for_passive_records(zap_client, checkpoint=checkpoint)
+        if checkpoint is not None:
+            checkpoint()
         alert_page = zap_client.alerts(base_url=target.pinned_url)
         url_map = {alert_url_map_key(scoped_url.pinned_url): scoped_url.original_url for scoped_url in scoped_urls}
         findings = tuple(normalize_zap_alert(rewrite_alert_url(alert, url_map)) for alert in alert_page.alerts)
@@ -330,8 +341,14 @@ def context_regex(target_url: str) -> str:
     return f"{re.escape(origin)}/.*"
 
 
-def wait_for_passive_records(client: ZapApiClient) -> None:
+def wait_for_passive_records(
+    client: ZapApiClient,
+    *,
+    checkpoint: Callable[[], None] | None = None,
+) -> None:
     for _attempt in range(ZAP_POLL_LIMIT):
+        if checkpoint is not None:
+            checkpoint()
         if client.records_to_scan() <= 0:
             return
         time.sleep(ZAP_POLL_INTERVAL_SECONDS)

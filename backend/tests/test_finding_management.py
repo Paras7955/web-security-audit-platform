@@ -1,4 +1,3 @@
-import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -175,27 +174,26 @@ class FindingManagementTests(unittest.TestCase):
                 )
             )
             db.commit()
-            with tempfile.TemporaryDirectory() as temp_dir:
-                persisted = persist_normalized_findings(
-                    db,
-                    scan_id=later_scan_id,
-                    findings=[
-                        NormalizedFindingInput(
-                            title="Missing Content Security Policy",
-                            severity="low",
-                            confidence="high",
-                            affected_url="http://juice-shop:3000/",
-                            evidence="Header was not present.",
-                            source_tool="custom-passive",
-                            scanner_rule_id="header:content-security-policy",
-                            dedupe_key=self.dedupe_key,
-                            owasp_category="A05:2021",
-                            cwe="CWE-693",
-                            redaction_applied=False,
-                        )
-                    ],
-                    artifact_root=temp_dir,
-                )
+            persisted = persist_normalized_findings(
+                db,
+                workspace_id=DEV_WORKSPACE_ID,
+                scan_id=later_scan_id,
+                findings=[
+                    NormalizedFindingInput(
+                        title="Missing Content Security Policy",
+                        severity="low",
+                        confidence="high",
+                        affected_url="http://juice-shop:3000/",
+                        evidence="Header was not present.",
+                        source_tool="custom-passive",
+                        scanner_rule_id="header:content-security-policy",
+                        dedupe_key=self.dedupe_key,
+                        owasp_category="A05:2021",
+                        cwe="CWE-693",
+                        redaction_applied=False,
+                    )
+                ],
+            )
             later_finding_id = persisted[0].id
             self.finding_ids.append(later_finding_id)
 

@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from app.security.allowlist import AllowlistTarget
 from app.zap.active import run_zap_active_demo_scan
@@ -60,10 +61,45 @@ class ZapActiveDemoTests(unittest.TestCase):
                 }
             )
 
+    def test_active_scan_stops_on_cancellation_or_timeout(self) -> None:
+        cancelled_client = FakeActiveZapClient(status=25)
+
+        def cancel_checkpoint() -> None:
+            raise RuntimeError("cancelled")
+
+        with self.assertRaisesRegex(RuntimeError, "cancelled"):
+            run_zap_active_demo_scan(
+                scan_id="scan-1",
+                target_url="http://juice-shop:3000/",
+                allowlist_target=ALLOWLIST_TARGET,
+                zap_base_url="http://zap:8080",
+                client=cancelled_client,
+                resolver=resolver,
+                checkpoint=cancel_checkpoint,
+            )
+        self.assertIn(("stop_active", "7"), cancelled_client.calls)
+
+        timed_out_client = FakeActiveZapClient(status=25)
+        with patch("app.zap.active.ZAP_ACTIVE_POLL_LIMIT", 1), patch(
+            "app.zap.active.ZAP_ACTIVE_POLL_INTERVAL_SECONDS",
+            0,
+        ):
+            result = run_zap_active_demo_scan(
+                scan_id="scan-2",
+                target_url="http://juice-shop:3000/",
+                allowlist_target=ALLOWLIST_TARGET,
+                zap_base_url="http://zap:8080",
+                client=timed_out_client,
+                resolver=resolver,
+            )
+        self.assertTrue(result.errors)
+        self.assertIn(("stop_active", "7"), timed_out_client.calls)
+
 
 class FakeActiveZapClient:
-    def __init__(self) -> None:
+    def __init__(self, *, status: int = 100) -> None:
         self.calls = []
+        self.status = status
 
     def new_session(self, *, name: str) -> None:
         self.calls.append(("new_session", name))
@@ -93,7 +129,10 @@ class FakeActiveZapClient:
 
     def active_scan_status(self, *, scan_id: str) -> int:
         self.calls.append(("active_status", scan_id))
-        return 100
+        return self.status
+
+    def stop_active_scan(self, *, scan_id: str) -> None:
+        self.calls.append(("stop_active", scan_id))
 
     def alerts(self, *, base_url: str) -> ZapAlertPage:
         self.calls.append(("alerts", base_url))

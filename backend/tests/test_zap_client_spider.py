@@ -73,6 +73,24 @@ class ZapClientSpiderTests(unittest.TestCase):
             )
         self.assertIn(("stop", "7"), client.calls)
 
+    def test_worker_checkpoint_failure_stops_the_specific_client_spider(self) -> None:
+        client = FakeClientSpider(status=25)
+
+        def lease_lost() -> None:
+            raise RuntimeError("lease lost")
+
+        with self.assertRaisesRegex(RuntimeError, "lease lost"):
+            run_zap_client_spider_scan(
+                scan_id="scan-1",
+                target_url="http://juice-shop:3000/",
+                allowlist_target=ALLOWLIST_TARGET,
+                zap_base_url="http://zap:8080",
+                client=client,
+                resolver=resolver,
+                checkpoint=lease_lost,
+            )
+        self.assertIn(("stop", "7"), client.calls)
+
 
 class FakeClientSpider:
     def __init__(self, status: int = 100) -> None:

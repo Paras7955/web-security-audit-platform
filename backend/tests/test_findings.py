@@ -1,14 +1,12 @@
-import tempfile
 import unittest
-from pathlib import Path
 from uuid import uuid4
 
 from app.core.contracts import Confidence, Severity
 from app.db.session import SessionLocal
 from app.findings.redaction import EVIDENCE_SNIPPET_CAP, prepare_evidence_snippet, redact_text
-from app.findings.schemas import EvidenceArtifactInput, NormalizedFindingInput
-from app.findings.service import FindingPersistenceError, build_dedupe_key, persist_normalized_findings
-from app.models import EvidenceArtifact, Finding, FindingOccurrenceState, FindingState, Scan, Target
+from app.findings.schemas import NormalizedFindingInput
+from app.findings.service import build_dedupe_key, persist_normalized_findings
+from app.models import LEGACY_WORKSPACE_ID, Finding, FindingOccurrenceState, FindingState, Scan, Target
 from pydantic import ValidationError
 from sqlalchemy import delete
 
@@ -49,7 +47,6 @@ class FindingsTests(unittest.TestCase):
                 db.execute(delete(FindingOccurrenceState).where(FindingOccurrenceState.finding_id.in_(finding_ids)))
             db.execute(delete(FindingState).where(FindingState.target_id == self.target_id))
             db.execute(delete(Finding).where(Finding.scan_id == self.scan_id))
-            db.execute(delete(EvidenceArtifact).where(EvidenceArtifact.scan_id == self.scan_id))
             db.execute(delete(Scan).where(Scan.id == self.scan_id))
             db.execute(delete(Target).where(Target.id == self.target_id))
             db.commit()
@@ -73,7 +70,13 @@ class FindingsTests(unittest.TestCase):
             )
 
         with self.assertRaises(ValidationError):
-            EvidenceArtifactInput(artifact_type="   ", path="   ")
+            NormalizedFindingInput(
+                title="Unsafe artifact input",
+                severity="medium",
+                confidence="high",
+                source_tool="zap",
+                raw_artifact={"artifact_type": "http_response", "path": "/tmp/raw"},  # pyright: ignore[reportCallIssue]
+            )
 
     def test_redaction_and_evidence_cap_apply_before_persistence(self) -> None:
         evidence = "authorization: bearer super-secret-token\n" + ("A" * (EVIDENCE_SNIPPET_CAP + 100))
@@ -121,84 +124,37 @@ class FindingsTests(unittest.TestCase):
         self.assertLessEqual(len(dedupe_key), 500)
         self.assertIn("hash:", dedupe_key)
 
-    def test_persist_normalized_findings_stores_artifact_reference_and_redaction(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            artifact_path = Path(temp_dir) / "scans" / self.scan_id / "raw.txt"
-            artifact_path.parent.mkdir(parents=True, exist_ok=True)
-            artifact_path.write_text("raw artifact", encoding="utf-8")
+    def test_persist_normalized_findings_redacts_and_creates_management_state(self) -> None:
+        finding_inputs = [
+            NormalizedFindingInput(**ZAP_FIXTURE),
+            NormalizedFindingInput(**GITLEAKS_FIXTURE),
+        ]
 
-            finding_inputs = [
-                NormalizedFindingInput(**ZAP_FIXTURE, raw_artifact=EvidenceArtifactInput(artifact_type="http_response", path=str(artifact_path))),
-                NormalizedFindingInput(**GITLEAKS_FIXTURE),
-            ]
+        with SessionLocal() as db:
+            persisted = persist_normalized_findings(
+                db,
+                workspace_id=LEGACY_WORKSPACE_ID,
+                scan_id=self.scan_id,
+                findings=finding_inputs,
+            )
 
-            with SessionLocal() as db:
-                persisted = persist_normalized_findings(
-                    db,
-                    scan_id=self.scan_id,
-                    findings=finding_inputs,
-                    artifact_root=temp_dir,
-                )
+        self.assertEqual(len(persisted), 2)
+        self.assertEqual(persisted[0].scanner_rule_id, "10038")
+        self.assertTrue(persisted[0].redaction_applied)
+        self.assertNotIn("abc123", persisted[0].evidence or "")
+        self.assertLessEqual(len((persisted[0].evidence or "").encode("utf-8")), EVIDENCE_SNIPPET_CAP)
+        self.assertNotIn("super-secret-key", persisted[1].evidence or "")
+        self.assertEqual(persisted[1].scanner_rule_id, "generic-api-key")
 
-            self.assertEqual(len(persisted), 2)
-            self.assertEqual(persisted[0].scanner_rule_id, "10038")
-            self.assertTrue(persisted[0].redaction_applied)
-            self.assertIsNotNone(persisted[0].raw_artifact_ref)
-            self.assertNotIn("abc123", persisted[0].evidence or "")
-            self.assertLessEqual(len((persisted[0].evidence or "").encode("utf-8")), EVIDENCE_SNIPPET_CAP)
-            self.assertNotIn("super-secret-key", persisted[1].evidence or "")
-            self.assertEqual(persisted[1].scanner_rule_id, "generic-api-key")
-
-            with SessionLocal() as db:
-                occurrence_count = db.query(FindingOccurrenceState).filter(FindingOccurrenceState.finding_id.in_([item.id for item in persisted])).count()
-                state_count = db.query(FindingState).filter(FindingState.target_id == self.target_id).count()
-                self.assertEqual(occurrence_count, 2)
-                self.assertEqual(state_count, 2)
-
-    def test_artifact_path_must_stay_within_artifact_root(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as outside_dir:
-            outside_path = Path(outside_dir) / "artifact.txt"
-            outside_path.write_text("artifact", encoding="utf-8")
-
-            with SessionLocal() as db, self.assertRaises(FindingPersistenceError):
-                persist_normalized_findings(
-                    db,
-                    scan_id=self.scan_id,
-                    findings=[
-                        NormalizedFindingInput(
-                            **ZAP_FIXTURE,
-                            raw_artifact=EvidenceArtifactInput(artifact_type="http_response", path=str(outside_path)),
-                        )
-                    ],
-                    artifact_root=temp_dir,
-                )
-
-    def test_persistence_rolls_back_artifacts_when_batch_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            valid_artifact_path = Path(temp_dir) / "scans" / self.scan_id / "raw.txt"
-            valid_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-            valid_artifact_path.write_text("raw artifact", encoding="utf-8")
-
-            with SessionLocal() as db, self.assertRaises(FindingPersistenceError):
-                persist_normalized_findings(
-                    db,
-                    scan_id=self.scan_id,
-                    findings=[
-                        NormalizedFindingInput(
-                            **ZAP_FIXTURE,
-                            raw_artifact=EvidenceArtifactInput(artifact_type="http_response", path=str(valid_artifact_path)),
-                        ),
-                        NormalizedFindingInput(
-                            **GITLEAKS_FIXTURE,
-                            raw_artifact=EvidenceArtifactInput(artifact_type="http_response", path="relative/path.txt"),
-                        ),
-                    ],
-                    artifact_root=temp_dir,
-                )
-
-            with SessionLocal() as db:
-                self.assertEqual(db.query(EvidenceArtifact).filter(EvidenceArtifact.scan_id == self.scan_id).count(), 0)
-                self.assertEqual(db.query(Finding).filter(Finding.scan_id == self.scan_id).count(), 0)
+        with SessionLocal() as db:
+            occurrence_count = (
+                db.query(FindingOccurrenceState)
+                .filter(FindingOccurrenceState.finding_id.in_([item.id for item in persisted]))
+                .count()
+            )
+            state_count = db.query(FindingState).filter(FindingState.target_id == self.target_id).count()
+            self.assertEqual(occurrence_count, 2)
+            self.assertEqual(state_count, 2)
 
 
 if __name__ == "__main__":

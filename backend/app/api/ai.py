@@ -2,7 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.service import AiExplanationError, AiExplanationResult, AiRateLimitExceeded, generate_ai_explanations
+from app.ai.service import (
+    AiExplanationError,
+    AiExplanationResult,
+    AiRateLimitExceeded,
+    generate_ai_explanations,
+    read_ai_explanations,
+)
 from app.api.deps import get_current_principal, get_db
 from app.api.schemas import AiExplanationGroupRead, AiExplanationRead, FindingExplanationRead
 from app.core.config import settings
@@ -15,6 +21,28 @@ router = APIRouter(tags=["ai"])
 
 @router.get("/scans/{scan_id}/ai-explanations", response_model=AiExplanationRead)
 def get_ai_explanations(
+    scan_id: str,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> AiExplanationRead:
+    if db.scalar(select(Scan).where(Scan.id == scan_id, Scan.workspace_id == principal.workspace_id)) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
+    try:
+        result = read_ai_explanations(
+            db,
+            scan_id=scan_id,
+            workspace_id=principal.workspace_id,
+            action="interactive_ai_explanations",
+            provider_name=settings.ai_provider,
+            openai_model=settings.openai_model,
+        )
+    except AiExplanationError as exc:
+        raise ai_error(exc) from exc
+    return to_ai_read(result)
+
+
+@router.post("/scans/{scan_id}/ai-explanations", response_model=AiExplanationRead)
+def generate_scan_ai_explanations(
     scan_id: str,
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),

@@ -15,6 +15,7 @@ from app.api.middleware import PublicSafetyMiddleware
 from app.api.ops import router as ops_router
 from app.api.problems import http_exception_handler, unhandled_exception_handler, validation_exception_handler
 from app.api.reports import router as reports_router
+from app.api.repository_assets import router as repository_assets_router
 from app.api.scans import router as scans_router
 from app.api.targets import router as targets_router
 from app.auth_profiles import validate_auth_profile_secret_settings
@@ -55,6 +56,7 @@ app.add_middleware(
 
 for router in (
     targets_router,
+    repository_assets_router,
     auth_profiles_router,
     scans_router,
     dashboard_router,

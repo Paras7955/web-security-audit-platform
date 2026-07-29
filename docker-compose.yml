@@ -47,8 +47,8 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
-      - internal
-      - egress
+      - data
+      - operator-access
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U security_audit -d security_audit"]
       interval: 5s
@@ -82,7 +82,8 @@ services:
       - /tmp:size=256m,mode=1777
       - /home/zap/.ZAP:size=256m,mode=0700,uid=1000,gid=1000
     networks:
-      - internal
+      - scanner-control
+      - scan-target
     healthcheck:
       test: ["CMD-SHELL", "wget -q --header=\"X-ZAP-API-Key: $$ZAP_API_KEY\" -O - http://localhost:8080/JSON/core/view/version/ >/dev/null 2>&1 || exit 1"]
       interval: 10s
@@ -100,8 +101,8 @@ services:
     tmpfs:
       - /tmp:size=64m,mode=1777
     networks:
-      - internal
-      - egress
+      - scan-target
+      - operator-access
     healthcheck:
       test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
@@ -118,7 +119,7 @@ services:
     read_only: true
     command: ["alembic", "upgrade", "head"]
     networks:
-      - internal
+      - data
     depends_on:
       postgres:
         condition: service_healthy
@@ -136,8 +137,8 @@ services:
     tmpfs:
       - /tmp:size=128m,mode=1777
     networks:
-      - internal
-      - egress
+      - data
+      - operator-access
     depends_on:
       postgres:
         condition: service_healthy
@@ -164,8 +165,21 @@ services:
       - osv-cache:/var/lib/osv-scanner:ro
     tmpfs:
       - /tmp:size=640m,mode=0700,uid=10001,gid=10001
+    environment:
+      DATABASE_URL: postgresql+psycopg://security_audit:${POSTGRES_PASSWORD:?Run python3 scripts/bootstrap_env.py}@postgres:5432/security_audit
+      ALLOWLIST_PATH: /app/config/scan-allowlist.yml
+      ARTIFACT_ROOT: /app/artifacts
+      REPO_SCAN_ROOT: /app/repositories
+      REPO_STAGING_ROOT: /tmp/scopeharbor-repo-staging
+      GITLEAKS_CONFIG_PATH: /app/config/gitleaks.toml
+      OSV_CONFIG_PATH: /app/config/osv-scanner.toml
+      OSV_DATABASE_PATH: /var/lib/osv-scanner
+      ZAP_BASE_URL: http://zap:8080
+      SCAN_RELAY_URL: http://relay:8090
+      SCAN_RELAY_SECRET: ${SCAN_RELAY_SECRET:?Run python3 scripts/bootstrap_env.py}
     networks:
-      - internal
+      - data
+      - scanner-control
     depends_on:
       postgres:
         condition: service_healthy
@@ -173,6 +187,39 @@ services:
         condition: service_completed_successfully
       zap:
         condition: service_healthy
+      relay:
+        condition: service_healthy
+
+  relay:
+    <<: *container-hardening
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: relay
+    user: "10001:10001"
+    read_only: true
+    environment:
+      ALLOWLIST_PATH: /app/config/scan-allowlist.yml
+      SCAN_RELAY_SECRET: ${SCAN_RELAY_SECRET:?Run python3 scripts/bootstrap_env.py}
+      SCAN_RELAY_REQUEST_TIMEOUT_SECONDS: ${SCAN_RELAY_REQUEST_TIMEOUT_SECONDS:-10}
+      SCAN_RELAY_BODY_BYTES: ${SCAN_RELAY_BODY_BYTES:-65536}
+    volumes:
+      - ./config:/app/config:ro
+    extra_hosts:
+      - "scopeharbor-host:host-gateway"
+    tmpfs:
+      - /tmp:size=32m,mode=0700,uid=10001,gid=10001
+    expose:
+      - "8090"
+    networks:
+      - scanner-control
+      - scan-target
+      - host-access
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
   osv-db-update:
     <<: *container-hardening
@@ -206,7 +253,7 @@ services:
     tmpfs:
       - /tmp:size=64m,mode=0700,uid=10001,gid=10001
     networks:
-      - egress
+      - updater
 
   frontend:
     <<: *container-hardening
@@ -226,17 +273,21 @@ services:
     tmpfs:
       - /tmp:size=64m,mode=1777
     networks:
-      - egress
+      - operator-access
     depends_on:
       backend:
         condition: service_healthy
 
 networks:
-  internal:
+  data:
     internal: true
-  # Host-published loopback ports require a non-internal bridge on Docker Desktop.
-  # Scanner services stay exclusively on the internal network.
-  egress: {}
+  scanner-control:
+    internal: true
+  scan-target:
+    internal: true
+  host-access: {}
+  operator-access: {}
+  updater: {}
 
 volumes:
   postgres-data:

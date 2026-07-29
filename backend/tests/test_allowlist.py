@@ -3,7 +3,8 @@ import unittest
 from pathlib import Path
 
 import yaml
-from app.security.allowlist import AllowlistError, load_allowlist
+from app.security.allowlist import AllowlistError, ScanAllowlist, load_allowlist
+from pydantic import ValidationError
 
 VALID_CONFIG = {
     "targets": [
@@ -20,6 +21,16 @@ VALID_CONFIG = {
             "notes": "Local Docker Compose demo target",
         }
     ]
+}
+V2_TARGET = {
+    "id": "local-app",
+    "name": "Local App",
+    "base_url": "http://local-app:8080/app",
+    "connection": {"kind": "compose_service", "host": "local-app", "port": 8080},
+    "profile_engines": {"passive-web": ["scopeharbor-passive"]},
+    "disposable_demo": False,
+    "tls": {"trust": "system"},
+    "max_redirects": 2,
 }
 
 
@@ -91,6 +102,85 @@ class AllowlistTests(unittest.TestCase):
 
         with self.assertRaises(AllowlistError):
             load_allowlist(self.write_config(config))
+
+    def test_v2_policy_exposes_legacy_compatibility_properties(self) -> None:
+        allowlist = ScanAllowlist.model_validate({"version": 2, "targets": [V2_TARGET]})
+        target = allowlist.targets[0]
+
+        self.assertEqual(target.schemes, ["http"])
+        self.assertEqual(target.hosts, ["local-app"])
+        self.assertEqual(target.ports, [8080])
+        self.assertEqual([mode.value for mode in target.allowed_modes], ["passive"])
+        self.assertFalse(target.local_demo)
+        self.assertEqual([engine.value for engine in target.engines_for_profile("passive-web")], ["scopeharbor-passive"])
+
+    def test_policy_fingerprint_is_canonical_and_excludes_display_copy(self) -> None:
+        first = ScanAllowlist.model_validate({"version": 2, "targets": [V2_TARGET]}).targets[0]
+        changed_copy = dict(V2_TARGET, name="Renamed App", notes="Operator-only copy")
+        second = ScanAllowlist.model_validate({"version": 2, "targets": [changed_copy]}).targets[0]
+
+        self.assertEqual(first.policy_fingerprint, second.policy_fingerprint)
+        self.assertEqual(len(first.policy_fingerprint), 64)
+
+    def test_overlapping_base_paths_are_rejected_but_siblings_are_allowed(self) -> None:
+        overlapping = dict(V2_TARGET, id="admin-app", base_url="http://local-app:8080/app/admin")
+        with self.assertRaises(ValidationError):
+            ScanAllowlist.model_validate({"version": 2, "targets": [V2_TARGET, overlapping]})
+
+        sibling = dict(V2_TARGET, id="other-app", base_url="http://local-app:8080/other")
+        allowlist = ScanAllowlist.model_validate({"version": 2, "targets": [V2_TARGET, sibling]})
+        self.assertEqual(len(allowlist.targets), 2)
+
+    def test_ambiguous_base_paths_and_public_host_gateway_addresses_are_rejected(self) -> None:
+        for base_url in (
+            "http://local-app:8080/app/../admin",
+            "http://local-app:8080/app//admin",
+            "http://local-app:8080/app/%2e%2e/admin",
+            "http://local-app:8080/app/%2fadmin",
+        ):
+            with self.subTest(base_url=base_url), self.assertRaises(ValidationError):
+                ScanAllowlist.model_validate({"version": 2, "targets": [dict(V2_TARGET, base_url=base_url)]})
+
+        host_gateway = dict(
+            V2_TARGET,
+            base_url="https://localhost:8443/",
+            connection={
+                "kind": "host_gateway",
+                "host": "scopeharbor-host",
+                "port": 8443,
+                "expected_ips": ["8.8.8.8"],
+            },
+        )
+        with self.assertRaises(ValidationError):
+            ScanAllowlist.model_validate({"version": 2, "targets": [host_gateway]})
+
+    def test_active_or_browser_profiles_require_disposable_demo(self) -> None:
+        target = dict(
+            V2_TARGET,
+            profile_engines={
+                "active-demo": ["scopeharbor-passive", "zap-passive", "zap-active"],
+            },
+        )
+        with self.assertRaises(ValidationError):
+            ScanAllowlist.model_validate({"version": 2, "targets": [target]})
+
+    def test_tls_policy_has_no_insecure_mode_and_custom_ca_is_https_only(self) -> None:
+        for tls in (
+            {"trust": "custom_ca"},
+            {"trust": "system", "ca_bundle_path": "/tmp/ca.pem"},
+            {"trust": "insecure"},
+        ):
+            with self.subTest(tls=tls), self.assertRaises(ValidationError):
+                ScanAllowlist.model_validate({"version": 2, "targets": [dict(V2_TARGET, tls=tls)]})
+
+        https_target = dict(
+            V2_TARGET,
+            base_url="https://local-app:8443/",
+            connection={"kind": "compose_service", "host": "local-app", "port": 8443},
+            tls={"trust": "custom_ca", "ca_bundle_path": "/app/config/ca/local-app.pem"},
+        )
+        target = ScanAllowlist.model_validate({"version": 2, "targets": [https_target]}).targets[0]
+        self.assertEqual(target.tls.trust, "custom_ca")
 
 
 if __name__ == "__main__":
