@@ -53,5 +53,5 @@ targets:
     disposable_demo: false
     tls:
       trust: custom_ca
-      ca_bundle: "/app/config/certs/local-development-ca.pem"
+      ca_bundle_path: "/app/config/certs/local-development-ca.pem"
     max_redirects: 3

@@ -1,31 +1,27 @@
-# ScopeHarbor API 1.0
+# ScopeHarbor API 1.1
 
 ## Conventions
 
-The product API base path is `/api/v1`. Root `/health` and `/ready`, plus
-`/docs`, `/redoc`, and `/openapi.json`, are the only non-versioned HTTP
-surfaces. There are no compatibility redirects.
+The product API base path is `/api/v1`. Root `/health`, `/ready`, `/docs`,
+`/redoc`, and `/openapi.json` are the only non-versioned surfaces. There are no
+compatibility redirects.
 
 All product endpoints except `/api/v1/contracts` require:
 
 ```http
-Authorization: Bearer <token>
+Authorization: Bearer <platform-token>
 ```
 
-Resources are scoped to the token's workspace. A valid ID from another
-workspace is returned as not found, not as an authorization oracle.
+Resources are scoped to the token's workspace. Another workspace's valid ID is
+returned as not found. Responses include `X-Request-ID`,
+`Cache-Control: no-store`, and security headers. Bodies are capped by
+`MAX_REQUEST_BODY_BYTES`.
 
-Responses include `X-Request-ID`, `Cache-Control: no-store`, and security
-headers. A valid caller-supplied `X-Request-ID` of at most 64 conservative
-characters is preserved; otherwise ScopeHarbor generates one. Request bodies
-are limited by `MAX_REQUEST_BODY_BYTES` (1 MiB by default).
+The generated OpenAPI document is the canonical field-level schema.
 
-The generated OpenAPI document at `/openapi.json` is the canonical field-level
-schema.
+## Cursor pagination and filtering
 
-## Cursor pagination
-
-Collection reads use stable descending `created_at`/ID order:
+Collections return:
 
 ```json
 {
@@ -34,53 +30,66 @@ Collection reads use stable descending `created_at`/ID order:
 }
 ```
 
-Use `limit` from 1 to 200 (default 50). Pass the opaque `next_cursor` value as
-the next request's `cursor`; do not decode, modify, or persist assumptions about
-its format.
+Use `limit` from 1–200 (default 50), then pass opaque `next_cursor` as
+`cursor`. Finding lifecycle, suppression, tag, and risk filters are applied in
+SQL before pagination; a cursor is derived from the filtered order.
 
 ## Problems
 
-Errors use `application/problem+json`:
+Errors use `application/problem+json` with a stable safe `code` and
+`request_id`. Validation may include a bounded `errors` array. Raw exceptions,
+scanner/provider output, URLs with queries, and secret-bearing values are never
+returned.
 
-```json
-{
-  "type": "https://scopeharbor.local/problems/request_validation_failed",
-  "title": "Unprocessable Entity",
-  "status": 422,
-  "detail": "The request did not pass validation.",
-  "instance": "/api/v1/scans",
-  "code": "request_validation_failed",
-  "request_id": "c7c0d7e1-35ce-4e67-8e7f-6090112d0b54"
-}
-```
+## Contracts and policies
 
-Validation problems may include a bounded `errors` array. Internal exceptions,
-tracebacks, scanner output, provider details, and secret-bearing data are never
-part of the problem response. Support workflows should use `request_id` and the
-stable `code`.
+`GET /api/v1/contracts` is public and returns product version, launchable
+profiles, acknowledgement codes, statuses, and pagination limits.
 
-## Contracts and starting a scan
+Protected target-policy routes:
 
-`GET /api/v1/contracts` is public and returns product/version information,
-launchable scan profiles, their required acknowledgement codes, statuses, and
-pagination limits. Clients should read this contract instead of hard-coding
-acknowledgements.
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/targets/policies` | List configured safe policy metadata and truthful eligible profiles |
+| POST | `/targets/validate` | Validate `{"target_url":"..."}` against v2 policy and SSRF rules |
+| GET | `/targets/validate?target_url=...` | Deprecated compatibility validator |
+| POST | `/targets/{id}/reauthorize` | Confirm a stale policy fingerprint without changing target identity |
 
-Create an exact allowlisted target:
+Target roots reject userinfo, queries, fragments, ambiguous separators, and
+traversal. Reauthorization returns `409` if origin/base path changed; create a
+new target instead.
+
+## Create subjects and scans
+
+Create a web target:
 
 ```http
 POST /api/v1/targets
 Content-Type: application/json
 
 {
-  "target_url": "http://juice-shop:3000",
+  "target_url": "http://juice-shop:3000/",
   "permission_confirmed": true,
-  "repo_path": null,
   "auth_profile_id": null
 }
 ```
 
-Start a passive scan:
+Create a repository asset:
+
+```http
+POST /api/v1/repository-assets
+Content-Type: application/json
+
+{
+  "name": "ScopeHarbor",
+  "repo_path": "/app/repositories/security-project",
+  "permission_confirmed": true
+}
+```
+
+The response exposes a confined relative path, never an absolute path.
+
+Queue one subject:
 
 ```http
 POST /api/v1/scans
@@ -88,143 +97,149 @@ Content-Type: application/json
 
 {
   "target_id": "<target-id>",
+  "repository_asset_id": null,
   "scan_profile_id": "passive-web",
   "acknowledgements": ["authorized_target"]
 }
 ```
 
-`target_id`, `scan_profile_id`, and `acknowledgements` are required. Deprecated
-mode fields and per-mode booleans are rejected. Scan reads expose only profile,
-status/progress/timing, cancellation timing, and a safe optional failure:
+Exactly one of `target_id` or `repository_asset_id` is accepted. Repository
+launches use `scan_profile_id=repository` and `authorized_repository`.
 
-```json
-{
-  "code": "worker_interrupted",
-  "message": "The scanner worker was interrupted before completion."
-}
-```
+Legacy target-based repository launch remains temporarily accepted. The backend
+creates/reuses a repository asset and snapshots it; `Target.repo_path` is not
+worker authority and will be removed after frontend integration.
 
-Use `GET /api/v1/scans/{scan_id}/tool-runs` for scanner name/version, status,
-safe warning code, normalized finding count, and timing. Raw output and artifact
-paths are not public fields.
+Scan responses retain existing `target_id` fields and add
+`repository_asset_id`, `subject_type`, and `subject_id`. They never expose
+auth-profile IDs, capability tokens, raw errors, artifact paths, or snapshots
+containing sensitive data.
 
 ## Endpoint index
+
+Prefix each path below with `/api/v1`.
 
 ### Targets
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/targets/validate?target_url=...` | Validate an exact allowlist match without creating it |
-| POST | `/targets` | Create an authorized workspace target |
-| GET | `/targets` | List targets |
-| GET | `/targets/{target_id}` | Read target metadata |
-| PATCH | `/targets/{target_id}/repo-path` | Set/clear confined repository path |
-| PATCH | `/targets/{target_id}/auth-profile` | Attach/detach workspace auth profile |
-| DELETE | `/targets/{target_id}` | Archive an inactive target while preserving history |
+| POST | `/targets` | Create an authorized exact-policy web target |
+| GET | `/targets` | List active targets |
+| GET | `/targets/{id}` | Read policy/status metadata |
+| POST | `/targets/{id}/reauthorize` | Refresh authorization after non-identity policy changes |
+| PATCH | `/targets/{id}/repo-path` | Deprecated repository compatibility configuration |
+| PATCH | `/targets/{id}/auth-profile` | Attach/detach a workspace auth profile |
+| DELETE | `/targets/{id}` | Archive inactive target while preserving history |
 
-Target reads expose `has_repo_path`, never the absolute stored path. `DELETE`
-returns `409` while any nonterminal scan references the target. A successful
-archive clears authorization timestamps, repository configuration, and the
-auth-profile attachment; active target reads no longer return it, while prior
-scans, findings, reports, scores, and audit records remain workspace-readable.
+Reads add `connection_class`, `scope_path`, `tls_trust`, `policy_status`,
+`policy_fingerprint`, and policy-derived `available_scan_profile_ids`.
+
+### Repository assets
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/repository-assets` | Create/restore an authorized repository identity |
+| GET | `/repository-assets` | List active assets |
+| GET | `/repository-assets/{id}` | Read asset metadata |
+| DELETE | `/repository-assets/{id}` | Archive an asset with no active scan |
+| GET | `/repository-assets/{id}/dashboard` | Repository posture/dashboard |
+| GET | `/repository-assets/{id}/latest-comparison` | Latest same-profile repository comparison |
+
+Archive clears launch authorization but preserves historical scans/findings.
 
 ### Auth profiles
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/auth-profiles` | Create `bearer_token` or allowed `custom_header` profile |
-| GET | `/auth-profiles` | List metadata/tombstones |
-| GET | `/auth-profiles/{id}` | Read metadata only |
-| POST | `/auth-profiles/{id}/rotate` | Replace future secret with `{"secret":"..."}` |
+| POST | `/auth-profiles` | Create bearer/static-header profile |
+| GET | `/auth-profiles` | List safe metadata/tombstones |
+| GET | `/auth-profiles/{id}` | Read metadata |
+| POST | `/auth-profiles/{id}/rotate` | Replace future secret |
 | POST | `/auth-profiles/{id}/revoke` | Wipe ciphertext and detach targets |
 
-Secrets are write-only. Responses include only a short hint and lifecycle
-metadata. Rotation/revocation return `409` while a nonterminal scan references
-the profile.
-
-Create and rotate payloads contain the target application's token or static
-header value, never `AUTH_PROFILE_SECRET_KEY`. Plain HTTP is accepted only for
-the local-only workflow. Non-local credential submission must arrive over
-HTTPS. If TLS terminates at a reverse proxy, list only that immediate proxy's
-exact IP in `TRUSTED_PROXY_IPS`; forwarded scheme headers from other peers are
-ignored. All API responses carry `Cache-Control: no-store`.
+Secrets are write-only. Create/rotate payloads contain the target application's
+secret, never the Fernet key. Plain HTTP credential submission is local-only;
+non-local requests require direct HTTPS or an exact trusted proxy.
 
 ### Scans and findings
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/scans` | Queue a validated scan |
+| POST | `/scans` | Queue validated web/repository scan |
 | GET | `/scans` | List scans |
-| GET | `/scans/{scan_id}` | Read safe scan state |
-| POST | `/scans/{scan_id}/cancel` | Request safe cancellation |
-| GET | `/scans/{scan_id}/tool-runs` | List safe scanner receipts |
-| GET | `/scans/{scan_id}/findings` | List findings for a scan |
-| GET | `/findings` | Search workspace findings |
-| GET | `/findings/{finding_id}` | Read a normalized finding |
-| PATCH | `/findings/{finding_id}/lifecycle` | Set lifecycle status |
+| GET | `/scans/{id}` | Read safe state |
+| POST | `/scans/{id}/cancel` | Request cancellation |
+| GET | `/scans/{id}/tool-runs` | Safe tool/version/status receipts |
+| GET | `/scans/{id}/findings` | Paginated scan findings |
+| GET | `/findings` | Filter workspace findings |
+| GET | `/findings/{id}` | Read normalized finding |
+| PATCH | `/findings/{id}/lifecycle` | Change effective lifecycle |
 
-Finding collection filters include target/profile, created range, severity,
-confidence, scanner, OWASP, CWE, lifecycle status, suppression, tag, and risk
-range where applicable. Lifecycle values are `open`, `confirmed`,
-`in_progress`, `resolved`, `suppressed`, and `false_positive`.
+Lifecycle values are `open`, `confirmed`, `in_progress`, `resolved`,
+`suppressed`, and `false_positive`.
 
 ### Suppressions and tags
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/suppressions` | Create a target-scoped suppression rule |
-| GET | `/suppressions` | List rules, optionally by target |
-| POST | `/tags` | Create/idempotently find a workspace tag |
-| GET | `/tags` | List tags |
-| POST | `/tags/assignments` | Tag a target, scan, or report |
+| POST | `/suppressions` | Create web-target or repository-asset rule |
+| GET | `/suppressions` | List/filter rules |
+| POST | `/suppressions/{id}/revoke` | Stop application while preserving history |
+| POST | `/tags` | Create/restore workspace tag |
+| GET | `/tags` | List tags; `include_archived=true` includes history |
+| POST | `/tags/{id}/archive` | Archive tag without deleting history |
+| POST | `/tags/assignments` | Assign tag |
 | GET | `/tags/assignments` | List/filter assignments |
+| DELETE | `/tags/assignments/{id}` | Audited unassignment |
 
-Suppressions are history-preserving rules, not finding deletion.
-
-### Risk and dashboards
+### Risk, posture, and comparisons
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/dashboard/overview` | Workspace totals and recent scans |
-| GET | `/targets/{target_id}/dashboard` | Target risk/findings summary |
-| GET | `/scans/{scan_id}/risk-score` | Read `risk-v1` score |
-| GET | `/scans/{scan_id}/comparison?baseline_scan_id=...` | Compare completed scans from the same target and audit profile |
-| GET | `/targets/{target_id}/latest-comparison` | Compare the latest scan with its newest same-profile baseline |
+| GET | `/dashboard/overview` | Workspace current posture plus historical totals |
+| GET | `/targets/{id}/dashboard` | Web-target posture |
+| GET | `/repository-assets/{id}/dashboard` | Repository posture |
+| GET | `/scans/{id}/risk-score` | Immutable per-scan `risk-v1` |
+| GET | `/scans/{id}/comparison?baseline_scan_id=...` | Same-subject/profile comparison |
+| GET | `/targets/{id}/latest-comparison` | Latest web comparison |
+| GET | `/repository-assets/{id}/latest-comparison` | Latest repository comparison |
 
-Scores are written when scans finish. Legacy missing scores may be calculated
-in memory during reads; GET requests do not persist them.
+Dashboard `findings_count` and `severity_counts` represent the latest completed
+scan for each subject/profile after effective lifecycle and active-suppression
+rules. `current_posture_score` uses dynamic `posture-v1`.
+`historical_findings_count` and `historical_severity_counts` are separately
+labelled all-history totals.
 
-Comparison deliberately requires matching target and `scan_profile_id` so an
-absence outside one profile's coverage is never mislabeled as resolved.
+GET score/dashboard requests do not persist missing scores.
 
 ### Reports and AI
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/scans/{scan_id}/reports` | Generate eligible Markdown/HTML artifacts |
-| GET | `/scans/{scan_id}/reports` | List report metadata |
-| GET | `/reports/{report_id}` | View escaped report content |
-| GET | `/reports/{report_id}/download` | Download report content |
-| GET | `/scans/{scan_id}/ai-explanations` | Generate/read safe explanations |
+| POST | `/scans/{id}/reports` | Idempotently generate eligible Markdown/HTML |
+| GET | `/scans/{id}/reports` | List report metadata |
+| GET | `/reports/{id}` | View escaped content |
+| GET | `/reports/{id}/download` | Download content |
+| GET | `/scans/{id}/ai-explanations` | Retrieve external result or calculate template in memory |
+| POST | `/scans/{id}/ai-explanations` | Explicitly generate/cache an eligible explanation |
 
-Report metadata supplies versioned view/download paths. AI eligibility is
-profile-restricted, rate-limited, and bounded; template mode is deterministic.
+External-provider GET never starts paid/network work. Repository and
+modern-crawl scans are ineligible for external AI.
 
 ### Operations
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/ops/health` | Safe protected component health and queue depth |
+| GET | `/ops/health` | Protected safe database/worker/queue/ZAP/artifact state |
 | GET | `/audit-logs` | Cursor-paginated safe audit metadata |
-
-Prefix every path in the endpoint tables with `/api/v1`.
 
 ## Client security notes
 
-- Never put bearer tokens or target secrets in URLs.
-- Treat cursors, IDs, findings, and reports as workspace-confidential data.
-- Do not display `detail` as trusted HTML.
-- Honor `429` and do not blindly retry scan creation or report generation.
-- Poll scan state conservatively and stop after a terminal status.
-- A `completed_with_warnings` scan is usable but requires inspection of tool
-  receipts before relying on coverage.
+- Never place tokens, credentials, or target queries in URLs.
+- Treat cursors, IDs, findings, reports, and relative repository identities as
+  workspace-confidential.
+- Do not display problem `detail` as trusted HTML.
+- Honor `429`; do not blindly retry launch, reports, or AI generation.
+- Poll conservatively and stop after terminal state.
+- Inspect tool receipts for `completed_with_warnings` before relying on coverage.
+- A stale target needs operator reauthorization, not an automated retry.

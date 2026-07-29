@@ -2,84 +2,155 @@
 
 ## Before upgrading
 
-1. Read the target version's README, security policy, handoff, and migrations.
-2. Stop new scans and allow active work to finish or cancel it deliberately.
-3. Back up PostgreSQL and the report artifact volume together.
-4. Back up local secret configuration securely, especially the current Fernet
-   key. Do not commit the backup.
-5. Record the current Alembic revision and verify the backup can be restored.
-6. Update the OSV database after the new worker image is available.
+1. Read the target README, security policy, changelog, and migrations.
+2. Stop new scans; finish or deliberately cancel active work.
+3. Back up PostgreSQL and `app-artifacts` together.
+4. Back up `.env`, the current Fernet key, allowlist, and custom CA files
+   securely. Never commit the backup.
+5. Record the Alembic revision and test restoration.
+6. Review new environment settings and policy-schema changes.
 
-Never run a destructive downgrade against the only copy of operator data.
+Never run a destructive downgrade against the only data copy.
 
-## Standard upgrade
+## Upgrade to 1.1.0
 
 ```bash
 python3 scripts/bootstrap_env.py
-docker compose build backend worker frontend
+docker compose build migrate backend worker relay frontend
 docker compose run --rm migrate
 docker compose --profile maintenance run --rm osv-db-update
 docker compose up -d
 docker compose run --rm backend python -m app.maintenance verify --apply
+docker compose run --rm backend python -m app.maintenance scheduled-artifacts
 ```
 
-The bootstrap adds newly required settings without replacing an existing
-`AUTH_PROFILE_SECRET_KEY`. Review `.env.example` for new operator choices before
-starting services.
+Review the scheduled-artifact dry run, then repeat it with `--apply` if the
+listed legacy paths match the backup and policy.
 
-After startup, confirm `/health`, `/ready`, authenticated
-`/api/v1/ops/health`, worker heartbeat, queue depth, report reads, and one
-controlled scan for each profile you use.
+Bootstrap merges newly required keys, generates `SCAN_RELAY_SECRET`, keeps the
+Compose database URL consistent, and never replaces a non-empty
+`AUTH_PROFILE_SECRET_KEY`.
 
-## Upgrading from schema 0008
+After startup confirm `/health`, `/ready`, protected `/api/v1/ops/health`,
+worker heartbeat/queue, report reads, target-policy status, and one controlled
+scan per profile you use.
 
-Migrations `0009_public_readiness`, `0010_public_indexes`, and
-`0011_target_archiving` collectively add scanner tool receipts, auth-profile
-lifecycle timestamps, target authorization timestamps, worker leases/counters,
-constraints, cursor indexes, and history-preserving target removal. Migration
-`0011` specifically adds the target archive timestamp/actor and active-target
-index; it does not delete existing targets or their history during upgrade.
+## Allowlist v1 to v2
 
-The 0009 upgrade deliberately:
+Legacy entries continue to load when they describe one exact scheme, host, and
+port. They are only an upgrade adapter and should be rewritten.
 
-- clears raw legacy worker error details;
-- resanitizes persisted finding URLs and free text;
-- removes deterministic repository stub findings;
-- invalidates reports and risk scores derived from those stub findings;
-- marks affected repository scans `completed_with_warnings` with rerun guidance;
-- leaves completed historical AJAX scans readable;
-- fails nonterminal historical AJAX jobs with the retired-profile code;
-- clears unsafe absolute/traversal-style stored repository paths.
+Old:
 
-Review the backup before applying because removed stub-derived artifacts are not
-reconstructable from the upgraded database. Rerun affected repository scans
-with the pinned real tools after updating OSV data.
+```yaml
+- id: local-app
+  name: Local App
+  base_url: http://local-app:8080
+  schemes: [http]
+  hosts: [local-app]
+  ports: [8080]
+  allowed_modes: [passive]
+  max_redirects: 3
+  local_demo: false
+```
 
-## API compatibility
+V2:
 
-ScopeHarbor 1.0 has no unversioned product API and provides no compatibility
-redirects. Clients must use `/api/v1`, cursor pages, generic acknowledgement
-codes, and safe failure objects. The deprecated public scan `mode`, mode-specific
-booleans, raw artifact references, cancellation-user IDs, and raw error detail
-are not available.
+```yaml
+- id: local-app
+  name: Local App
+  base_url: http://local-app:8080/
+  connection:
+    kind: compose_service
+    host: local-app
+    port: 8080
+  profile_engines:
+    passive-web: [scopeharbor-passive]
+  disposable_demo: false
+  tls:
+    trust: system
+  max_redirects: 3
+```
 
-Read `/api/v1/contracts` at runtime rather than hard-coding profile
-acknowledgements. See [`API.md`](API.md).
+Review [`../config/scan-allowlist.example.yml`](../config/scan-allowlist.example.yml)
+for host-gateway and HTTPS examples. Do not mechanically mark ordinary targets
+as disposable or add ZAP engines. AJAX configuration is ignored for launch and
+must not be migrated to another browser engine automatically.
 
-## Fernet changes
+Any authority-changing rewrite changes the fingerprint and makes saved targets
+stale. Reauthorize only if origin/base path is unchanged. Otherwise create a new
+target.
 
-An ordinary upgrade must preserve `AUTH_PROFILE_SECRET_KEY`. A key change is a
-separate planned operation using `AUTH_PROFILE_PREVIOUS_SECRET_KEY` and the
-dry-run-first re-encryption command documented in
-[`OPERATOR_GUIDE.md`](OPERATOR_GUIDE.md). Do not silently generate a replacement
-key for an existing database.
+## Schema 0012
+
+`0012_portfolio_readiness` upgrades from `0011_target_archiving` and adds:
+
+- workspace-scoped repository assets;
+- immutable web/repository scan authority snapshots;
+- subject-aware finding state, suppressions, and risk identities;
+- suppression revocation and tag archive history;
+- report-generation uniqueness;
+- artifact-cleanup tasks for retired data.
+
+It removes the dormant `evidence_artifacts` table and raw-artifact reference
+columns. It does not rewrite old migrations.
+
+Legacy repository results without trustworthy tool receipts are invalidated.
+Derived report/risk rows are removed where necessary, affected scans receive a
+safe rerun warning, and confined artifact paths are recorded for dry-run-first
+cleanup. Completed historical AJAX records remain readable; nonterminal AJAX
+work remains retired.
+
+Migration tests cover upgrades from zero, `0008`, and `0011`, legacy zero-finding
+repository cleanup, cleanup tasks, and Alembic model drift.
+
+## Repository-asset compatibility
+
+`Target.repo_path` and target-based repository launch remain temporarily
+accepted for the existing frontend. Launch creates/reuses a repository asset and
+executes its immutable snapshot. New API clients should use
+`/api/v1/repository-assets` directly.
+
+Do not delete compatibility columns/routes until the frontend has migrated and
+historical callers have been reviewed.
+
+## API behavior changes
+
+- Target policy catalog, JSON validation, and reauthorization are new. GET
+  validation is deprecated.
+- Scan create accepts exactly one of `target_id`/`repository_asset_id`.
+- Subject IDs/types are additive to scan/finding/risk responses.
+- Dashboards distinguish current posture from historical totals.
+- External AI generation moved to POST; GET is retrieval-only externally.
+- Suppression revoke, tag unassign/archive, and repository dashboard/comparison
+  routes are available.
+- Existing frontend payloads remain accepted in 1.1.0.
+
+Read `/api/v1/contracts` and `/openapi.json` at runtime.
+
+## Earlier upgrades
+
+From schema `0008`, migrations `0009`–`0011` first sanitize legacy failures and
+findings, remove deterministic repository stubs, invalidate derived results,
+retire nonterminal AJAX work, add receipts/leases/indexes, and introduce
+history-preserving target archive. Then `0012` applies the changes above.
+
+Review backups because intentionally removed unsafe/stub data is not
+reconstructable from the upgraded database.
+
+## Fernet keys
+
+An ordinary upgrade must preserve `AUTH_PROFILE_SECRET_KEY`. Key rotation is a
+separate operation using `AUTH_PROFILE_PREVIOUS_SECRET_KEY` and the
+dry-run-first procedure in [OPERATOR_GUIDE.md](OPERATOR_GUIDE.md). Never let
+bootstrap or automation silently replace the key for an existing database.
 
 ## Rollback
 
-Prefer restoring the matched pre-upgrade database and artifact backups with the
-previous images/configuration. Database downgrade scripts are for development
-and may not reconstruct data intentionally sanitized or removed by an upgrade.
+Prefer restoring the matched pre-upgrade database, artifact volume, policy/CA
+files, secrets, and prior images. Downgrade scripts are for development and
+cannot reconstruct data intentionally sanitized or removed.
 
-If verification fails, stop API/worker, preserve logs and the failed database
-for diagnosis, and restore the complete matched backup. Never paste secrets,
-raw scanner output, or production data into an issue.
+If verification fails, stop API/worker/relay, preserve safe diagnostics and the
+failed database, and restore the matched backup. Never paste secrets, raw
+scanner output, target data, or repository contents into an issue.
