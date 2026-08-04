@@ -2,6 +2,6 @@
 
 coverage==7.15.1
 pip-audit==2.10.1
-pip-tools==7.5.3
+pip-tools==7.6.0
 pyright==1.1.411
 ruff==0.15.21
