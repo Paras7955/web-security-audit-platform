@@ -202,8 +202,9 @@ Historical AJAX records remain readable, but AJAX is not launchable.
 
 ## Repository tools
 
-The worker image pins Gitleaks `8.30.1` and OSV-Scanner `2.3.8`. Scanner output
-exists only in bounded ephemeral storage and is discarded after normalization.
+The worker image builds checksum-pinned Gitleaks `8.30.1` and OSV-Scanner `2.5.0`
+source with a digest-pinned Go toolchain and explicit security module updates.
+Scanner output exists only in bounded ephemeral storage and is discarded after normalization.
 Update the offline OSV cache before first use and at least weekly while active:
 
 ```bash

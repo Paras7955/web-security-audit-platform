@@ -21,7 +21,7 @@ from app.findings.schemas import NormalizedFindingInput
 from app.security.sanitization import sanitize_relative_path, sanitize_text
 
 GITLEAKS_VERSION = "8.30.1"
-OSV_SCANNER_VERSION = "2.3.8"
+OSV_SCANNER_VERSION = "2.5.0"
 
 
 class RepoToolError(RuntimeError):
