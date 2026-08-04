@@ -3,9 +3,10 @@
 ## Current state
 
 ScopeHarbor — Local AppSec Audit Platform is at version `1.1.0`. V1 phases
-1–19 and the approved post-V1 phases 20–23 are complete. Phase 23 is the
-portfolio-ready backend public-release program; the frontend was intentionally
-left unchanged for a later integration phase.
+1–19 and the approved post-V1 phases 20–23 are complete. The post-merge Phase
+24 backend/security review and release-gate repair is complete on
+`phase-24-backend-review`. No frontend feature work began. This branch must
+pass GitHub-hosted CI and merge into `main` before a frontend phase starts.
 
 The release provides:
 
@@ -26,8 +27,9 @@ The release provides:
   explicitly compatible disposable HTTP containers. Historical AJAX records
   remain readable without retaining an AJAX execution surface.
 - Workspace-scoped repository assets with immutable relative-path and
-  authorization snapshots. Repository scans use pinned Gitleaks 8.30.1 and
-  offline OSV-Scanner 2.3.8 with bounded regular-file-only staging.
+  authorization snapshots. Repository scans use checksum/commit-pinned,
+  source-built Gitleaks 8.30.1-scopeharbor.1 and offline OSV-Scanner 2.5.0 with
+  bounded regular-file-only staging.
 - Lease-fenced workers with a separate-session heartbeat monitor, cancellation
   and deadline checkpoints, process-group cleanup, ZAP stop/cleanup behavior,
   and proxy-independent ZAP clients.
@@ -114,53 +116,85 @@ Default host endpoints are frontend `127.0.0.1:3001`, API
 
 See `docs/API.md` for request/response details.
 
+## Phase 24 review decisions
+
+The initial independent review identified five actionable findings. All were
+accepted and fixed on the review branch:
+
+- Target-based repository compatibility scans now persist only their
+  repository-asset subject. Migration `0013_scan_subject_integrity` repairs
+  existing rows and adds a database XOR constraint.
+- Relay requests are capped before JSON parsing, including streamed bodies
+  without `Content-Length`.
+- Cookie handling projects only structured `Secure`, `HttpOnly`, and validated
+  `SameSite` attributes; target-controlled names, values, paths, domains, and
+  extensions do not cross the relay boundary.
+- Relay bodies use a bounded base64 envelope with independently bounded and
+  validated URL, header, redirect, and cookie metadata.
+- Documentation now states that the relay disables automatic redirects and
+  manually revalidates each bounded hop.
+
+One preliminary documentation finding was rejected because commit `bde778a`
+had already reconciled the HTTPS wording before the review branch began. A
+second independent review of `main...phase-24-backend-review` found no
+actionable defects. Its residual gaps were hosted-CI observation, an
+independent upstream-archive re-fetch, multi-architecture binary
+reproducibility, and migration testing against deployed rather than synthetic
+data.
+
 ## Final verification record
 
 - A clean temporary PostgreSQL database migrated from zero through
-  `0012_portfolio_readiness`. Upgrade tests from `0008` and `0011`, legacy
-  repository-result invalidation, cleanup-task creation, and Alembic model
-  drift all passed.
-- Backend: 325 tests passed; 2 real-binary tests are intentionally opt-in and
-  were exercised separately.
+  `0013_scan_subject_integrity`. Upgrade tests from `0008`, `0011`, and `0012`,
+  repair/constraint fixtures, cleanup-task creation, and Alembic model drift
+  all passed.
+- Backend: 333 tests passed; 2 environment-dependent real-binary tests were
+  skipped in the full run. The real Gitleaks redaction fixture passed
+  separately and executed no repository scripts.
 - Backend branch coverage: 85% overall. Focused coverage: authentication
   100.00%, SSRF/redirects 95.07%, persistence redaction 100.00%, artifact paths
   100.00%, and repository runner boundaries 96.42%.
 - Ruff and Pyright: clean.
-- Frontend lint and production build: passed without changing any file under
-  `frontend/`.
-- Compose rendering and network/privilege hardening validation: passed.
-- Digest-pinned Gitleaks scanned committed history with networking disabled and
-  found no unbaselined leaks. Its baseline contains only exact audited
-  historical development/CI sentinel fingerprints.
-- The real pinned Gitleaks fixture passed. The stale OSV database was correctly
-  refused at the configured age boundary; the pinned offline OSV fixture also
-  passed with a test-only age override and executed no package scripts.
-- `pip check` and the offline npm audit passed. The clean Python 3.12.13 lock
-  regeneration, hash-locked clean install, and online dependency audits remain
-  release gates because registry egress was unavailable locally.
-- API/worker/relay image builds could not complete offline because Python wheel
-  caches were incomplete. Full image builds, Compose readiness smoke, Trivy
-  image review, and CycloneDX SBOM generation are enforced in CI and must pass
-  before tagging.
+- Frontend: a clean Linux-compatible `npm ci`, `npm audit --audit-level=high`,
+  lint, and Next.js 16.3.0 production build passed. PostCSS is pinned to
+  8.5.25. No UI product code under `frontend/src/` changed.
+- Both Python production/development locks install with hashes and pass
+  `pip-audit`; cryptography is pinned to 50.0.0.
+- Compose rendering and network/privilege hardening validation passed. API,
+  worker, relay, and frontend images built, and a clean isolated stack migrated
+  and reached healthy/ready state before its disposable volumes were removed.
+- Digest-pinned Trivy 0.70.0 reported no HIGH or CRITICAL findings for all four
+  project images. CycloneDX SBOMs generated and validated for each image.
+- The worker reports Gitleaks 8.30.1-scopeharbor.1 and OSV-Scanner 2.5.0. The
+  current source-built OSV binary was not exercised against a freshly updated
+  offline database during this review; that remains an operator release check.
+- The original private GitHub Actions logs remained inaccessible without a
+  signed-in session. Local reproduction showed that the container workflow
+  could fail before Trivy at Linux `npm ci`, then at Trivy after the lock fix;
+  both local gates now pass. GitHub-hosted CI remains a release blocker until
+  the review branch is pushed and all checks pass.
 
 ## Operator actions
 
-1. Run `python3 scripts/bootstrap_env.py`. It adds the relay secret and newly
+1. Push `phase-24-backend-review`, open a pull request, and require both
+   `Frontend quality` and `Container builds / build` (plus the remaining
+   release workflows) to pass. Merge the branch into `main` and confirm the
+   merge before any frontend feature phase begins.
+2. Run `python3 scripts/bootstrap_env.py`. It adds the relay secret and newly
    introduced settings without replacing a non-empty user-managed
    `AUTH_PROFILE_SECRET_KEY`; review the resulting `.env`.
-2. Review every custom v2 allowlist entry, exact host-gateway address, base
+3. Review every custom v2 allowlist entry, exact host-gateway address, base
    path, profile engine, and custom CA mount before authorizing targets.
-3. Refresh the offline advisory database before repository dependency scans:
+4. Refresh the offline advisory database before repository dependency scans,
+   then run the real OSV fixture:
 
    ```bash
    docker compose --profile maintenance run --rm osv-db-update
    ```
 
-4. Regenerate and verify both Python locks with Python 3.12.13 and pip-tools
-   7.5.3, then run the online Python and npm audits. Exact commands are in
+5. Review the committed Python and npm locks and the source-build pins, then
+   repeat the dependency audits on the release commit. Exact commands are in
    `docs/RELEASE_CHECKLIST.md`.
-5. Require the release CI workflows to pass, including image builds, Compose
-   smoke/hardening, Gitleaks, Trivy, and SBOM generation.
 6. Enable GitHub Private Vulnerability Reporting and branch protection. While
    the repository is private, enable GitHub Code Security and set
    `SCOPEHARBOR_CODE_SECURITY_ENABLED=true` if CodeQL and Dependency Review
@@ -179,7 +213,8 @@ See `docs/API.md` for request/response details.
   features.
 - The current UI supports local dev authentication and existing target-based
   workflows. Full OIDC operator UX and repository-asset UI integration remain
-  work for the frontend phase; backend APIs are ready.
+  work for a later frontend phase; backend APIs are ready. Do not begin that
+  phase until `phase-24-backend-review` is merged and hosted CI is green.
 - The offline OSV database is operator-managed. Missing or stale data produces
   an explicit warning and skips dependency analysis instead of going online.
 - External AI is optional and adds an operator-controlled data processor;
