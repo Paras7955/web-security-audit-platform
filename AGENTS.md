@@ -14,20 +14,24 @@ implemented as an unauthorized scanning tool.
 
 ## Phase Approval Gate
 
-> **Temporary Phase 20 exception (approved 2026-07-13):** Phase 20 is one
-> continuous public-readiness program. The phase-boundary stop gate and the
-> sub-agent review loop below are suspended for this phase only. Keep using the
-> dedicated phase branch, multi-commit workflow, per-commit reporting, safety
-> boundaries, focused self-review, and final self-review. This note does not
-> remove or permanently change the standing workflow.
+> **Closed Phase 20 exception (approved 2026-07-13):** This exception applied
+> only while Phase 20 was in progress. It suspended the phase-boundary stop gate
+> and sub-agent review loop for that phase without changing the Git workflow or
+> safety boundaries. Phase 20 is complete; this exception is historical and
+> does not authorize current or future work.
 >
-> **Temporary Phase 23 exception (approved 2026-07-29):** Phase 23 is one
-> continuous portfolio-readiness program. The phase-boundary stop gate and the
-> sub-agent review loop below are suspended for this phase only. Keep using the
-> dedicated phase branch, multi-commit workflow, per-commit reporting, safety
-> boundaries, focused self-review, and final self-review. Do not change files
-> under `frontend/` during this backend phase. This note does not remove or
-> permanently change the standing workflow.
+> **Closed Phase 23 exception (approved 2026-07-29):** This exception applied
+> only while Phase 23 was in progress. It suspended the phase-boundary stop gate
+> and sub-agent review loop and prohibited frontend changes during that backend
+> phase without changing the Git workflow or safety boundaries. Phase 23 is
+> complete and merged; this exception is historical and does not authorize
+> current or future work.
+
+The standing phase gate, branch rules, commit rules, and sub-agent review
+workflow below are active. A historical exception applies only when its text
+explicitly says it is active for the current phase. Do not reuse a closed
+exception for later work. The mission, scope boundaries, and safety
+requirements remain active during every phase and workflow exception.
 
 Stop after each phase and wait for explicit user approval before beginning the next phase.
 
@@ -61,7 +65,7 @@ Historical branches may still use the previous `codex/phase-*` prefix. Do not re
 
 ## Scope Boundaries
 
-ScopeHarbor 1.0 includes:
+The historical ScopeHarbor 1.0 baseline (Phases 1–19) included:
 
 - FastAPI, Next.js, PostgreSQL, Docker Compose, and a separate scanner worker.
 - Provider-neutral dev/OIDC login and backend-enforced workspace isolation.
@@ -79,10 +83,15 @@ Current implementation boundaries:
 
 - Product APIs live under `/api/v1`; do not reintroduce unversioned routes or
   compatibility redirects without approval.
-- Launchable guarded targets are exact HTTP Docker services. Reject HTTPS until
-  destination-pinned TLS verifies SNI and certificates correctly.
-- ZAP active and Client Spider profiles are local-demo-only. Historical AJAX
-  scans remain readable, but the AJAX profile is retired and not launchable.
+- Launchable guarded web targets are exact configured Docker services or
+  same-machine applications reached through Docker's host gateway. HTTP and
+  destination-pinned HTTPS are supported through the guarded relay; HTTPS must
+  verify the configured hostname, TLS SNI, and certificate using system trust
+  or one confined operator CA bundle. Never add an insecure TLS mode.
+- General local targets are passive-only. ZAP Passive, Active Demo, and Client
+  Spider require an explicitly compatible disposable HTTP demo policy.
+- Historical AJAX scans remain readable, but the AJAX profile is retired and
+  not launchable.
 - Repository paths resolve below `REPO_SCAN_ROOT`. Stage regular files only into
   bounded ephemeral storage. Never clone, fetch, install, build, execute hooks,
   execute repository code, or honor repository-supplied scanner configuration.
