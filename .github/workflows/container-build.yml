@@ -17,8 +17,6 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
-    env:
-      SCOPEHARBOR_ENV_FILE: ${{ runner.temp }}/scopeharbor-ci.env
     steps:
       - name: Check out source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -26,7 +24,10 @@ jobs:
           persist-credentials: false
 
       - name: Prepare Compose CI environment
-        run: python3 scripts/bootstrap_env.py --output "$SCOPEHARBOR_ENV_FILE"
+        run: |
+          ci_env_file="${RUNNER_TEMP}/scopeharbor-ci.env"
+          python3 scripts/bootstrap_env.py --output "$ci_env_file"
+          printf 'SCOPEHARBOR_ENV_FILE=%s\n' "$ci_env_file" >> "$GITHUB_ENV"
 
       - name: Validate Compose configuration and runtime environment
         run: |
