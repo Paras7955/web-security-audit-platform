@@ -88,13 +88,23 @@ class ScannerHttpTests(unittest.TestCase):
         self.assertEqual(body, "abc")
 
     def test_guard_rejects_unallowlisted_host_before_request(self) -> None:
-        client = GuardedHttpClient(allowlist_target=ALLOWLIST_TARGET, timeout_seconds=1, resolver=resolver)
+        client = GuardedHttpClient(
+            allowlist_target=ALLOWLIST_TARGET,
+            timeout_seconds=1,
+            resolver=resolver,
+            relay_base_url=None,
+        )
 
         with self.assertRaises(ValueError):
             client.get("http://example.com")
 
     def test_http_client_ignores_proxy_environment(self) -> None:
-        client = GuardedHttpClient(allowlist_target=ALLOWLIST_TARGET, timeout_seconds=1, resolver=resolver)
+        client = GuardedHttpClient(
+            allowlist_target=ALLOWLIST_TARGET,
+            timeout_seconds=1,
+            resolver=resolver,
+            relay_base_url=None,
+        )
         captured_kwargs: dict[str, object] = {}
 
         def handler(_request: httpx.Request) -> httpx.Response:
@@ -117,7 +127,12 @@ class ScannerHttpTests(unittest.TestCase):
         self.assertIs(captured_kwargs["trust_env"], False)
 
     def test_http_client_connects_to_validated_ip_with_original_host_header(self) -> None:
-        client = GuardedHttpClient(allowlist_target=ALLOWLIST_TARGET, timeout_seconds=1, resolver=resolver)
+        client = GuardedHttpClient(
+            allowlist_target=ALLOWLIST_TARGET,
+            timeout_seconds=1,
+            resolver=resolver,
+            relay_base_url=None,
+        )
         seen_requests: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -167,6 +182,7 @@ class ScannerHttpTests(unittest.TestCase):
             timeout_seconds=1,
             resolver=resolver,
             default_headers={"Authorization": "Bearer scanner-token"},
+            relay_base_url=None,
         )
         seen_requests: list[httpx.Request] = []
 
@@ -247,6 +263,7 @@ class ScannerHttpTests(unittest.TestCase):
             timeout_seconds=1,
             resolver=resolver,
             body_bytes_limit=3,
+            relay_base_url=None,
         )
 
         def handler(_request: httpx.Request) -> httpx.Response:
@@ -314,7 +331,12 @@ class ScannerHttpTests(unittest.TestCase):
         self.assertEqual(response.cookie_security[0].same_site, "Lax")
 
     def test_multiple_set_cookie_headers_are_reduced_to_security_attributes(self) -> None:
-        client = GuardedHttpClient(allowlist_target=ALLOWLIST_TARGET, timeout_seconds=1, resolver=resolver)
+        client = GuardedHttpClient(
+            allowlist_target=ALLOWLIST_TARGET,
+            timeout_seconds=1,
+            resolver=resolver,
+            relay_base_url=None,
+        )
 
         def handler(_request: httpx.Request) -> httpx.Response:
             return httpx.Response(
@@ -348,7 +370,12 @@ class ScannerHttpTests(unittest.TestCase):
         )
 
     def test_manual_redirects_are_guarded(self) -> None:
-        client = GuardedHttpClient(allowlist_target=ALLOWLIST_TARGET, timeout_seconds=1, resolver=resolver)
+        client = GuardedHttpClient(
+            allowlist_target=ALLOWLIST_TARGET,
+            timeout_seconds=1,
+            resolver=resolver,
+            relay_base_url=None,
+        )
 
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url.path == "/":
@@ -373,7 +400,12 @@ class ScannerHttpTests(unittest.TestCase):
         self.assertEqual(response.redirect_chain, ("http://juice-shop:3000/login",))
 
     def test_redirect_limit_is_enforced(self) -> None:
-        client = GuardedHttpClient(allowlist_target=ALLOWLIST_TARGET, timeout_seconds=1, resolver=resolver)
+        client = GuardedHttpClient(
+            allowlist_target=ALLOWLIST_TARGET,
+            timeout_seconds=1,
+            resolver=resolver,
+            relay_base_url=None,
+        )
 
         def handler(_request: httpx.Request) -> httpx.Response:
             return httpx.Response(302, headers={"location": "/"})
