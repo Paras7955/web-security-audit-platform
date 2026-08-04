@@ -62,17 +62,17 @@ The relay:
 - permits only `GET`;
 - strips hop-by-hop and routing headers;
 - caps request/response headers and response bodies;
-- disables redirects;
+- disables automatic redirects and manually validates every hop;
 - dials the validated IP while preserving configured `Host` and TLS SNI;
 - supports system trust or one confined operator CA bundle;
 - has no insecure TLS mode;
 - receives no database, artifact, ZAP, AI, repository, or platform-auth access;
 - emits no URL, credential, body, or target-derived logs.
 
-Redirects are handled outside the relay and must stay on the same origin and
-inside the configured base path. Every hop receives allowlist, path, SSRF, and
-IP revalidation. Credentials are never forwarded across an origin or policy
-boundary.
+Redirects are handled manually inside the relay and must stay on the same
+origin and inside the configured base path. Every hop receives allowlist, path,
+SSRF, and IP revalidation before the relay follows it. Credentials are never
+forwarded across an origin or policy boundary.
 
 Compose separates data, scanner-control, scan-target, host-access,
 operator-access, and updater networks. Only the relay receives host-gateway

@@ -104,6 +104,17 @@ work remains retired.
 Migration tests cover upgrades from zero, `0008`, and `0011`, legacy zero-finding
 repository cleanup, cleanup tasks, and Alembic model drift.
 
+## Schema 0013
+
+`0013_scan_subject_integrity` upgrades from `0012_portfolio_readiness`. It
+repairs any scan created by the temporary target-based repository compatibility
+adapter that has both subject columns populated by retaining the repository
+asset and clearing the target subject. It then adds a database constraint that
+requires exactly one of `target_id` or `repository_asset_id` on every scan.
+
+The compatibility request remains accepted, but its persisted scan and response
+use only the repository-asset subject.
+
 ## Repository-asset compatibility
 
 `Target.repo_path` and target-based repository launch remain temporarily
@@ -133,7 +144,8 @@ Read `/api/v1/contracts` and `/openapi.json` at runtime.
 From schema `0008`, migrations `0009`–`0011` first sanitize legacy failures and
 findings, remove deterministic repository stubs, invalidate derived results,
 retire nonterminal AJAX work, add receipts/leases/indexes, and introduce
-history-preserving target archive. Then `0012` applies the changes above.
+history-preserving target archive. Then `0012` and `0013` apply the changes
+above.
 
 Review backups because intentionally removed unsafe/stub data is not
 reconstructable from the upgraded database.

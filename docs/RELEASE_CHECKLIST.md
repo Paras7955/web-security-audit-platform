@@ -47,8 +47,8 @@ planned or mocked result.
 
 - [ ] Ruff passes for `backend` and `scripts`.
 - [ ] Pyright passes.
-- [ ] Migrations pass from zero, `0008`, and `0011`; head is
-  `0012_portfolio_readiness`; `alembic check` is clean.
+- [ ] Migrations pass from zero, `0008`, `0011`, and `0012`; head is
+  `0013_scan_subject_integrity`; `alembic check` is clean.
 - [ ] Full backend suite passes on a clean temporary PostgreSQL database.
 - [ ] Overall branch coverage is at least 85%; security-boundary gates pass.
 - [ ] Real pinned Gitleaks and offline OSV fixtures pass.

@@ -47,9 +47,9 @@ The worker cannot connect directly to host or public networks. Passive requests
 use short-lived, signed, single-use capabilities sent to the guarded relay. The
 relay independently validates the capability, allowlist, destination IP,
 method, headers, TLS policy, and response limits. It permits only `GET`, disables
-redirects, and preserves the configured HTTP `Host` and TLS SNI while dialing
-the validated IP. Redirects are followed by the worker only after same-origin,
-base-path, allowlist, and SSRF revalidation.
+automatic redirects, and preserves the configured HTTP `Host` and TLS SNI while
+dialing the validated IP. The relay manually follows a bounded redirect only
+after same-origin, base-path, allowlist, and SSRF revalidation.
 
 Changing launch authority makes saved targets stale. A stale target must be
 reauthorized; an origin or base-path change requires a new target so historical
@@ -228,7 +228,7 @@ are never sent to an AI provider.
 ## Operations and verification
 
 `/health` is liveness. `/ready` validates runtime configuration and schema
-`0012_portfolio_readiness`. Protected `/api/v1/ops/health` provides safe
+`0013_scan_subject_integrity`. Protected `/api/v1/ops/health` provides safe
 component state.
 
 Maintenance is dry-run-first:
@@ -249,6 +249,9 @@ Add `--apply` only after reviewing the JSON plan. See the
 CI runs migrations, backend branch/security coverage, Ruff, Pyright, dependency
 audits, frontend lint/build, Compose hardening/readiness, pinned Gitleaks,
 digest-pinned Trivy image scans, and CycloneDX SBOM generation.
+
+Phase-end independent reviews use `gpt-5.6-sol` with medium reasoning, the
+current review-grade successor to the retired `gpt-5.4` reviewer pin.
 
 ## Limitations
 
