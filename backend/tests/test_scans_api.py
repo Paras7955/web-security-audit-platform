@@ -368,8 +368,14 @@ class ScanApiTests(unittest.TestCase):
         self.created_scan_ids.append(body["id"])
         self.created_repository_asset_ids.append(body["repository_asset_id"])
         self.assertEqual(body["scan_profile_id"], "repository")
+        self.assertIsNone(body["target_id"])
+        self.assertEqual(body["subject_type"], "repository_asset")
+        self.assertEqual(body["subject_id"], body["repository_asset_id"])
         self.assertNotIn("mode", body)
         self.assertEqual(body["status"], "queued")
+
+        dashboard = self.client.get("/api/v1/dashboard/overview", headers=DEV_AUTH_HEADERS)
+        self.assertEqual(dashboard.status_code, 200)
 
     def test_create_modern_web_crawl_revalidates_target_base_url(self) -> None:
         target = self.create_db_target(allowlist_id="juice-shop", base_url="https://owned.example.test/")

@@ -66,7 +66,11 @@ def create_scan(
         id=str(uuid4()),
         workspace_id=principal.workspace_id,
         created_by_user_id=principal.user_id,
-        target_id=target.id if target is not None else None,
+        target_id=(
+            target.id
+            if target is not None and repository_asset is None
+            else None
+        ),
         repository_asset_id=repository_asset.id if repository_asset is not None else None,
         repo_path_snapshot=repo_path_snapshot,
         target_policy_fingerprint=policy_fingerprint,
@@ -92,7 +96,11 @@ def create_scan(
         resource_type="scan",
         resource_id=scan.id,
         metadata={
-            "target_id": target.id if target is not None else None,
+            "target_id": (
+                target.id
+                if target is not None and repository_asset is None
+                else None
+            ),
             "repository_asset_id": repository_asset.id if repository_asset is not None else None,
             "scan_profile_id": profile.id,
         },
