@@ -42,7 +42,7 @@ class FakeClient:
 
 
 class PassiveScanTests(unittest.TestCase):
-    def test_passive_scan_crawls_checks_and_writes_summary(self) -> None:
+    def test_passive_scan_crawls_and_checks_without_writing_a_summary_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             result = run_passive_scan(
                 scan_id="scan-1",
@@ -55,7 +55,7 @@ class PassiveScanTests(unittest.TestCase):
             self.assertGreaterEqual(len(result.pages), 2)
             self.assertTrue(any(finding.scanner_rule_id == "form:password-get" for finding in result.findings))
             self.assertTrue(any(finding.scanner_rule_id == "probe:/.env" for finding in result.findings))
-            self.assertTrue((Path(temp_dir) / "scans" / "scan-1" / "passive_scan_summary.txt").exists())
+            self.assertFalse((Path(temp_dir) / "scans" / "scan-1" / "passive_scan_summary.txt").exists())
 
 
 if __name__ == "__main__":

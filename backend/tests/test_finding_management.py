@@ -1,4 +1,3 @@
-import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -8,6 +7,7 @@ from app.findings.schemas import NormalizedFindingInput
 from app.findings.service import persist_normalized_findings
 from app.main import app
 from app.models import (
+    AuditLog,
     AuthIdentity,
     Finding,
     FindingOccurrenceState,
@@ -175,27 +175,26 @@ class FindingManagementTests(unittest.TestCase):
                 )
             )
             db.commit()
-            with tempfile.TemporaryDirectory() as temp_dir:
-                persisted = persist_normalized_findings(
-                    db,
-                    scan_id=later_scan_id,
-                    findings=[
-                        NormalizedFindingInput(
-                            title="Missing Content Security Policy",
-                            severity="low",
-                            confidence="high",
-                            affected_url="http://juice-shop:3000/",
-                            evidence="Header was not present.",
-                            source_tool="custom-passive",
-                            scanner_rule_id="header:content-security-policy",
-                            dedupe_key=self.dedupe_key,
-                            owasp_category="A05:2021",
-                            cwe="CWE-693",
-                            redaction_applied=False,
-                        )
-                    ],
-                    artifact_root=temp_dir,
-                )
+            persisted = persist_normalized_findings(
+                db,
+                workspace_id=DEV_WORKSPACE_ID,
+                scan_id=later_scan_id,
+                findings=[
+                    NormalizedFindingInput(
+                        title="Missing Content Security Policy",
+                        severity="low",
+                        confidence="high",
+                        affected_url="http://juice-shop:3000/",
+                        evidence="Header was not present.",
+                        source_tool="custom-passive",
+                        scanner_rule_id="header:content-security-policy",
+                        dedupe_key=self.dedupe_key,
+                        owasp_category="A05:2021",
+                        cwe="CWE-693",
+                        redaction_applied=False,
+                    )
+                ],
+            )
             later_finding_id = persisted[0].id
             self.finding_ids.append(later_finding_id)
 
@@ -208,6 +207,42 @@ class FindingManagementTests(unittest.TestCase):
 
         with SessionLocal() as db:
             self.assertIsNotNone(db.get(Finding, later_finding_id))
+
+    def test_suppression_revocation_preserves_history_and_stops_application(self) -> None:
+        created = self.client.post(
+            "/api/v1/suppressions",
+            headers=DEV_AUTH_HEADERS,
+            json={
+                "target_id": self.target_id,
+                "dedupe_key": self.dedupe_key,
+                "reason": "Temporary accepted risk.",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        rule_id = created.json()["id"]
+        self.assertTrue(
+            self.client.get(f"/api/v1/findings/{self.finding_id}", headers=DEV_AUTH_HEADERS).json()["suppressed"]
+        )
+
+        revoked = self.client.post(
+            f"/api/v1/suppressions/{rule_id}/revoke",
+            headers=DEV_AUTH_HEADERS,
+        )
+
+        self.assertEqual(revoked.status_code, 200)
+        self.assertIsNotNone(revoked.json()["revoked_at"])
+        finding = self.client.get(f"/api/v1/findings/{self.finding_id}", headers=DEV_AUTH_HEADERS)
+        self.assertFalse(finding.json()["suppressed"])
+        with SessionLocal() as db:
+            persisted_rule = db.get(SuppressionRule, rule_id)
+            self.assertIsNotNone(persisted_rule)
+            self.assertEqual(persisted_rule.revoked_by_user_id, DEV_USER_ID)
+            event = db.query(AuditLog).filter(
+                AuditLog.workspace_id == DEV_WORKSPACE_ID,
+                AuditLog.event_type == "suppression.revoked",
+                AuditLog.resource_id == rule_id,
+            ).one_or_none()
+            self.assertIsNotNone(event)
 
     def test_expired_suppression_rule_is_not_applied(self) -> None:
         response = self.client.post(
@@ -305,6 +340,39 @@ class FindingManagementTests(unittest.TestCase):
             json={"tag_id": tag_id, "resource_type": "target", "resource_id": self.other_target_id},
         )
         self.assertEqual(cross_workspace_assignment.status_code, 404)
+
+    def test_tag_unassignment_is_audited_and_tag_can_be_archived(self) -> None:
+        tag = self.client.post("/api/v1/tags", headers=DEV_AUTH_HEADERS, json={"label": self.tag_label})
+        self.assertEqual(tag.status_code, 201)
+        tag_id = tag.json()["id"]
+        self.tag_ids.append(tag_id)
+        assignment = self.client.post(
+            "/api/v1/tags/assignments",
+            headers=DEV_AUTH_HEADERS,
+            json={"tag_id": tag_id, "resource_type": "target", "resource_id": self.target_id},
+        )
+        self.assertEqual(assignment.status_code, 201)
+
+        unassigned = self.client.delete(
+            f"/api/v1/tags/assignments/{assignment.json()['id']}",
+            headers=DEV_AUTH_HEADERS,
+        )
+        archived = self.client.post(f"/api/v1/tags/{tag_id}/archive", headers=DEV_AUTH_HEADERS)
+        visible = self.client.get("/api/v1/tags", headers=DEV_AUTH_HEADERS)
+        historical = self.client.get("/api/v1/tags?include_archived=true", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(unassigned.status_code, 204)
+        self.assertEqual(archived.status_code, 200)
+        self.assertIsNotNone(archived.json()["archived_at"])
+        self.assertNotIn(tag_id, {item["id"] for item in visible.json()["items"]})
+        self.assertIn(tag_id, {item["id"] for item in historical.json()["items"]})
+        with SessionLocal() as db:
+            event = db.query(AuditLog).filter(
+                AuditLog.workspace_id == DEV_WORKSPACE_ID,
+                AuditLog.event_type == "tag.unassigned",
+                AuditLog.resource_id == self.target_id,
+            ).one_or_none()
+            self.assertIsNotNone(event)
 
     def test_workspace_finding_filters_include_scan_profile_risk_and_normalized_fields(self) -> None:
         response = self.client.get(

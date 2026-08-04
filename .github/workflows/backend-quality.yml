@@ -44,6 +44,8 @@ jobs:
       AUTH_PROFILE_SECRET_KEY: QyZiRES0KAYWYtkLanwPjjEbVZiKA8tLRoNxxgxqG5M=
       ZAP_BASE_URL: http://zap:8080
       ZAP_API_KEY: 0123456789abcdef0123456789abcdef
+      SCAN_RELAY_URL: http://relay:8090
+      SCAN_RELAY_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef
       ARTIFACT_ROOT: ${{ runner.temp }}/scopeharbor-artifacts
       REPO_SCAN_ROOT: ${{ github.workspace }}
       REPO_STAGING_ROOT: ${{ runner.temp }}/scopeharbor-repo-staging
@@ -84,6 +86,16 @@ jobs:
           alembic upgrade head
           alembic check
 
+      - name: Verify zero, 0008, and 0011 migration paths
+        run: python -m unittest backend.tests.test_migrations
+
+      - name: Exercise local-target relay and long-running lease boundaries
+        run: >-
+          python -m unittest
+          backend.tests.test_scan_relay
+          backend.tests.test_scan_worker
+          backend.tests.test_repository_assets_api
+
       - name: Run backend branch coverage
         run: |
           coverage erase
@@ -94,3 +106,6 @@ jobs:
 
       - name: Audit Python runtime dependencies
         run: pip-audit --require-hashes --disable-pip --requirement backend/requirements.txt
+
+      - name: Audit Python development dependencies
+        run: pip-audit --require-hashes --disable-pip --requirement backend/requirements-dev.txt

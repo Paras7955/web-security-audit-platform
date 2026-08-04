@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import signal
 import stat
 import subprocess
 import tempfile
@@ -8,7 +9,7 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from app.core.config import Settings
 from app.findings.schemas import NormalizedFindingInput
@@ -19,7 +20,7 @@ from app.repo_scanner.adapters import (
     RepoToolTimeoutError,
     RepoToolUnavailableError,
     ToolReceipt,
-    _limit_child,
+    _limit_process,
     _load_json,
     _optional_version,
     _osv_findings,
@@ -27,6 +28,7 @@ from app.repo_scanner.adapters import (
     _relative_scanner_path,
     _run_tool,
     _safe_positive_int,
+    _terminate_process_group,
     _validate_osv_database,
     _verify_version,
     run_gitleaks,
@@ -357,37 +359,82 @@ class RepoScannerTests(unittest.TestCase):
         with patch("app.repo_scanner.adapters._verify_version", side_effect=RepoToolUnavailableError("missing")):
             self.assertIsNone(_optional_version("tool", "1.0"))
 
-    def test_child_limits_are_applied_before_scanner_execution(self) -> None:
-        with patch("app.repo_scanner.adapters.resource.setrlimit") as set_limit, patch(
-            "app.repo_scanner.adapters.os.umask"
-        ) as set_umask:
-            _limit_child(1024, 7)
+    def test_child_limits_are_applied_to_the_scanner_process(self) -> None:
+        with patch("app.repo_scanner.adapters.resource.prlimit", create=True) as set_limit:
+            _limit_process(123, 1024, 7)
 
         self.assertEqual(set_limit.call_count, 2)
-        set_umask.assert_called_once_with(0o077)
+        self.assertTrue(all(call_args.args[0] == 123 for call_args in set_limit.call_args_list))
 
     def test_tool_runner_maps_failures_and_bounds_output(self) -> None:
         config = Settings(_env_file=None, repo_tool_output_bytes=32, repo_tool_timeout_seconds=2)
         with tempfile.TemporaryDirectory() as output_dir:
             output = Path(output_dir)
-            with patch("app.repo_scanner.adapters.subprocess.run", return_value=SimpleNamespace(returncode=7)):
-                self.assertEqual(_run_tool(["trusted", "--fixed"], output_dir=output, config=config), 7)
+            completed_process = MagicMock(pid=123)
+            completed_process.wait.return_value = 7
+            completed_process.poll.return_value = 7
+            with patch("app.repo_scanner.adapters.subprocess.Popen", return_value=completed_process) as popen:
+                with patch("app.repo_scanner.adapters._limit_process"):
+                    self.assertEqual(_run_tool(["trusted", "--fixed"], output_dir=output, config=config), 7)
+            self.assertTrue(popen.call_args.kwargs["start_new_session"])
+            self.assertEqual(popen.call_args.kwargs["umask"], 0o077)
 
             for exception, error_type in (
                 (FileNotFoundError(), RepoToolUnavailableError),
                 (subprocess.TimeoutExpired("trusted", 2), RepoToolTimeoutError),
                 (OSError("private OS detail"), RepoToolError),
             ):
-                with patch("app.repo_scanner.adapters.subprocess.run", side_effect=exception), self.assertRaises(error_type):
+                with patch("app.repo_scanner.adapters.subprocess.Popen", side_effect=exception), self.assertRaises(error_type):
                     _run_tool(["trusted"], output_dir=output, config=config)
 
             def oversized_run(_command, **kwargs):
                 kwargs["stdout"].write(b"x" * 33)
                 kwargs["stdout"].flush()
-                return SimpleNamespace(returncode=0)
+                process = MagicMock(pid=124)
+                process.wait.return_value = 0
+                process.poll.return_value = 0
+                return process
 
-            with patch("app.repo_scanner.adapters.subprocess.run", side_effect=oversized_run), self.assertRaises(RepoToolOutputError):
+            with patch("app.repo_scanner.adapters.subprocess.Popen", side_effect=oversized_run), patch(
+                "app.repo_scanner.adapters._limit_process"
+            ), self.assertRaises(RepoToolOutputError):
                 _run_tool(["trusted"], output_dir=output, config=config)
+
+    def test_tool_runner_terminates_process_group_when_checkpoint_aborts(self) -> None:
+        class ExecutionStopped(Exception):
+            pass
+
+        config = Settings(_env_file=None, repo_tool_timeout_seconds=2)
+        process = MagicMock(pid=321)
+        process.poll.return_value = None
+        checkpoint = MagicMock(side_effect=[None, ExecutionStopped()])
+        with tempfile.TemporaryDirectory() as output_dir, patch(
+            "app.repo_scanner.adapters.subprocess.Popen",
+            return_value=process,
+        ) as popen, patch("app.repo_scanner.adapters._limit_process"), patch(
+            "app.repo_scanner.adapters._terminate_process_group"
+        ) as terminate:
+            with self.assertRaises(ExecutionStopped):
+                _run_tool(
+                    ["trusted"],
+                    output_dir=Path(output_dir),
+                    config=config,
+                    checkpoint=checkpoint,
+                )
+
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        terminate.assert_called_once_with(process)
+
+    def test_process_group_cleanup_escalates_to_kill(self) -> None:
+        process = MagicMock(pid=321)
+        process.wait.side_effect = [subprocess.TimeoutExpired("trusted", 1), 0]
+        with patch("app.repo_scanner.adapters.os.killpg") as kill_group:
+            _terminate_process_group(process)
+
+        self.assertEqual(
+            kill_group.call_args_list,
+            [call(321, signal.SIGTERM), call(321, signal.SIGKILL)],
+        )
 
     def test_osv_adapter_handles_bounded_exit_codes_and_output(self) -> None:
         payload = {"results": []}

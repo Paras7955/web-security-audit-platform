@@ -20,6 +20,14 @@ implemented as an unauthorized scanning tool.
 > dedicated phase branch, multi-commit workflow, per-commit reporting, safety
 > boundaries, focused self-review, and final self-review. This note does not
 > remove or permanently change the standing workflow.
+>
+> **Temporary Phase 23 exception (approved 2026-07-29):** Phase 23 is one
+> continuous portfolio-readiness program. The phase-boundary stop gate and the
+> sub-agent review loop below are suspended for this phase only. Keep using the
+> dedicated phase branch, multi-commit workflow, per-commit reporting, safety
+> boundaries, focused self-review, and final self-review. Do not change files
+> under `frontend/` during this backend phase. This note does not remove or
+> permanently change the standing workflow.
 
 Stop after each phase and wait for explicit user approval before beginning the next phase.
 

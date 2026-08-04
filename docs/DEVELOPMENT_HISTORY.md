@@ -70,11 +70,34 @@ target removal. Schema `0011_target_archiving` and the target API enforce that
 removal clears launch configuration without deleting scan, finding, report,
 risk, or audit history; nonterminal scans block the operation.
 
-## Scope decisions retained through 1.0
+## Phase 22: guided audit design language
+
+Phase 22 refined the frontend into a dark-first guided
+`Ready → Scope → Profile → Authorize → Run → Review` experience. It improved
+visual hierarchy, design tokens, compact finding triage, responsive behavior,
+accessibility, reduced motion, and the security-path visualization. It was a
+frontend-only phase and did not broaden scanner authority.
+
+## Phase 23: portfolio-ready backend release
+
+Phase 23 prepared version `1.1.0` as an MIT-licensed portfolio project. It added
+allowlist schema v2, exact base-path and verified TLS policies, a minimal signed
+capability relay, separated Compose networks, generic local HTTP/HTTPS passive
+targets, workspace repository assets, immutable launch snapshots, stronger
+lease/cancellation/process/ZAP handling, subject-aware posture and finding
+management, explicit external AI generation, idempotent reports, schema `0012`,
+release CI/SBOM/vulnerability gates, and reconciled public documentation.
+
+The current frontend was intentionally preserved. It supports local development
+auth and existing target workflows; OIDC login UX and repository-asset UI
+integration are future frontend work.
+
+## Scope decisions retained through 1.1
 
 - The product remains defensive and local-first.
 - Arbitrary public/cloud scanning remains denied.
-- OWASP Juice Shop remains the primary controlled web demo.
+- OWASP Juice Shop remains the bundled controlled web demo; generalized local
+  applications receive passive scanning only.
 - Static target auth is passive-client-only; browser login workflows are not
   implemented.
 - Repository scans never clone, install, build, or execute repository code.
@@ -82,5 +105,5 @@ risk, or audit history; nonterminal scans block the operation.
 - RBAC/team administration, business-logic testing, user-pair IDOR automation,
   Nuclei, Semgrep/full SAST, PDF export, and SaaS hardening remain outside scope.
 
-The repository is source-visible without a license. Phase history does not imply
-open-source rights or long-term support.
+The repository is available under the MIT License. Phase history does not imply
+a support commitment or change the defensive-use boundaries.

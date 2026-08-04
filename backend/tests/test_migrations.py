@@ -8,11 +8,14 @@ from uuid import uuid4
 from alembic import command
 from alembic.config import Config
 from app.core.config import settings
-from app.db.session import engine
+from app.db.session import check_database_ready, engine
 from sqlalchemy import create_engine, inspect, text
 
 
 class MigrationTests(unittest.TestCase):
+    def test_runtime_readiness_matches_migration_head(self) -> None:
+        self.assertTrue(check_database_ready())
+
     def test_clean_upgrade_from_zero_reaches_head(self) -> None:
         with isolated_schema() as (database_url, migration_config):
             with patch("app.core.config.settings.database_url", database_url):
@@ -20,10 +23,13 @@ class MigrationTests(unittest.TestCase):
             isolated_engine = create_engine(database_url)
             try:
                 with isolated_engine.connect() as connection:
-                    self.assertEqual(connection.scalar(text("SELECT version_num FROM alembic_version")), "0011_target_archiving")
+                    self.assertEqual(connection.scalar(text("SELECT version_num FROM alembic_version")), "0012_portfolio_readiness")
                     tables = set(inspect(connection).get_table_names())
                     self.assertIn("scanner_tool_runs", tables)
                     self.assertIn("auth_profiles", tables)
+                    self.assertIn("repository_assets", tables)
+                    self.assertIn("artifact_cleanup_tasks", tables)
+                    self.assertNotIn("evidence_artifacts", tables)
                     target_columns = {column["name"] for column in inspect(connection).get_columns("targets")}
                     self.assertIn("archived_at", target_columns)
                     self.assertIn("archived_by_user_id", target_columns)

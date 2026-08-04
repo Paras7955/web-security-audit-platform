@@ -1,13 +1,13 @@
 import hashlib
-from pathlib import Path
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.finding_management import initialize_finding_management_state
 from app.findings.redaction import prepare_evidence_snippet
-from app.findings.schemas import EvidenceArtifactInput, NormalizedFindingInput
-from app.models import EvidenceArtifact, Finding, Scan
+from app.findings.schemas import NormalizedFindingInput
+from app.models import Finding, Scan
 from app.security.sanitization import sanitize_relative_path, sanitize_text, sanitize_url
 
 MAX_DEDUPE_KEY_LENGTH = 500
@@ -20,26 +20,17 @@ class FindingPersistenceError(ValueError):
 def persist_normalized_findings(
     db: Session,
     *,
+    workspace_id: str,
     scan_id: str,
     findings: list[NormalizedFindingInput],
-    artifact_root: str | Path,
 ) -> list[Finding]:
-    scan = db.get(Scan, scan_id)
+    scan = db.scalar(select(Scan).where(Scan.id == scan_id, Scan.workspace_id == workspace_id))
     if scan is None:
         raise FindingPersistenceError("scan not found")
 
     persisted: list[Finding] = []
     try:
         for finding_input in findings:
-            raw_artifact = None
-            if finding_input.raw_artifact is not None:
-                raw_artifact = persist_evidence_artifact(
-                    db,
-                    scan=scan,
-                    artifact=finding_input.raw_artifact,
-                    artifact_root=artifact_root,
-                )
-
             evidence, _ = prepare_evidence_snippet(finding_input.evidence)
             reproduction_steps = sanitize_text(finding_input.reproduction_steps, maximum=16_384)
             remediation = sanitize_text(finding_input.remediation, maximum=16_384)
@@ -83,7 +74,6 @@ def persist_normalized_findings(
                 # This flag records that ScopeHarbor's own boundary ran. A
                 # scanner-provided claim is deliberately ignored.
                 redaction_applied=True,
-                raw_artifact_ref=raw_artifact.id if raw_artifact else None,
             )
             db.add(finding)
             db.flush()
@@ -98,27 +88,6 @@ def persist_normalized_findings(
     for finding in persisted:
         db.refresh(finding)
     return persisted
-
-
-def persist_evidence_artifact(
-    db: Session,
-    *,
-    scan: Scan,
-    artifact: EvidenceArtifactInput,
-    artifact_root: str | Path,
-) -> EvidenceArtifact:
-    path = validate_artifact_path(artifact.path, artifact_root)
-    evidence_artifact = EvidenceArtifact(
-        id=str(uuid4()),
-        workspace_id=scan.workspace_id,
-        created_by_user_id=scan.created_by_user_id,
-        scan_id=scan.id,
-        artifact_type=artifact.artifact_type,
-        path=str(path),
-        redaction_applied=True,
-    )
-    db.add(evidence_artifact)
-    return evidence_artifact
 
 
 def build_dedupe_key(finding: NormalizedFindingInput) -> str:
@@ -140,14 +109,3 @@ def build_dedupe_key(finding: NormalizedFindingInput) -> str:
     source_tool = finding.source_tool.lower()[:40]
     cwe_segment = cwe[:60]
     return f"{source_tool}|hash:{digest}|{cwe_segment}"[:MAX_DEDUPE_KEY_LENGTH]
-
-
-def validate_artifact_path(path: str, artifact_root: str | Path) -> Path:
-    artifact_root_path = Path(artifact_root).resolve()
-    candidate_path = Path(path)
-    if not candidate_path.is_absolute():
-        raise FindingPersistenceError("evidence artifact path must be absolute")
-    candidate = candidate_path.resolve()
-    if artifact_root_path != candidate and artifact_root_path not in candidate.parents:
-        raise FindingPersistenceError("evidence artifact path must stay within artifact root")
-    return candidate

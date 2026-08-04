@@ -7,14 +7,19 @@ from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.ai.service import AiExplanationError, AiExplanationResult, AiRateLimitExceeded, generate_ai_explanations
+from app.ai.service import (
+    AiExplanationError,
+    AiExplanationResult,
+    AiRateLimitExceeded,
+    generate_ai_explanations,
+)
 from app.core.contracts import ScanMode, ScanStatus, scan_profile_for_values
-from app.models import Finding, ReportArtifact, Scan, ScannerToolRun, Target
+from app.models import Finding, ReportArtifact, RepositoryAsset, Scan, ScannerToolRun, Target
 from app.scans.artifacts import ArtifactPathError, ensure_scan_artifact_dir, scan_artifact_dir
 from app.security.sanitization import sanitize_relative_path, sanitize_text, sanitize_url
-
 
 REPORT_TYPES = ("markdown", "html")
 REPORT_FILENAMES = {
@@ -65,7 +70,7 @@ class ReportFinding:
 @dataclass(frozen=True)
 class ReportData:
     scan: Scan
-    target: Target
+    target: Target | RepositoryAsset
     findings: tuple[ReportFinding, ...]
     tool_runs: tuple["ReportToolRun", ...]
     generated_at: datetime
@@ -88,15 +93,13 @@ def build_report_data(
     *,
     scan_id: str,
     ai_provider: str,
-    workspace_id: str | None = None,
+    workspace_id: str,
     user_id: str | None = None,
     openai_api_key: str | None = None,
     openai_model: str | None = None,
 ) -> ReportData:
-    scan = db.get(Scan, scan_id)
+    scan = db.scalar(select(Scan).where(Scan.id == scan_id, Scan.workspace_id == workspace_id))
     if scan is None:
-        raise ReportGenerationError("Scan not found.")
-    if workspace_id is not None and scan.workspace_id != workspace_id:
         raise ReportGenerationError("Scan not found.")
     if scan.status not in TERMINAL_REPORT_STATUSES:
         raise ReportGenerationError("Reports can only be generated for completed scans.")
@@ -104,9 +107,23 @@ def build_report_data(
     if profile is None or not profile.reports_enabled:
         raise ReportGenerationError("Reports can only be generated for passive, Active Demo, and Repo scans.")
 
-    target = db.get(Target, scan.target_id)
+    target = (
+        db.scalar(
+            select(Target).where(
+                Target.id == scan.target_id,
+                Target.workspace_id == workspace_id,
+            )
+        )
+        if scan.target_id is not None
+        else db.scalar(
+            select(RepositoryAsset).where(
+                RepositoryAsset.id == scan.repository_asset_id,
+                RepositoryAsset.workspace_id == workspace_id,
+            )
+        )
+    )
     if target is None:
-        raise ReportGenerationError("Scan target not found.")
+        raise ReportGenerationError("Scan subject not found.")
     if target.workspace_id != scan.workspace_id:
         raise ReportGenerationError("Scan target workspace does not match scan workspace.")
 
@@ -169,7 +186,7 @@ def generate_report_artifacts(
     db: Session,
     *,
     scan_id: str,
-    workspace_id: str | None = None,
+    workspace_id: str,
     user_id: str | None = None,
     artifact_root: str | Path,
     ai_provider: str,
@@ -211,6 +228,7 @@ def get_or_create_report_artifact(db: Session, *, scan: Scan, report_type: str, 
         select(ReportArtifact).where(
             ReportArtifact.scan_id == scan.id,
             ReportArtifact.report_type == report_type,
+            ReportArtifact.workspace_id == scan.workspace_id,
         )
     )
     if artifact is None:
@@ -227,14 +245,26 @@ def get_or_create_report_artifact(db: Session, *, scan: Scan, report_type: str, 
         artifact.created_by_user_id = scan.created_by_user_id
         artifact.path = str(path.resolve())
     db.add(artifact)
-    return artifact
+    try:
+        with db.begin_nested():
+            db.flush()
+        return artifact
+    except IntegrityError:
+        concurrent = db.scalar(
+            select(ReportArtifact).where(
+                ReportArtifact.workspace_id == scan.workspace_id,
+                ReportArtifact.scan_id == scan.id,
+                ReportArtifact.report_type == report_type,
+            )
+        )
+        if concurrent is None:
+            raise
+        return concurrent
 
 
-def list_report_artifacts(db: Session, *, scan_id: str, workspace_id: str | None = None) -> list[ReportArtifact]:
-    scan = db.get(Scan, scan_id)
+def list_report_artifacts(db: Session, *, scan_id: str, workspace_id: str) -> list[ReportArtifact]:
+    scan = db.scalar(select(Scan).where(Scan.id == scan_id, Scan.workspace_id == workspace_id))
     if scan is None:
-        raise ReportGenerationError("Scan not found.")
-    if workspace_id is not None and scan.workspace_id != workspace_id:
         raise ReportGenerationError("Scan not found.")
     validate_report_artifact_read_eligibility(scan)
     return list(
@@ -254,12 +284,17 @@ def read_report_artifact(
     artifact: ReportArtifact,
     *,
     artifact_root: str | Path,
-    workspace_id: str | None = None,
+    workspace_id: str,
 ) -> str:
-    scan = db.get(Scan, artifact.scan_id)
+    scan = db.scalar(
+        select(Scan).where(
+            Scan.id == artifact.scan_id,
+            Scan.workspace_id == workspace_id,
+        )
+    )
     if scan is None:
         raise ReportGenerationError("Scan not found.")
-    if workspace_id is not None and (scan.workspace_id != workspace_id or artifact.workspace_id != workspace_id):
+    if artifact.workspace_id != workspace_id:
         raise ReportGenerationError("Scan not found.")
     validate_report_artifact_read_eligibility(scan)
     return read_report_artifact_file(artifact, artifact_root=artifact_root)
@@ -392,6 +427,23 @@ def safe_report_finding(finding: Finding) -> ReportFinding:
     )
 
 
+def report_subject_type(data: ReportData) -> str:
+    return "web target" if isinstance(data.target, Target) else "repository asset"
+
+
+def report_subject_policy(data: ReportData) -> str:
+    return data.target.allowlist_id if isinstance(data.target, Target) else "repository authorization snapshot"
+
+
+def report_subject_scope(data: ReportData) -> str:
+    if isinstance(data.target, Target):
+        return sanitize_text(data.target.base_url, maximum=2048) or "redacted"
+    return (
+        sanitize_relative_path(data.scan.repo_path_snapshot or data.target.relative_path)
+        or "redacted-relative-path"
+    )
+
+
 def render_markdown_report(data: ReportData) -> str:
     lines = [
         "# ScopeHarbor Security Audit Report",
@@ -399,12 +451,13 @@ def render_markdown_report(data: ReportData) -> str:
         "## Summary",
         "",
         f"- Generated at: {format_timestamp(data.generated_at)}",
-        f"- Target: {data.target.name}",
-        f"- Target allowlist ID: {data.target.allowlist_id}",
-        f"- Target URL: {data.target.base_url}",
-        f"- Scan ID: {data.scan.id}",
-        f"- Scan profile: {data.scan.scan_profile_id}",
-        f"- Scan status: {data.scan.status}",
+        f"- Subject type: {markdown_inline(report_subject_type(data))}",
+        f"- Subject: {markdown_inline(data.target.name)}",
+        f"- Subject policy: {markdown_inline(report_subject_policy(data))}",
+        f"- Subject scope: {markdown_inline(report_subject_scope(data))}",
+        f"- Scan ID: {markdown_inline(data.scan.id)}",
+        f"- Scan profile: {markdown_inline(data.scan.scan_profile_id)}",
+        f"- Scan status: {markdown_inline(data.scan.status)}",
         f"- Findings: {len(data.findings)}",
         "",
         "## Scope And Tooling",
@@ -448,15 +501,15 @@ def render_markdown_report(data: ReportData) -> str:
     for index, finding in enumerate(data.findings, start=1):
         lines.extend(
             [
-                f"### {index}. {finding.title}",
+                f"### {index}. {markdown_inline(finding.title)}",
                 "",
-                f"- Severity: {finding.severity}",
-                f"- Confidence: {finding.confidence}",
-                f"- Source tool: {finding.source_tool}",
-                f"- Scanner rule ID: {finding.scanner_rule_id or 'not provided'}",
-                f"- CWE: {finding.cwe or 'not mapped'}",
-                f"- OWASP category: {finding.owasp_category or 'not mapped'}",
-                f"- Location: {finding.affected_url or finding.affected_file or 'global'}",
+                f"- Severity: {markdown_inline(finding.severity)}",
+                f"- Confidence: {markdown_inline(finding.confidence)}",
+                f"- Source tool: {markdown_inline(finding.source_tool)}",
+                f"- Scanner rule ID: {markdown_inline(finding.scanner_rule_id or 'not provided')}",
+                f"- CWE: {markdown_inline(finding.cwe or 'not mapped')}",
+                f"- OWASP category: {markdown_inline(finding.owasp_category or 'not mapped')}",
+                f"- Location: {markdown_inline(finding.affected_url or finding.affected_file or 'global')}",
                 f"- Redaction applied: {'yes' if finding.redaction_applied else 'no'}",
                 "",
                 "**Evidence**",
@@ -465,15 +518,15 @@ def render_markdown_report(data: ReportData) -> str:
                 "",
                 "**Reproduction Steps**",
                 "",
-                finding.reproduction_steps or "No reproduction steps recorded.",
+                fenced_block(finding.reproduction_steps or "No reproduction steps recorded."),
                 "",
                 "**Remediation**",
                 "",
-                finding.remediation or "No remediation guidance recorded.",
+                fenced_block(finding.remediation or "No remediation guidance recorded."),
                 "",
                 "**False Positive Notes**",
                 "",
-                finding.false_positive_notes or "No false-positive notes recorded.",
+                fenced_block(finding.false_positive_notes or "No false-positive notes recorded."),
                 "",
             ]
         )
@@ -482,34 +535,34 @@ def render_markdown_report(data: ReportData) -> str:
 
 def render_markdown_ai_explanations(explanations: AiExplanationResult) -> str:
     lines = [
-        f"- Provider used: {explanations.provider}",
+        f"- Provider used: {markdown_inline(explanations.provider)}",
         f"- Fallback used: {'yes' if explanations.fallback_used else 'no'}",
-        f"- Executive summary: {explanations.executive_summary}",
-        f"- Risk score explanation: {explanations.risk_score_explanation}",
-        f"- Summary: {explanations.summary}",
+        f"- Executive summary: {markdown_inline(explanations.executive_summary)}",
+        f"- Risk score explanation: {markdown_inline(explanations.risk_score_explanation)}",
+        f"- Summary: {markdown_inline(explanations.summary)}",
         "- Limitation: AI explanations are based only on normalized, redacted findings and do not add new vulnerability claims.",
     ]
     if explanations.provider_error:
-        lines.append(f"- Provider error: {explanations.provider_error}")
+        lines.append(f"- Provider error: {markdown_inline(explanations.provider_error)}")
 
     if explanations.groups:
         lines.extend(["", "### AI Finding Groups", ""])
         for group in explanations.groups:
-            lines.append(f"- {group.label}: {group.count}")
+            lines.append(f"- {markdown_inline(group.label)}: {group.count}")
 
     if explanations.explanations:
         lines.extend(["", "### AI Finding Notes", ""])
         for explanation in explanations.explanations:
             lines.extend(
                 [
-                    f"#### Finding {explanation.finding_id}",
+                    f"#### Finding {markdown_inline(explanation.finding_id)}",
                     "",
                     f"- Priority: {explanation.priority}",
-                    f"- Summary: {explanation.summary}",
-                    f"- Why it matters: {explanation.why_it_matters}",
-                    f"- Recommended action: {explanation.recommended_action}",
-                    f"- OWASP mapping: {explanation.owasp_mapping}",
-                    f"- Limitations: {explanation.limitations}",
+                    f"- Summary: {markdown_inline(explanation.summary)}",
+                    f"- Why it matters: {markdown_inline(explanation.why_it_matters)}",
+                    f"- Recommended action: {markdown_inline(explanation.recommended_action)}",
+                    f"- OWASP mapping: {markdown_inline(explanation.owasp_mapping)}",
+                    f"- Limitations: {markdown_inline(explanation.limitations)}",
                     "",
                 ]
             )
@@ -523,11 +576,11 @@ def render_markdown_tool_runs(tool_runs: tuple[ReportToolRun, ...]) -> str:
     for run in tool_runs:
         lines.extend(
             [
-                f"### {run.tool_name}",
+                f"### {markdown_inline(run.tool_name)}",
                 "",
-                f"- Version: {run.tool_version or 'not reported'}",
-                f"- Status: {run.status}",
-                f"- Warning code: {run.warning_code or 'none'}",
+                f"- Version: {markdown_inline(run.tool_version or 'not reported')}",
+                f"- Status: {markdown_inline(run.status)}",
+                f"- Warning code: {markdown_inline(run.warning_code or 'none')}",
                 f"- Findings: {run.finding_count}",
                 f"- Started at: {format_timestamp(run.started_at) if run.started_at else 'not reported'}",
                 f"- Completed at: {format_timestamp(run.completed_at) if run.completed_at else 'not reported'}",
@@ -565,9 +618,10 @@ def render_html_report(data: ReportData) -> str:
   <h2>Summary</h2>
   <table>
     <tr><th>Generated at</th><td>{escape(format_timestamp(data.generated_at))}</td></tr>
-    <tr><th>Target</th><td>{escape(data.target.name)}</td></tr>
-    <tr><th>Target allowlist ID</th><td>{escape(data.target.allowlist_id)}</td></tr>
-    <tr><th>Target URL</th><td>{escape(data.target.base_url)}</td></tr>
+    <tr><th>Subject type</th><td>{escape(report_subject_type(data))}</td></tr>
+    <tr><th>Subject</th><td>{escape(data.target.name)}</td></tr>
+    <tr><th>Subject policy</th><td>{escape(report_subject_policy(data))}</td></tr>
+    <tr><th>Subject scope</th><td>{escape(report_subject_scope(data))}</td></tr>
     <tr><th>Scan ID</th><td>{escape(data.scan.id)}</td></tr>
     <tr><th>Scan profile</th><td>{escape(data.scan.scan_profile_id)}</td></tr>
     <tr><th>Scan status</th><td>{escape(data.scan.status)}</td></tr>
@@ -734,8 +788,39 @@ def report_timestamp(scan: Scan) -> datetime:
     return datetime.fromtimestamp(0, UTC)
 
 
+def markdown_inline(value: object) -> str:
+    single_line = " ".join(str(value).splitlines())
+    escaped = single_line.translate(
+        str.maketrans(
+            {
+                "\\": "\\\\",
+                "`": "\\`",
+                "*": "\\*",
+                "_": "\\_",
+                "{": "\\{",
+                "}": "\\}",
+                "[": "\\[",
+                "]": "\\]",
+                "(": "\\(",
+                ")": "\\)",
+                "#": "\\#",
+                "+": "\\+",
+                "!": "\\!",
+                "|": "\\|",
+            }
+        )
+    )
+    return escaped.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def fenced_block(value: str) -> str:
-    fence = "```"
-    if fence in value:
-        return f"````text\n{value}\n````"
-    return f"```text\n{value}\n```"
+    longest_run = 0
+    current_run = 0
+    for character in value:
+        if character == "`":
+            current_run += 1
+            longest_run = max(longest_run, current_run)
+        else:
+            current_run = 0
+    fence = "`" * max(3, longest_run + 1)
+    return f"{fence}text\n{value}\n{fence}"

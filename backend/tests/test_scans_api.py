@@ -7,7 +7,7 @@ from uuid import uuid4
 from app.api.deps import get_scan_allowlist
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import AuthProfile, Scan, Target
+from app.models import AuthProfile, RepositoryAsset, Scan, Target
 from app.security.allowlist import ScanAllowlist
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
@@ -27,11 +27,14 @@ class ScanApiTests(unittest.TestCase):
         self.created_scan_ids: list[str] = []
         self.created_target_ids: list[str] = []
         self.created_auth_profile_ids: list[str] = []
+        self.created_repository_asset_ids: list[str] = []
 
     def tearDown(self) -> None:
         with SessionLocal() as db:
             if self.created_scan_ids:
                 db.execute(delete(Scan).where(Scan.id.in_(self.created_scan_ids)))
+            if self.created_repository_asset_ids:
+                db.execute(delete(RepositoryAsset).where(RepositoryAsset.id.in_(self.created_repository_asset_ids)))
             if self.created_target_ids:
                 db.execute(delete(Target).where(Target.id.in_(self.created_target_ids)))
             if self.created_auth_profile_ids:
@@ -76,6 +79,105 @@ class ScanApiTests(unittest.TestCase):
         self.assertEqual(body["current_step"], "target_validation")
         self.assertEqual(body["progress_percent"], 0)
         self.assertIn("Passive Web profile", body["status_message"])
+
+    def test_target_policy_catalog_and_json_validation_are_protected(self) -> None:
+        unauthenticated = self.client.get("/api/v1/targets/policies")
+        catalog = self.client.get("/api/v1/targets/policies", headers=DEV_AUTH_HEADERS)
+        valid = self.client.post(
+            "/api/v1/targets/validate",
+            headers=DEV_AUTH_HEADERS,
+            json={"target_url": "http://juice-shop:3000/"},
+        )
+        query_root = self.client.post(
+            "/api/v1/targets/validate",
+            headers=DEV_AUTH_HEADERS,
+            json={"target_url": "http://juice-shop:3000/?token=secret"},
+        )
+        userinfo_root = self.client.post(
+            "/api/v1/targets/validate",
+            headers=DEV_AUTH_HEADERS,
+            json={"target_url": "http://user:password@juice-shop:3000/"},
+        )
+
+        self.assertEqual(unauthenticated.status_code, 401)
+        self.assertEqual(catalog.status_code, 200)
+        self.assertEqual(catalog.json()[0]["connection_class"], "compose_service")
+        self.assertEqual(valid.status_code, 200)
+        self.assertEqual(valid.json()["policy_fingerprint"], catalog.json()[0]["policy_fingerprint"])
+        self.assertEqual(query_root.status_code, 400)
+        self.assertEqual(userinfo_root.status_code, 400)
+        self.assertTrue(
+            self.client.get("/openapi.json").json()["paths"]["/api/v1/targets/validate"]["get"]["deprecated"]
+        )
+
+    def test_policy_change_requires_reauthorization_before_launch(self) -> None:
+        target = self.create_target()
+        current = get_scan_allowlist()
+        current_policy = current.get_target("juice-shop")
+        if current_policy is None:
+            raise AssertionError("bundled juice-shop policy missing")
+        changed_policy = current_policy.model_copy(
+            update={"max_redirects": current_policy.max_redirects + 1}
+        )
+        changed = ScanAllowlist(version=2, targets=[changed_policy])
+
+        app.dependency_overrides[get_scan_allowlist] = lambda: changed
+        try:
+            stale_launch = self.client.post(
+                "/api/v1/scans",
+                json={
+                    "target_id": target["id"],
+                    "scan_profile_id": "passive-web",
+                    "acknowledgements": ["authorized_target"],
+                },
+                headers=DEV_AUTH_HEADERS,
+            )
+            reauthorized = self.client.post(
+                f"/api/v1/targets/{target['id']}/reauthorize",
+                json={"permission_confirmed": True},
+                headers=DEV_AUTH_HEADERS,
+            )
+            launch = self.client.post(
+                "/api/v1/scans",
+                json={
+                    "target_id": target["id"],
+                    "scan_profile_id": "passive-web",
+                    "acknowledgements": ["authorized_target"],
+                },
+                headers=DEV_AUTH_HEADERS,
+            )
+        finally:
+            app.dependency_overrides.pop(get_scan_allowlist, None)
+
+        self.assertEqual(stale_launch.status_code, 409)
+        self.assertEqual(reauthorized.status_code, 200)
+        self.assertEqual(reauthorized.json()["policy_status"], "current")
+        self.assertEqual(launch.status_code, 201)
+        self.created_scan_ids.append(launch.json()["id"])
+
+    def test_origin_or_base_path_policy_change_requires_a_new_target(self) -> None:
+        target = self.create_target()
+        current = get_scan_allowlist()
+        current_policy = current.get_target("juice-shop")
+        if current_policy is None:
+            raise AssertionError("bundled juice-shop policy missing")
+        changed_policy = current_policy.model_copy(
+            update={"base_url": "http://juice-shop:3000/application"}
+        )
+        changed = ScanAllowlist(version=2, targets=[changed_policy])
+
+        app.dependency_overrides[get_scan_allowlist] = lambda: changed
+        try:
+            response = self.client.post(
+                f"/api/v1/targets/{target['id']}/reauthorize",
+                json={"permission_confirmed": True},
+                headers=DEV_AUTH_HEADERS,
+            )
+        finally:
+            app.dependency_overrides.pop(get_scan_allowlist, None)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("create a new target", response.json()["detail"])
 
     def test_create_scan_accepts_scan_profile_id(self) -> None:
         target = self.create_target()
@@ -264,6 +366,7 @@ class ScanApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         body = response.json()
         self.created_scan_ids.append(body["id"])
+        self.created_repository_asset_ids.append(body["repository_asset_id"])
         self.assertEqual(body["scan_profile_id"], "repository")
         self.assertNotIn("mode", body)
         self.assertEqual(body["status"], "queued")

@@ -3,7 +3,7 @@ from hashlib import blake2b
 from uuid import uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.models import ApiRateLimitLog
@@ -66,13 +66,15 @@ def is_limited(
     if window_seconds <= 0:
         return False
     cutoff = datetime.now(UTC) - timedelta(seconds=window_seconds)
-    rows = db.scalars(
-        select(ApiRateLimitLog).where(
+    count = db.scalar(
+        select(func.count())
+        .select_from(ApiRateLimitLog)
+        .where(
             ApiRateLimitLog.workspace_id == principal.workspace_id,
             ApiRateLimitLog.user_id == principal.user_id,
             ApiRateLimitLog.action == action,
             ApiRateLimitLog.allowed.is_(True),
             ApiRateLimitLog.created_at >= cutoff,
         )
-    ).all()
-    return len(rows) >= max_requests
+    )
+    return int(count or 0) >= max_requests

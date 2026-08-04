@@ -5,8 +5,11 @@ import os
 import re
 import resource
 import shutil
+import signal
 import subprocess
 import tempfile
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -68,10 +71,15 @@ def verify_repo_tools(config: Settings = settings) -> dict[str, str]:
     }
 
 
-def run_repository_scan(staged_root: Path, config: Settings = settings) -> RepoScanResult:
-    gitleaks = run_gitleaks(staged_root, config)
+def run_repository_scan(
+    staged_root: Path,
+    config: Settings = settings,
+    *,
+    checkpoint: Callable[[], None] | None = None,
+) -> RepoScanResult:
+    gitleaks = run_gitleaks(staged_root, config, checkpoint=checkpoint)
     try:
-        osv = run_osv_scanner(staged_root, config)
+        osv = run_osv_scanner(staged_root, config, checkpoint=checkpoint)
     except RepoToolError as exc:
         now = datetime.now(UTC)
         osv = AdapterResult(
@@ -91,7 +99,12 @@ def run_repository_scan(staged_root: Path, config: Settings = settings) -> RepoS
     return RepoScanResult(findings=findings, receipts=(gitleaks.receipt, osv.receipt), warning_codes=warnings)
 
 
-def run_gitleaks(staged_root: Path, config: Settings = settings) -> AdapterResult:
+def run_gitleaks(
+    staged_root: Path,
+    config: Settings = settings,
+    *,
+    checkpoint: Callable[[], None] | None = None,
+) -> AdapterResult:
     version = _verify_version(config.gitleaks_binary, GITLEAKS_VERSION)
     started = datetime.now(UTC)
     with tempfile.TemporaryDirectory(prefix="gitleaks-output-") as output_dir:
@@ -115,7 +128,7 @@ def run_gitleaks(staged_root: Path, config: Settings = settings) -> AdapterResul
             str(report_path),
             str(staged_root),
         ]
-        return_code = _run_tool(command, output_dir=Path(output_dir), config=config)
+        return_code = _run_tool(command, output_dir=Path(output_dir), config=config, checkpoint=checkpoint)
         if return_code not in {0, 1}:
             raise RepoToolError("Gitleaks did not complete safely.")
         payload = _load_json(report_path, config.repo_tool_output_bytes)
@@ -132,7 +145,12 @@ def run_gitleaks(staged_root: Path, config: Settings = settings) -> AdapterResul
     )
 
 
-def run_osv_scanner(staged_root: Path, config: Settings = settings) -> AdapterResult:
+def run_osv_scanner(
+    staged_root: Path,
+    config: Settings = settings,
+    *,
+    checkpoint: Callable[[], None] | None = None,
+) -> AdapterResult:
     version = _verify_version(config.osv_scanner_binary, OSV_SCANNER_VERSION)
     _validate_osv_database(config)
     started = datetime.now(UTC)
@@ -153,7 +171,13 @@ def run_osv_scanner(staged_root: Path, config: Settings = settings) -> AdapterRe
             str(staged_root),
         ]
         environment = {"OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY": config.osv_database_path}
-        return_code = _run_tool(command, output_dir=Path(output_dir), config=config, extra_environment=environment)
+        return_code = _run_tool(
+            command,
+            output_dir=Path(output_dir),
+            config=config,
+            extra_environment=environment,
+            checkpoint=checkpoint,
+        )
         if return_code not in {0, 1, 128}:
             raise RepoToolError("OSV-Scanner did not complete safely.")
         payload = _load_json(report_path, config.repo_tool_output_bytes) if report_path.exists() else {"results": []}
@@ -170,6 +194,7 @@ def _run_tool(
     output_dir: Path,
     config: Settings,
     extra_environment: dict[str, str] | None = None,
+    checkpoint: Callable[[], None] | None = None,
 ) -> int:
     environment = {
         "HOME": str(output_dir),
@@ -181,35 +206,85 @@ def _run_tool(
     environment.update(extra_environment or {})
     stdout_path = output_dir / "stdout"
     stderr_path = output_dir / "stderr"
+    process: subprocess.Popen[bytes] | None = None
     try:
         with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
-            completed = subprocess.run(  # noqa: S603 - argv-only invocation of startup-validated pinned binaries
+            if checkpoint is not None:
+                checkpoint()
+            process = subprocess.Popen(  # noqa: S603 - argv-only invocation of startup-validated pinned binaries
                 command,
                 stdin=subprocess.DEVNULL,
                 stdout=stdout,
                 stderr=stderr,
                 cwd=output_dir,
                 env=environment,
-                check=False,
-                timeout=config.repo_tool_timeout_seconds,
-                preexec_fn=lambda: _limit_child(config.repo_tool_output_bytes, config.repo_tool_timeout_seconds),
+                start_new_session=True,
+                umask=0o077,
             )
+            _limit_process(
+                process.pid,
+                config.repo_tool_output_bytes,
+                config.repo_tool_timeout_seconds,
+            )
+            deadline = time.monotonic() + config.repo_tool_timeout_seconds
+            while True:
+                if checkpoint is not None:
+                    checkpoint()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, config.repo_tool_timeout_seconds)
+                try:
+                    return_code = process.wait(timeout=min(0.25, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
     except FileNotFoundError as exc:
         raise RepoToolUnavailableError("Required repository scanner is unavailable.") from exc
     except subprocess.TimeoutExpired as exc:
         raise RepoToolTimeoutError("Repository scanner exceeded its time limit.") from exc
     except OSError as exc:
         raise RepoToolError("Repository scanner could not start safely.") from exc
+    finally:
+        if process is not None and process.poll() is None:
+            _terminate_process_group(process)
     for output_path in (stdout_path, stderr_path):
         if output_path.stat().st_size > config.repo_tool_output_bytes:
             raise RepoToolOutputError("Repository scanner output exceeded its safety limit.")
-    return completed.returncode
+    return return_code
 
 
-def _limit_child(max_output_bytes: int, timeout_seconds: int) -> None:
-    resource.setrlimit(resource.RLIMIT_FSIZE, (max_output_bytes, max_output_bytes))
-    resource.setrlimit(resource.RLIMIT_CPU, (timeout_seconds, timeout_seconds + 1))
-    os.umask(0o077)
+def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except OSError:
+        process.kill()
+    try:
+        process.wait(timeout=1.0)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    except OSError:
+        process.kill()
+    try:
+        process.wait(timeout=1.0)
+    except subprocess.TimeoutExpired:
+        # The child is already signalled; never expose process details through
+        # scanner status or logs.
+        pass
+
+
+def _limit_process(pid: int, max_output_bytes: int, timeout_seconds: int) -> None:
+    prlimit = getattr(resource, "prlimit", None)
+    if not callable(prlimit):
+        raise RepoToolError("Repository scanner resource limits are unavailable.")
+    prlimit(pid, resource.RLIMIT_FSIZE, (max_output_bytes, max_output_bytes))
+    prlimit(pid, resource.RLIMIT_CPU, (timeout_seconds, timeout_seconds + 1))
 
 
 def _verify_version(binary: str, expected: str) -> str:

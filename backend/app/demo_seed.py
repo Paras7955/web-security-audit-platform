@@ -18,6 +18,7 @@ from app.models import (
     FindingState,
     PlatformUser,
     ReportArtifact,
+    RepositoryAsset,
     RiskScore,
     Scan,
     SuppressionRule,
@@ -28,6 +29,7 @@ from app.models import (
 )
 from app.reports.service import safe_report_dir, write_report_file
 from app.risk import SCORING_MODEL_VERSION, calculate_scan_risk_score
+from app.security.allowlist import load_allowlist
 
 DEMO_USER_ID = "dev-user"
 DEMO_WORKSPACE_ID = "dev-workspace"
@@ -36,6 +38,7 @@ DEMO_PROVIDER_SUBJECT = "dev-user"
 
 JUICE_TARGET_ID = "demo-target-juice-shop"
 REPO_TARGET_ID = "demo-target-security-project-repo"
+REPO_ASSET_ID = "demo-repository-asset-security-project"
 
 BASELINE_SCAN_ID = "demo-scan-juice-baseline"
 LATEST_SCAN_ID = "demo-scan-juice-latest"
@@ -49,6 +52,7 @@ class DemoSeedResult:
     workspace_id: str
     user_id: str
     targets: int
+    repository_assets: int
     scans: int
     findings: int
     reports: int
@@ -73,6 +77,63 @@ class FindingSeed:
     reproduction_steps: str | None = None
     remediation: str | None = None
     false_positive_notes: str | None = None
+
+
+def preflight_seed_collisions(
+    db: Session,
+    *,
+    workspace_id: str,
+    user_id: str,
+    provider: str,
+    provider_subject: str,
+) -> None:
+    workspace = db.get(Workspace, workspace_id)
+    if workspace is not None and workspace.owner_user_id != user_id:
+        raise ValueError("Demo seed refused a fixed workspace ID owned by another user.")
+    identity = db.scalar(
+        select(AuthIdentity).where(
+            AuthIdentity.provider == provider,
+            AuthIdentity.provider_subject == provider_subject,
+        )
+    )
+    if identity is not None and identity.user_id != user_id:
+        raise ValueError("Demo seed refused a fixed identity bound to another user.")
+    fixed_identity = db.get(AuthIdentity, "demo-auth-identity")
+    if fixed_identity is not None and (
+        fixed_identity.user_id != user_id
+        or fixed_identity.provider != provider
+        or fixed_identity.provider_subject != provider_subject
+    ):
+        raise ValueError("Demo seed refused a fixed identity ID bound to another principal.")
+
+    fixed_ids_by_model = {
+        Target: (JUICE_TARGET_ID, REPO_TARGET_ID),
+        RepositoryAsset: (REPO_ASSET_ID,),
+        Scan: (BASELINE_SCAN_ID, LATEST_SCAN_ID, REPO_SCAN_ID),
+        Finding: tuple(seed.id for seed in FINDING_SEEDS),
+        FindingState: (
+            "demo-state-csp",
+            "demo-state-xfo",
+            "demo-state-cookie",
+            "demo-state-repo-api-key",
+            "demo-state-server-header",
+            "demo-state-repo-dependency",
+        ),
+        SuppressionRule: ("demo-suppression-repo-api-key",),
+        Tag: ("demo-tag-demo-data", "demo-tag-needs-review", "demo-tag-accepted-risk"),
+        TagAssignment: ("demo-tag-target-juice", "demo-tag-scan-latest", "demo-tag-scan-repo"),
+        RiskScore: ("demo-risk-baseline", "demo-risk-latest", "demo-risk-repo"),
+        ReportArtifact: (
+            "demo-report-latest-markdown",
+            "demo-report-latest-html",
+            "demo-report-repo-markdown",
+            "demo-report-repo-html",
+        ),
+    }
+    for model, fixed_ids in fixed_ids_by_model.items():
+        rows = db.scalars(select(model).where(model.id.in_(fixed_ids))).all()
+        if any(row.workspace_id != workspace_id for row in rows):
+            raise ValueError("Demo seed refused a fixed record ID owned by another workspace.")
 
 
 FINDING_SEEDS = (
@@ -204,6 +265,13 @@ def seed_demo_data(
 ) -> DemoSeedResult:
     artifact_root_path = Path(artifact_root)
     repo_scan_root_path = Path(repo_scan_root)
+    preflight_seed_collisions(
+        db,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        provider=provider,
+        provider_subject=provider_subject,
+    )
     repo_path = ensure_demo_repo_path(repo_scan_root_path)
 
     upsert_identity(
@@ -214,6 +282,7 @@ def seed_demo_data(
         provider_subject=provider_subject,
     )
     upsert_targets(db, workspace_id=workspace_id, user_id=user_id, repo_path=repo_path)
+    upsert_repository_asset(db, workspace_id=workspace_id, user_id=user_id, repo_path=repo_path)
     db.flush()
     upsert_scans(db, workspace_id=workspace_id, user_id=user_id)
     db.flush()
@@ -227,6 +296,7 @@ def seed_demo_data(
         workspace_id=workspace_id,
         user_id=user_id,
         targets=count_seeded(db, Target, (JUICE_TARGET_ID, REPO_TARGET_ID)),
+        repository_assets=count_seeded(db, RepositoryAsset, (REPO_ASSET_ID,)),
         scans=count_seeded(db, Scan, (BASELINE_SCAN_ID, LATEST_SCAN_ID, REPO_SCAN_ID)),
         findings=count_seeded(db, Finding, tuple(seed.id for seed in FINDING_SEEDS)),
         reports=count_seeded(
@@ -305,6 +375,9 @@ def upsert_identity(
 
 
 def upsert_targets(db: Session, *, workspace_id: str, user_id: str, repo_path: Path) -> None:
+    policy = load_allowlist(settings.allowlist_path).get_target("juice-shop")
+    if policy is None:
+        raise ValueError("Demo seed requires the bundled juice-shop policy.")
     targets = (
         Target(
             id=JUICE_TARGET_ID,
@@ -313,6 +386,8 @@ def upsert_targets(db: Session, *, workspace_id: str, user_id: str, repo_path: P
             allowlist_id="juice-shop",
             name="OWASP Juice Shop Demo",
             base_url="http://juice-shop:3000",
+            policy_fingerprint=policy.policy_fingerprint,
+            policy_scope_base_url=policy.base_url,
             permission_confirmed=True,
             authorization_confirmed_at=DEMO_STARTED_AT,
             repo_path=None,
@@ -325,6 +400,8 @@ def upsert_targets(db: Session, *, workspace_id: str, user_id: str, repo_path: P
             allowlist_id="juice-shop",
             name="Security Project Repository Demo",
             base_url="http://juice-shop:3000",
+            policy_fingerprint=policy.policy_fingerprint,
+            policy_scope_base_url=policy.base_url,
             permission_confirmed=True,
             authorization_confirmed_at=DEMO_STARTED_AT,
             repo_path=repo_path.name,
@@ -335,13 +412,48 @@ def upsert_targets(db: Session, *, workspace_id: str, user_id: str, repo_path: P
         merge_model(db, target)
 
 
+def upsert_repository_asset(
+    db: Session,
+    *,
+    workspace_id: str,
+    user_id: str,
+    repo_path: Path,
+) -> None:
+    merge_model(
+        db,
+        RepositoryAsset(
+            id=REPO_ASSET_ID,
+            workspace_id=workspace_id,
+            created_by_user_id=user_id,
+            name="Security Project Repository Demo",
+            relative_path=repo_path.name,
+            permission_confirmed=True,
+            authorization_confirmed_at=DEMO_STARTED_AT,
+        ),
+    )
+
+
 def upsert_scans(db: Session, *, workspace_id: str, user_id: str) -> None:
+    policy = load_allowlist(settings.allowlist_path).get_target("juice-shop")
+    if policy is None:
+        raise ValueError("Demo seed requires the bundled juice-shop policy.")
+    web_authorization_snapshot = {
+        "subject_type": "web_target",
+        "subject_id": JUICE_TARGET_ID,
+        "target_url": "http://juice-shop:3000",
+        "allowlist_id": policy.id,
+        "policy_fingerprint": policy.policy_fingerprint,
+        "auth_profile_id": None,
+    }
     scans = (
         Scan(
             id=BASELINE_SCAN_ID,
             workspace_id=workspace_id,
             created_by_user_id=user_id,
             target_id=JUICE_TARGET_ID,
+            target_policy_fingerprint=policy.policy_fingerprint,
+            acknowledgements_snapshot=["authorized_target"],
+            authorization_snapshot=web_authorization_snapshot,
             mode="passive",
             scan_profile_id="passive-web",
             status=ScanStatus.COMPLETED.value,
@@ -359,6 +471,9 @@ def upsert_scans(db: Session, *, workspace_id: str, user_id: str) -> None:
             workspace_id=workspace_id,
             created_by_user_id=user_id,
             target_id=JUICE_TARGET_ID,
+            target_policy_fingerprint=policy.policy_fingerprint,
+            acknowledgements_snapshot=["authorized_target"],
+            authorization_snapshot=web_authorization_snapshot,
             mode="passive",
             scan_profile_id="passive-web",
             status=ScanStatus.COMPLETED_WITH_WARNINGS.value,
@@ -375,7 +490,15 @@ def upsert_scans(db: Session, *, workspace_id: str, user_id: str) -> None:
             id=REPO_SCAN_ID,
             workspace_id=workspace_id,
             created_by_user_id=user_id,
-            target_id=REPO_TARGET_ID,
+            target_id=None,
+            repository_asset_id=REPO_ASSET_ID,
+            repo_path_snapshot="security-project",
+            acknowledgements_snapshot=["authorized_repository"],
+            authorization_snapshot={
+                "subject_type": "repository_asset",
+                "subject_id": REPO_ASSET_ID,
+                "relative_path": "security-project",
+            },
             mode="repo",
             scan_profile_id="repository",
             status=ScanStatus.COMPLETED.value,
@@ -414,7 +537,6 @@ def upsert_findings(db: Session, *, workspace_id: str) -> None:
             remediation=seed.remediation,
             false_positive_notes=seed.false_positive_notes,
             redaction_applied=True,
-            raw_artifact_ref=None,
         )
         merge_model(db, finding)
     db.flush()
@@ -449,7 +571,8 @@ def upsert_management_examples(db: Session, *, workspace_id: str, user_id: str) 
         FindingState(
             id="demo-state-repo-api-key",
             workspace_id=workspace_id,
-            target_id=REPO_TARGET_ID,
+            target_id=None,
+            repository_asset_id=REPO_ASSET_ID,
             dedupe_key="demo:repo:hardcoded-api-key",
             lifecycle_status="suppressed",
             updated_by_user_id=user_id,
@@ -465,7 +588,8 @@ def upsert_management_examples(db: Session, *, workspace_id: str, user_id: str) 
         FindingState(
             id="demo-state-repo-dependency",
             workspace_id=workspace_id,
-            target_id=REPO_TARGET_ID,
+            target_id=None,
+            repository_asset_id=REPO_ASSET_ID,
             dedupe_key="demo:repo:outdated-demo-dependency",
             lifecycle_status="open",
             updated_by_user_id=user_id,
@@ -477,7 +601,8 @@ def upsert_management_examples(db: Session, *, workspace_id: str, user_id: str) 
     suppression = SuppressionRule(
         id="demo-suppression-repo-api-key",
         workspace_id=workspace_id,
-        target_id=REPO_TARGET_ID,
+        target_id=None,
+        repository_asset_id=REPO_ASSET_ID,
         dedupe_key="demo:repo:hardcoded-api-key",
         severity=None,
         source_tool="gitleaks",
@@ -553,6 +678,7 @@ def upsert_risk_scores(db: Session) -> None:
             id=risk_id,
             workspace_id=scan.workspace_id,
             target_id=scan.target_id,
+            repository_asset_id=scan.repository_asset_id,
             scan_id=scan.id,
             scoring_model_version=calculated.scoring_model_version,
             score=calculated.score,

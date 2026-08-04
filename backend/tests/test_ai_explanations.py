@@ -1,12 +1,21 @@
+import json
 import unittest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 from uuid import uuid4
 
-from app.ai.service import AiExplanationResult, AiRateLimitExceeded, TemplateAiProvider, generate_ai_explanations
+from app.ai.service import (
+    AiExplanationError,
+    AiExplanationResult,
+    AiRateLimitExceeded,
+    OpenAiProvider,
+    TemplateAiProvider,
+    generate_ai_explanations,
+    lock_ai_rate_limit_scope,
+)
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import AiExplanationCache, AiRequestLog, EvidenceArtifact, Finding, FindingState, Scan, SuppressionRule, Target
+from app.models import AiExplanationCache, AiRequestLog, Finding, FindingState, Scan, SuppressionRule, Target
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
@@ -47,17 +56,6 @@ class AiExplanationTests(unittest.TestCase):
             )
             db.commit()
             db.add(
-                EvidenceArtifact(
-                    id="raw-artifact-id",
-                    workspace_id=DEV_WORKSPACE_ID,
-                    created_by_user_id=DEV_USER_ID,
-                    scan_id=self.scan_id,
-                    artifact_type="http_response",
-                    path="/app/artifacts/scans/example/raw.txt",
-                    redaction_applied=True,
-                )
-            )
-            db.add(
                 Finding(
                     id=self.finding_id,
                     workspace_id=DEV_WORKSPACE_ID,
@@ -74,7 +72,6 @@ class AiExplanationTests(unittest.TestCase):
                     cwe="CWE-693",
                     remediation="Set a Content-Security-Policy header.",
                     redaction_applied=True,
-                    raw_artifact_ref="raw-artifact-id",
                 )
             )
             db.commit()
@@ -86,7 +83,6 @@ class AiExplanationTests(unittest.TestCase):
             db.execute(delete(FindingState).where(FindingState.target_id == self.target_id))
             db.execute(delete(SuppressionRule).where(SuppressionRule.target_id == self.target_id))
             db.execute(delete(Finding).where(Finding.scan_id == self.scan_id))
-            db.execute(delete(EvidenceArtifact).where(EvidenceArtifact.scan_id == self.scan_id))
             db.execute(delete(Scan).where(Scan.id == self.scan_id))
             db.execute(delete(Target).where(Target.id == self.target_id))
             db.commit()
@@ -95,6 +91,7 @@ class AiExplanationTests(unittest.TestCase):
         with SessionLocal() as db:
             first = generate_ai_explanations(
                 db,
+                workspace_id=DEV_WORKSPACE_ID,
                 scan_id=self.scan_id,
                 provider_name="template",
                 openai_api_key=None,
@@ -103,6 +100,7 @@ class AiExplanationTests(unittest.TestCase):
             )
             second = generate_ai_explanations(
                 db,
+                workspace_id=DEV_WORKSPACE_ID,
                 scan_id=self.scan_id,
                 provider_name="template",
                 openai_api_key=None,
@@ -128,14 +126,32 @@ class AiExplanationTests(unittest.TestCase):
         self.assertEqual(body["scoring_model_version"], "risk-v1")
         self.assertIn("Risk is", body["executive_summary"])
 
+    def test_ai_get_never_calls_external_provider_or_persists_generation(self) -> None:
+        with (
+            patch("app.api.ai.settings.ai_provider", "openai"),
+            patch("app.api.ai.settings.openai_model", "test-model"),
+            patch("app.ai.service.OpenAiProvider.explain") as explain,
+        ):
+            response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["provider"], "template")
+        explain.assert_not_called()
+        with SessionLocal() as db:
+            self.assertEqual(db.query(AiExplanationCache).filter(AiExplanationCache.scan_id == self.scan_id).count(), 0)
+            self.assertEqual(db.query(AiRequestLog).filter(AiRequestLog.workspace_id == DEV_WORKSPACE_ID).count(), 0)
+
     def test_ai_api_reuses_cached_explanation_and_logs_requests(self) -> None:
-        first = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
-        second = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        first = self.client.post(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        second = self.client.post(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        read = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
+        self.assertEqual(read.status_code, 200)
         self.assertFalse(first.json()["cache_hit"])
         self.assertTrue(second.json()["cache_hit"])
+        self.assertTrue(read.json()["cache_hit"])
         self.assertEqual(first.json()["input_fingerprint"], second.json()["input_fingerprint"])
         with SessionLocal() as db:
             cache_rows = db.query(AiExplanationCache).filter(AiExplanationCache.scan_id == self.scan_id).all()
@@ -153,8 +169,8 @@ class AiExplanationTests(unittest.TestCase):
         with SessionLocal() as db:
             first = generate_ai_explanations(
                 db,
-                scan_id=self.scan_id,
                 workspace_id=DEV_WORKSPACE_ID,
+                scan_id=self.scan_id,
                 user_id=DEV_USER_ID,
                 provider_name="template",
                 openai_api_key=None,
@@ -173,8 +189,8 @@ class AiExplanationTests(unittest.TestCase):
             db.commit()
             second = generate_ai_explanations(
                 db,
-                scan_id=self.scan_id,
                 workspace_id=DEV_WORKSPACE_ID,
+                scan_id=self.scan_id,
                 user_id=DEV_USER_ID,
                 provider_name="template",
                 openai_api_key=None,
@@ -200,8 +216,8 @@ class AiExplanationTests(unittest.TestCase):
             db.commit()
             first = generate_ai_explanations(
                 db,
-                scan_id=self.scan_id,
                 workspace_id=DEV_WORKSPACE_ID,
+                scan_id=self.scan_id,
                 user_id=DEV_USER_ID,
                 provider_name="template",
                 openai_api_key=None,
@@ -213,8 +229,8 @@ class AiExplanationTests(unittest.TestCase):
             db.commit()
             second = generate_ai_explanations(
                 db,
-                scan_id=self.scan_id,
                 workspace_id=DEV_WORKSPACE_ID,
+                scan_id=self.scan_id,
                 user_id=DEV_USER_ID,
                 provider_name="template",
                 openai_api_key=None,
@@ -227,8 +243,8 @@ class AiExplanationTests(unittest.TestCase):
         with SessionLocal() as db:
             generate_ai_explanations(
                 db,
-                scan_id=self.scan_id,
                 workspace_id=DEV_WORKSPACE_ID,
+                scan_id=self.scan_id,
                 user_id=DEV_USER_ID,
                 provider_name="template",
                 openai_api_key=None,
@@ -240,8 +256,8 @@ class AiExplanationTests(unittest.TestCase):
             with self.assertRaises(AiRateLimitExceeded):
                 generate_ai_explanations(
                     db,
-                    scan_id=self.scan_id,
                     workspace_id=DEV_WORKSPACE_ID,
+                    scan_id=self.scan_id,
                     user_id=DEV_USER_ID,
                     provider_name="template",
                     openai_api_key=None,
@@ -257,13 +273,13 @@ class AiExplanationTests(unittest.TestCase):
 
     def test_ai_api_returns_429_when_rate_limited(self) -> None:
         with patch("app.ai.service.settings.ai_rate_limit_max_requests", 0):
-            response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+            response = self.client.post(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 429)
         self.assertIn("rate limit", response.json()["detail"].lower())
 
     def test_cache_payload_contains_only_safe_result_data(self) -> None:
-        response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+        response = self.client.post(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
         self.assertEqual(response.status_code, 200)
 
         with SessionLocal() as db:
@@ -338,6 +354,7 @@ class AiExplanationTests(unittest.TestCase):
         with SessionLocal() as db:
             result = generate_ai_explanations(
                 db,
+                workspace_id=DEV_WORKSPACE_ID,
                 scan_id=self.scan_id,
                 provider_name="openai",
                 openai_api_key=None,
@@ -353,6 +370,7 @@ class AiExplanationTests(unittest.TestCase):
         with SessionLocal() as db, patch("app.ai.service.build_provider", return_value=provider):
             first = generate_ai_explanations(
                 db,
+                workspace_id=DEV_WORKSPACE_ID,
                 scan_id=self.scan_id,
                 provider_name="openai",
                 openai_api_key="test-key",
@@ -360,6 +378,7 @@ class AiExplanationTests(unittest.TestCase):
             )
             second = generate_ai_explanations(
                 db,
+                workspace_id=DEV_WORKSPACE_ID,
                 scan_id=self.scan_id,
                 provider_name="openai",
                 openai_api_key="test-key",
@@ -374,14 +393,17 @@ class AiExplanationTests(unittest.TestCase):
         self.assertEqual(cache_rows, [])
 
     def test_unknown_provider_is_rejected(self) -> None:
-        response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
-        self.assertEqual(response.status_code, 200)
-
         with patch("app.api.ai.settings.ai_provider", "unexpected"):
             response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
+            generation_response = self.client.post(
+                f"/api/v1/scans/{self.scan_id}/ai-explanations",
+                headers=DEV_AUTH_HEADERS,
+            )
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("AI_PROVIDER", response.json()["detail"])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["provider"], "template")
+        self.assertEqual(generation_response.status_code, 400)
+        self.assertIn("AI_PROVIDER", generation_response.json()["detail"])
 
     def test_provider_receives_only_safe_finding_projection(self) -> None:
         provider = CapturingProvider()
@@ -401,6 +423,7 @@ class AiExplanationTests(unittest.TestCase):
         with SessionLocal() as db, patch("app.ai.service.build_provider", return_value=provider):
             generate_ai_explanations(
                 db,
+                workspace_id=DEV_WORKSPACE_ID,
                 scan_id=self.scan_id,
                 provider_name="openai",
                 openai_api_key="test-key",
@@ -443,6 +466,7 @@ class AiExplanationTests(unittest.TestCase):
             with SessionLocal() as db, patch("app.ai.service.build_provider", return_value=provider):
                 generate_ai_explanations(
                     db,
+                    workspace_id=DEV_WORKSPACE_ID,
                     scan_id=self.scan_id,
                     provider_name="openai",
                     openai_api_key="test-key",
@@ -465,20 +489,25 @@ class AiExplanationTests(unittest.TestCase):
                 db.commit()
 
     def test_openai_response_is_parsed_without_network_when_mocked(self) -> None:
-        response_body = {
-            "output_text": (
-                '{"summary":"Mocked summary","explanations":[{"finding_id":"'
-                + self.finding_id
-                + '","summary":"Mocked finding","why_it_matters":"Because configured controls are missing",'
-                '"recommended_action":"Add CSP","owasp_mapping":"A05:2021","limitations":"Provided data only"}]}'
-            )
+        output_text = (
+            '{"summary":"Mocked summary","explanations":[{"finding_id":"'
+            + self.finding_id
+            + '","summary":"Mocked finding","why_it_matters":"Because configured controls are missing",'
+            '"recommended_action":"Add CSP","owasp_mapping":"A05:2021","limitations":"Provided data only"}]}'
+        )
+        completed_event = {
+            "type": "response.completed",
+            "response": {"output_text": output_text},
         }
-        with patch("app.ai.service.httpx.post") as post:
-            post.return_value.raise_for_status.return_value = None
-            post.return_value.json.return_value = response_body
+        with patch("app.ai.service.httpx.Client") as client_class:
+            client = client_class.return_value.__enter__.return_value
+            response = client.stream.return_value.__enter__.return_value
+            response.raise_for_status.return_value = None
+            response.iter_bytes.return_value = [f"data: {json.dumps(completed_event)}\n\n".encode()]
             with SessionLocal() as db:
                 result = generate_ai_explanations(
                     db,
+                    workspace_id=DEV_WORKSPACE_ID,
                     scan_id=self.scan_id,
                     provider_name="openai",
                     openai_api_key="test-key",
@@ -489,9 +518,74 @@ class AiExplanationTests(unittest.TestCase):
         self.assertFalse(result.fallback_used)
         self.assertEqual(result.summary, "Mocked summary")
         self.assertEqual(result.explanations[0].summary, "Mocked finding")
-        request_json = post.call_args.kwargs["json"]
+        client_class.assert_called_once_with(timeout=20.0, follow_redirects=False, trust_env=False)
+        request_json = client.stream.call_args.kwargs["json"]
+        self.assertTrue(request_json["stream"])
         self.assertNotIn("raw_artifact_ref", str(request_json))
         self.assertNotIn("raw-artifact-id", str(request_json))
+
+    def test_openai_stream_rejects_oversized_response_without_echoing_content(self) -> None:
+        provider = OpenAiProvider(api_key="test-key", model="test-model")
+        with (
+            patch("app.ai.service.OPENAI_RESPONSE_MAX_BYTES", 8),
+            patch("app.ai.service.httpx.Client") as client_class,
+        ):
+            response = client_class.return_value.__enter__.return_value.stream.return_value.__enter__.return_value
+            response.raise_for_status.return_value = None
+            response.iter_bytes.return_value = [b"sensitive-provider-content"]
+            with self.assertRaises(AiExplanationError) as raised:
+                provider.explain(scan_id=self.scan_id, findings=())
+
+        self.assertIn("size limit", str(raised.exception))
+        self.assertNotIn("sensitive-provider-content", str(raised.exception))
+
+    def test_openai_stream_rejects_malformed_and_non_json_output_safely(self) -> None:
+        provider = OpenAiProvider(api_key="test-key", model="test-model")
+        malformed_cases = (
+            b"data: provider-secret-not-json\n\n",
+            b'data: {"type":"response.completed","response":{"output_text":"not-json-provider-secret"}}\n\n',
+        )
+        for payload in malformed_cases:
+            with self.subTest(payload=payload), patch("app.ai.service.httpx.Client") as client_class:
+                response = client_class.return_value.__enter__.return_value.stream.return_value.__enter__.return_value
+                response.raise_for_status.return_value = None
+                response.iter_bytes.return_value = [payload]
+                with self.assertRaises(AiExplanationError) as raised:
+                    provider.explain(scan_id=self.scan_id, findings=())
+                self.assertNotIn("provider-secret", str(raised.exception))
+
+    def test_ai_rate_limit_scope_uses_transaction_advisory_lock_on_postgres(self) -> None:
+        class FakeDialect:
+            name = "postgresql"
+
+        class FakeBind:
+            dialect = FakeDialect()
+
+        class FakeSession:
+            def __init__(self) -> None:
+                self.statements: list[str] = []
+                self.params: list[dict[str, int]] = []
+
+            def get_bind(self) -> FakeBind:
+                return FakeBind()
+
+            def execute(self, statement, params):  # type: ignore[no-untyped-def]
+                self.statements.append(str(statement))
+                self.params.append(params)
+
+        fake_session = FakeSession()
+        lock_ai_rate_limit_scope(
+            fake_session,  # type: ignore[arg-type]
+            workspace_id=DEV_WORKSPACE_ID,
+            user_id=DEV_USER_ID,
+            action="interactive_ai_explanations",
+            provider="openai",
+            model="test-model",
+            config_hash="config-hash",
+        )
+
+        self.assertEqual(fake_session.statements, ["SELECT pg_advisory_xact_lock(:lock_key)"])
+        self.assertIsInstance(fake_session.params[0]["lock_key"], int)
 
 
 class CapturingProvider:

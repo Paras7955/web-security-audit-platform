@@ -2,8 +2,8 @@
 
 ## First start
 
-Requirements: Docker with Compose v2, Python 3, and enough local resources for a
-PostgreSQL database, ZAP, a browser crawl, and a 640 MiB worker tmpfs.
+Requirements: Docker with Compose v2, Python 3, and local capacity for
+PostgreSQL, ZAP, and the worker tmpfs.
 
 ```bash
 python3 scripts/bootstrap_env.py
@@ -11,202 +11,269 @@ docker compose --profile maintenance run --rm osv-db-update
 docker compose up --build
 ```
 
-The bootstrap creates `.env` from `.env.example` when absent and fills only
-missing/placeholder secrets. It never replaces an existing
-`AUTH_PROFILE_SECRET_KEY`. Protect `.env` as credential material.
+Bootstrap creates or merges `.env`, adds newly introduced settings, generates
+missing local secrets, and writes mode `0600`. It never replaces a non-empty
+`AUTH_PROFILE_SECRET_KEY`. It also derives the Compose `DATABASE_URL` from the
+generated PostgreSQL credentials unless you supplied an external database URL.
 
 Check:
 
 - UI: <http://localhost:3001>
-- API liveness: <http://localhost:8000/health>
-- API readiness: <http://localhost:8000/ready>
+- API liveness/readiness: <http://localhost:8000/health> and
+  <http://localhost:8000/ready>
 - API docs: <http://localhost:8000/docs>
-- demo target: <http://localhost:3000>
+- bundled demo: <http://localhost:3000>
+- protected platform state: `/api/v1/ops/health`
 
-The protected `/api/v1/ops/health` response is the useful component view. It
-reports safe database, worker, queue, ZAP, and artifact status without secrets or
-raw exceptions.
+The current UI expects local development auth. OIDC and repository-asset APIs
+work through API clients, but their frontend integration is deferred.
 
 ## Configuration rules
 
-- Keep `APP_ENV=local`, `AUTH_MODE=dev`, and `AUTH_PROVIDER=dev` together only
-  for local development.
-- Use exact JSON arrays for `CORS_ORIGINS` and `TRUSTED_HOSTS`; wildcards are
-  rejected.
-- Keep `TRUSTED_PROXY_IPS=[]` unless TLS terminates at a reverse proxy. If it
-  does, list only the immediate proxy's exact IP address and configure that
-  proxy to replace, not preserve, client-supplied forwarding headers.
-- Keep `ZAP_API_KEY`, database password, development token, Fernet keys, and AI
-  keys out of Git.
-- A Fernet key may end in `=`. Do not accidentally truncate it or add literal
-  quote characters.
-- Do not expose ZAP or change loopback port bindings without a separate network
-  security review.
-- Do not submit target credentials over a non-local HTTP deployment. ScopeHarbor
-  rejects create/rotate requests unless they use HTTPS or the supplied
-  loopback-only local workflow.
-- Do not raise scan/staging limits until host capacity and denial-of-service
-  implications have been reviewed.
+- Local UI: keep `APP_ENV=local`, `AUTH_MODE=dev`, and `AUTH_PROVIDER=dev`.
+- Use exact JSON arrays for `CORS_ORIGINS`, `TRUSTED_HOSTS`, and
+  `TRUSTED_PROXY_IPS`; wildcards and non-IP proxies are rejected.
+- Keep `.env`, database/dev/OIDC tokens, Fernet/relay/ZAP secrets, and AI keys
+  out of Git.
+- Fernet keys commonly end in `=`. Do not truncate them or add literal quotes.
+- Never expose ZAP/relay/worker or replace loopback port bindings without a
+  separate network review.
+- Non-local target credential submission must use direct HTTPS or an exact
+  trusted proxy that replaces client-supplied forwarding headers.
+- Review host capacity and denial-of-service impact before raising any limit.
+- `SCAN_RELAY_URL` and `SCAN_RELAY_SECRET` must be configured together. The
+  secret must contain at least 32 bytes.
+
+`.env.example` is the complete settings reference. `/ready` rejects invalid
+cross-field relationships rather than running with unsafe defaults.
 
 ## OIDC mode
 
-For a production-like local deployment:
+For production-like local use:
 
 1. Set `AUTH_MODE=required`.
-2. Set `AUTH_PROVIDER` to a stable non-`dev` provider identifier.
-3. Set exact `AUTH_OIDC_ISSUER`, `AUTH_OIDC_AUDIENCE`, and
-   `AUTH_OIDC_JWKS_URL` values.
-4. Remove/leave unused the dev-only settings.
-5. Configure the frontend or an API client to supply the bearer token.
-6. Rebuild and confirm `/ready` plus an authenticated workspace request.
+2. Set a stable non-`dev` `AUTH_PROVIDER`.
+3. Configure exact `AUTH_OIDC_ISSUER`, `AUTH_OIDC_AUDIENCE`, and
+   `AUTH_OIDC_JWKS_URL`.
+4. Stop using the development token.
+5. Use an API client/front end that supplies the OIDC bearer token.
+6. Rebuild and confirm `/ready` plus one protected request.
 
-ScopeHarbor accepts RS256 tokens with valid issuer/audience and required `sub`,
-`exp`, and `iat` claims. First login creates one user-owned default workspace.
+ScopeHarbor accepts RS256 tokens with strict issuer/audience and required
+`sub`, `exp`, and `iat`. First login creates one user-owned default workspace.
 
-## Allowlisted targets
+## Allowlist schema v2
 
-`config/scan-allowlist.yml` is trusted operator configuration. Each entry must
-name an exact Docker-service URL, supported modes, scheme/host/port tuple,
-redirect cap, and whether it is a local demo. ScopeHarbor 1.0 accepts launchable
-guarded targets over HTTP only.
+`config/scan-allowlist.yml` is trusted launch authority. Start from
+[`../config/scan-allowlist.example.yml`](../config/scan-allowlist.example.yml).
 
-Changing the allowlist expands scanner authority. Review the target's ownership,
-Compose network location, profile needs, and SSRF implications before editing.
-Restart API and worker after a configuration change and run:
+Each policy declares:
 
-```bash
-docker compose run --rm backend python -m app.maintenance verify --apply
+- stable `id` and display `name`;
+- exact HTTP/HTTPS `base_url`, including optional base-path scope;
+- `connection.kind`: `compose_service` or `host_gateway`;
+- exact connection host/port and, for host gateway, exact expected IPs;
+- eligible `profile_engines`;
+- `disposable_demo`;
+- TLS `system` or `custom_ca` trust;
+- redirect limit from 0–10.
+
+Only `scopeharbor-passive` should be configured for an ordinary local
+application. ZAP engines require all required engines for that profile and an
+explicitly compatible disposable HTTP demo.
+
+### Add another Compose service
+
+1. Attach the application service to ScopeHarbor's `scan-target` network.
+2. Give it a stable Compose service name and internal port.
+3. Add an exact `compose_service` policy whose connection host matches that
+   service.
+4. Restart API, worker, and relay.
+5. Validate with `GET /api/v1/targets/policies`, then
+   `POST /api/v1/targets/validate`.
+6. Create the target with `permission_confirmed=true`.
+
+The browser-facing host URL is not scanner authority; the policy uses the
+internal service identity.
+
+### Add a same-machine HTTP application
+
+1. Ensure the application listens on an interface reachable through Docker's
+   host gateway. On Linux, loopback-only listeners are normally unreachable;
+   Docker Desktop supplies the usual host-local path.
+2. Resolve the canonical gateway alias from the relay:
+
+   ```bash
+   docker compose run --rm relay getent hosts scopeharbor-host
+   ```
+
+3. Add a `host_gateway` policy using origin/connection host
+   `scopeharbor-host`, the application port, and the exact returned RFC1918
+   address in `expected_ips`.
+4. Permit only `passive-web: ["scopeharbor-passive"]`.
+5. Restart/validate/create as above.
+
+Do not substitute a LAN address, public address, `localhost`, `127.0.0.1`, or a
+metadata/link-local address.
+
+### Add same-machine HTTPS
+
+The certificate SAN must match the configured origin host.
+
+- Use `tls: {trust: system}` for a publicly/system-trusted local certificate.
+- For a local CA, place one reviewed PEM bundle below `config/` and set:
+
+  ```yaml
+  tls:
+    trust: custom_ca
+    ca_bundle_path: /app/config/certs/local-development-ca.pem
+  ```
+
+The bundle must be a regular file no larger than 1 MiB. There is no insecure
+mode; wrong hostname, expired, malformed, or untrusted certificates fail.
+
+### Scope/path rules
+
+`base_url: https://scopeharbor-host:8443/app/` permits `/app` and descendants
+on segment boundaries, not `/application`. Userinfo, query, fragment, invalid
+percent escapes, encoded NUL/dot/slash/backslash, raw backslash, repeated
+separators, and dot traversal are rejected.
+
+Redirects must stay on the same origin and inside the base path. Credential
+headers are never carried across a policy/origin boundary.
+
+### Policy changes and reauthorization
+
+The fingerprint covers connection identity, engines, disposable-demo status,
+TLS policy/CA digest, scope, and redirect limit. Changing launch authority makes
+saved targets stale and blocks scans. Review the new policy, then call:
+
+```http
+POST /api/v1/targets/{target_id}/reauthorize
+{"permission_confirmed": true}
 ```
 
-Without `--apply`, `verify` only describes the validation it would run.
+If origin or base path changed, create a new target. Do not rewrite historical
+identity.
 
-The operator UI can remove an inactive saved target. This archives the target
-instead of cascading through evidence history. ScopeHarbor refuses the action
-while a scan is queued or running, clears target authorization and attached
-repository/auth configuration, and preserves scans, findings, reports, risk
-scores, and audit events. Use this when a target should no longer be launchable;
-it is not a data-erasure workflow.
+Legacy v1 entries (`schemes`, `hosts`, `ports`, `allowed_modes`,
+`local_demo`) still load for upgrade compatibility when they describe one exact
+HTTP Compose service. Migrate them to v2. Legacy AJAX entries do not make AJAX
+launchable.
 
-## Repository roots
+## Repository assets
 
 The supplied Compose file mounts this repository read-only at
-`/app/repositories/security-project`. To assess another local repository, add an
-explicit read-only bind mount below `/app/repositories`, then configure the
-target with that absolute in-container path. Never mount the host filesystem or
-a broad home directory.
+`/app/repositories/security-project`. To scan another repository, add one narrow
+read-only bind mount below `/app/repositories`; never mount a home directory or
+host filesystem root.
 
-Ordinary scans have no egress, do not clone or resolve dependencies, and never
-run repository code. Update the OSV cache separately:
+Create a repository asset through `/api/v1/repository-assets` using the absolute
+in-container path and explicit permission confirmation. ScopeHarbor stores only
+the relative identity. Each scan snapshots it, so later path changes cannot
+retarget queued work.
+
+The existing target `repo_path` route remains a frontend compatibility adapter
+and creates/reuses an asset at launch. Prefer repository assets for API clients.
+
+Ordinary scans never access a remote or resolve dependencies. Refresh offline
+OSV data before first use, after cache recreation, and at least weekly:
 
 ```bash
 docker compose --profile maintenance run --rm osv-db-update
 ```
 
-Update before first use, after recreating the cache volume, and at least weekly
-while dependency scanning is in use. The worker treats data older than the
-configured maximum as unavailable and emits a warning receipt.
+Stale/missing OSV data yields a warning receipt and skip, never online fallback.
 
 ## Demo seed
-
-Demo data is opt-in and idempotent:
 
 ```bash
 docker compose run --rm -e DEMO_SEED_ENABLED=true backend python -m app.demo_seed
 ```
 
-Use it only with local dev auth and the supplied repository/allowlist layout.
-It writes fixed sample records and safe report files; it performs no scans or
-network activity.
+Seed preflights every fixed ID and refuses cross-workspace collisions before
+writing. It is idempotent, contains safe normalized data, and performs no
+network/scan work.
 
 ## Maintenance
 
-All maintenance actions are dry-run-first and return a JSON summary:
+Preview:
 
 ```bash
 docker compose run --rm backend python -m app.maintenance verify
 docker compose run --rm backend python -m app.maintenance orphan-artifacts
+docker compose run --rm backend python -m app.maintenance scheduled-artifacts
 docker compose run --rm backend python -m app.maintenance prune-operational --older-than-days 30
 docker compose run --rm backend python -m app.maintenance backfill-risk
 ```
 
-After reviewing candidates, repeat the intended command with `--apply`.
+Repeat only the reviewed command with `--apply`.
 
-- `verify` checks configuration, database head, and scanner versions.
-- `orphan-artifacts` removes only unreferenced scan artifact directories.
-- `prune-operational` removes old AI request/cache, API rate-limit, and worker
-  heartbeat rows.
-- `backfill-risk` creates missing `risk-v1` rows for completed legacy scans.
+- `verify`: configuration, schema, and scanner versions.
+- `orphan-artifacts`: unreferenced scan directories.
+- `scheduled-artifacts`: migration-recorded legacy artifact cleanup tasks.
+- `prune-operational`: old AI/cache/rate/heartbeat operational rows; heartbeat
+  age uses `last_seen_at`.
+- `backfill-risk`: missing immutable `risk-v1` rows.
 
 Maintenance never prunes audit logs, findings, reports, or scan history.
 
 ## Fernet key rotation
 
-Back up PostgreSQL before key rotation. Ensure no scans or auth-profile writes
-are active, then:
+Back up PostgreSQL and stop auth-profile/scan writes:
 
-1. Stop API and worker.
-2. Generate a new Fernet key locally.
-3. Set `AUTH_PROFILE_PREVIOUS_SECRET_KEY` to the old key.
-4. Set `AUTH_PROFILE_SECRET_KEY` to the new key.
-5. Start only the dependencies needed for the maintenance container.
-6. Preview and apply:
+1. Keep the old key as `AUTH_PROFILE_PREVIOUS_SECRET_KEY`.
+2. Set a newly generated Fernet key as `AUTH_PROFILE_SECRET_KEY`.
+3. Preview, then apply:
 
-```bash
-docker compose run --rm backend python -m app.maintenance reencrypt-auth-profiles
-docker compose run --rm backend python -m app.maintenance reencrypt-auth-profiles --apply
-```
+   ```bash
+   docker compose run --rm backend python -m app.maintenance reencrypt-auth-profiles
+   docker compose run --rm backend python -m app.maintenance reencrypt-auth-profiles --apply
+   ```
 
-7. Verify active profile metadata and a controlled passive scan.
-8. Remove `AUTH_PROFILE_PREVIOUS_SECRET_KEY`, restart normally, and protect the
-   backup according to its retention policy.
+4. Verify metadata and one controlled passive scan.
+5. Remove the previous key and restart.
 
-The command validates every active ciphertext before committing and never
-prints plaintext. Losing both the current key and a usable backup makes existing
-profile secrets unrecoverable.
+The command validates all active ciphertext before commit and never prints
+plaintext. Losing the key and backup makes existing secrets unrecoverable.
 
-## Backup and upgrade
+## Backup and troubleshooting
 
-Back up PostgreSQL, the `app-artifacts` volume, `.env`/secret records, and any
-required OSV cache policy before an upgrade. Reports reference artifact files;
-database-only backups are incomplete. Follow [`UPGRADING.md`](UPGRADING.md).
+Back up PostgreSQL, `app-artifacts`, `.env`/secret records, and policy/CA files
+together. Database-only backups are incomplete because report rows reference
+files. Follow [UPGRADING.md](UPGRADING.md).
 
-## Troubleshooting
+- `/ready` failure: check auth/Fernet/relay/ZAP settings, limits, policy/CA
+  files, storage, and schema head.
+- target stale: inspect the policy diff; reauthorize only if identity is
+  unchanged.
+- relay failure: verify exact expected IP, host listening interface, base path,
+  certificate hostname/trust, and relay health. Never enable insecure TLS.
+- worker degraded: inspect safe heartbeat/queue/receipt state and structured
+  logs; do not paste raw target/tool data into issues.
+- dependency warning: refresh the OSV cache.
+- stale development rows: use a clean temporary database for verification.
 
-- `/ready` failure: validate auth mode, Fernet/ZAP keys, exact CORS/host values,
-  paths, allowlist, limits, and migration head.
-- worker degraded: inspect structured worker logs, heartbeat age, queue depth,
-  scanner versions, OSV age, and lease state. Do not copy raw target/scanner data
-  into an issue.
-- dependency scan skipped: run the explicit OSV update and verify the named
-  volume is writable by the updater and read-only to the worker.
-- report unavailable: confirm the scan is eligible and the artifact volume is
-  mounted; do not manually bypass no-follow/path checks.
-- stale development data: use a new temporary database for verification instead
-  of deleting shared history casually.
-
-Use request IDs to correlate safe structured logs. Logs intentionally omit
-authorization values, bodies, query strings, raw exceptions, and scanner output.
+Logs intentionally omit query strings, authorization values, bodies, raw
+exceptions, and scanner output.
 
 ## Development verification
 
-Use the hash-locked environment and a disposable PostgreSQL database:
+Use Python `3.12.13`, the hash lock, and a disposable PostgreSQL database:
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/pip install --require-hashes -r backend/requirements-dev.txt
-.venv/bin/ruff check backend
+.venv/bin/ruff check backend scripts
 .venv/bin/pyright
 PYTHONPATH=backend .venv/bin/coverage run --branch -m unittest discover -s backend/tests
 .venv/bin/coverage report --fail-under=85
 .venv/bin/coverage json -o coverage.json
 .venv/bin/python scripts/check_security_coverage.py coverage.json
-cd frontend && npm ci && npm run lint && npm run build
 ```
 
-Set the backend's required database, Fernet, ZAP, artifact, repository, scanner
-config, and OSV paths for the test environment. Real adapter tests additionally
-require the pinned binaries and `SCOPEHARBOR_REAL_SCANNER_TESTS=1`.
-
-Before release, also run Alembic clean/upgrade tests, `pip-audit`, `npm audit`,
-both Docker image builds, Compose configuration/smoke tests, and controlled local
-passive, repository, active-demo, and modern-crawl scans.
+Also run frontend `npm ci`, lint, and build without changing frontend source;
+migration upgrades from zero/0008/0011; runtime+dev dependency audits; real
+pinned scanner fixtures; image builds; Compose hardening/readiness; SBOM;
+vulnerability review; and controlled local HTTP/HTTPS scans. The release
+checklist contains the complete sequence.

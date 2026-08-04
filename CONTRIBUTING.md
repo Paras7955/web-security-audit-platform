@@ -2,10 +2,9 @@
 
 Thank you for your interest in ScopeHarbor.
 
-This repository is currently **source-visible, not open source**. No license is
-granted; all reuse rights are reserved. Until a license and contribution terms
-are selected, external pull requests are not accepted and contributions cannot
-be assumed to confer reuse rights.
+This repository is available under the [MIT License](LICENSE). It is maintained
+as a personal portfolio project, so external pull requests may be reviewed at
+the maintainer's discretion and no response or merge commitment is offered.
 
 General non-sensitive feedback may be shared through repository channels when
 they are enabled. Report security defects privately using the process in
@@ -40,8 +39,9 @@ sanitized, and covered by adversarial fixtures. Public/cloud scanning,
 authenticated browser workflows, repository code execution, and online
 dependency resolution are outside current scope.
 
-## Licensing status
+## Licensing
 
-Do not add third-party code or assets whose terms have not been reviewed. The
-repository owner must choose and add a license before accepting outside code or
-describing ScopeHarbor as open source.
+Do not add third-party code, models, data, or assets whose terms have not been
+reviewed for compatibility with the MIT-licensed distribution. Contributions
+must not include secrets, proprietary target data, or material the contributor
+is not authorized to share.

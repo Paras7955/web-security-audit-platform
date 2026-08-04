@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
@@ -34,6 +35,7 @@ def crawl_site(
     client: GuardedHttpClient,
     max_depth: int,
     page_cap: int,
+    execution_checkpoint: Callable[[], None] | None = None,
 ) -> CrawlResult:
     start = normalize_target_url(start_url)
     queue: deque[tuple[str, int]] = deque([(start_url, 0)])
@@ -42,6 +44,8 @@ def crawl_site(
     errors: list[str] = []
 
     while queue and len(pages) < page_cap:
+        if execution_checkpoint is not None:
+            execution_checkpoint()
         raw_url, depth = queue.popleft()
         try:
             normalized = normalize_target_url(raw_url).normalized_url
@@ -56,7 +60,7 @@ def crawl_site(
         try:
             response = client.get(normalized)
         except (ScannerHttpError, TargetUrlError, ValueError) as exc:
-            errors.append(f"{normalized}: {exc}")
+            errors.append(str(exc))
             continue
 
         metadata = extract_html_metadata(response.body)

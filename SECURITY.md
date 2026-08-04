@@ -5,157 +5,185 @@ Use it only against applications, services, and repositories you own or have
 explicit permission to assess. You are responsible for confirming the target,
 scope, timing, data-handling rules, and authorization before every scan.
 
-This repository is source-visible and currently unlicensed. It is not a hosted
-service and does not provide a public scanning service.
+ScopeHarbor is an MIT-licensed portfolio project, not a hosted scanning service.
+No response-time, remediation-time, warranty, or support commitment is offered.
 
-## Report a vulnerability in ScopeHarbor
+## Report a vulnerability
 
-Use GitHub Private Vulnerability Reporting from this repository's **Security**
-tab and select **Report a vulnerability**. Include:
+Use GitHub Private Vulnerability Reporting from the repository's **Security**
+tab. Include the affected version/commit, a concise impact statement, minimal
+reproduction steps using a target you control, the crossed boundary, and a
+suggested mitigation if known.
 
-- the affected version or commit;
-- a concise impact statement;
-- minimal reproduction steps using a target you control;
-- the security boundary that was crossed;
-- a suggested mitigation, if known.
+Never include real credentials, cookies, raw production traffic, personal data,
+third-party secrets, or an exploit against a system you do not own. Use
+synthetic canaries. The repository owner must enable Private Vulnerability
+Reporting before this channel exists; until then, do not publish sensitive
+details in a public issue.
 
-Do not include real credentials, cookies, raw production traffic, personal data,
-or third-party secrets. Use a synthetic canary when evidence is necessary.
-
-The repository owner must enable GitHub Private Vulnerability Reporting before
-this channel is available. Until it is enabled, do not publish an exploit or
-sensitive report in a public issue. General, non-sensitive defects may still be
-reported through ordinary repository channels when those channels are open.
-
-No response-time or remediation-time commitment is currently offered.
-
-## Supported version
-
-Security fixes target the current `main` branch and the latest published source
-version. Historical phase branches are development records and are not supported
-release lines.
+Security fixes target current `main` and the latest published source version.
+Historical phase branches are development records, not supported release lines.
 
 ## Defensive-use boundaries
 
-ScopeHarbor enforces these boundaries in backend and worker code:
+ScopeHarbor enforces the following in backend, relay, worker, database, and
+Compose configuration:
 
-- Every launchable web target must exactly match
-  `config/scan-allowlist.yml`; arbitrary URLs are denied.
-- Users must confirm authorization when creating a target and submit the
-  profile-specific acknowledgement codes when starting a scan.
-- ZAP active and Client Spider profiles are limited to allowlist entries marked
-  as local demos.
-- The guarded web scanner accepts exact HTTP Docker-service targets only. HTTPS
-  is rejected until destination-pinned TLS can verify certificate and SNI
-  correctly.
-- Scanner requests disable automatic redirects. Each redirect is normalized,
-  rematched to the allowlist, revalidated for SSRF, and connected to the
-  validated destination IP.
-- ZAP uses a generated API key and exact target/context scope. It is not
-  published to the host network.
-- Cancelling a scan stops it at a safe checkpoint. Active demo and browser scans
-  are never automatically retried after worker interruption.
-- A worker owns a scan through a bounded lease. Stale work fails with the safe
-  `worker_interrupted` code rather than being silently adopted.
+- Every launchable web target must exactly match trusted allowlist schema v2.
+  Arbitrary public, cloud, metadata-service, private-LAN, loopback, link-local,
+  multicast, and unspecified destinations are denied.
+- A policy fixes exact origin/base path, `compose_service` or `host_gateway`
+  connection identity, HTTP/HTTPS trust, redirect cap, eligible engines, and
+  whether the target is a disposable demo.
+- Target roots cannot contain userinfo, queries, or fragments. Paths reject
+  encoded separators, backslashes, repeated separators, and dot traversal.
+  Prefixes match on segment boundaries.
+- Launch-authority changes invalidate the policy fingerprint and require
+  reauthorization. Origin or base-path changes require a new target.
+- Users must confirm authorization and submit profile-specific acknowledgement
+  codes before launch.
+- General local applications receive bounded ScopeHarbor passive scanning only.
+  ZAP Passive, Active Demo, and Client Spider require an explicitly compatible,
+  disposable HTTP demo policy.
+- Historical AJAX scans remain readable, but AJAX execution is retired.
 
-Do not weaken these controls for convenience, examples, tests, or UI behavior.
-Adding an allowlist entry is a security decision, not general application data.
+Do not weaken these controls for examples, tests, demos, or UI convenience.
+Editing the allowlist changes scanner authority and requires security review.
 
-## Repository-scanner isolation
+## Guarded relay and network isolation
 
-Repository scans accept only absolute existing directories below the configured
-`REPO_SCAN_ROOT`. ScopeHarbor stages regular files into a per-scan `0700`
-ephemeral workspace and excludes symlinks, special files, `.git`, dependency
-directories, caches, and build output.
+The worker has no direct host/public route. It sends a signed, expiring,
+single-use capability to a minimal non-root relay. The relay independently
+reloads and validates the allowlist, capability, destination policy, method,
+headers, body limit, and destination IP.
 
-The worker uses trusted ScopeHarbor configurations with pinned Gitleaks and
-OSV-Scanner binaries. It does not honor repository-supplied ignore/config files,
-clone code, access remotes during a scan, resolve dependencies, run package
-managers, build projects, execute hooks, or execute repository code. Gitleaks
-uses full redaction. OSV runs only against a deliberately updated offline
-database. Raw scanner output is bounded, parsed from ephemeral storage, and
-discarded.
+The relay:
 
-The explicit OSV database update command is the only repository-scanner network
-operation. A missing or stale OSV database results in a safe warning and skipped
-dependency adapter, not an online fallback.
+- permits only `GET`;
+- strips hop-by-hop and routing headers;
+- caps request/response headers and response bodies;
+- disables redirects;
+- dials the validated IP while preserving configured `Host` and TLS SNI;
+- supports system trust or one confined operator CA bundle;
+- has no insecure TLS mode;
+- receives no database, artifact, ZAP, AI, repository, or platform-auth access;
+- emits no URL, credential, body, or target-derived logs.
+
+Redirects are handled outside the relay and must stay on the same origin and
+inside the configured base path. Every hop receives allowlist, path, SSRF, and
+IP revalidation. Credentials are never forwarded across an origin or policy
+boundary.
+
+Compose separates data, scanner-control, scan-target, host-access,
+operator-access, and updater networks. Only the relay receives host-gateway
+access. Do not add a public/host route to the worker.
+
+## Repository isolation
+
+Repository scans use workspace-scoped `RepositoryAsset` records. The stored
+identity is a relative path below `REPO_SCAN_ROOT`; launch snapshots that path,
+authorization time, creator, policy fingerprint, and acknowledgements. Workers
+execute only the immutable snapshot and recheck workspace ownership.
+
+The worker stages regular files into a per-scan `0700` ephemeral directory and
+excludes symlinks, special files, `.git`, dependencies, caches, and build output.
+It uses pinned Gitleaks and OSV-Scanner with ScopeHarbor-owned configuration. It
+never:
+
+- clones, fetches, or accesses repository remotes during a scan;
+- installs packages, resolves dependencies, builds, runs hooks/scripts, or
+  executes repository code;
+- trusts repository-supplied scanner/ignore configuration;
+- falls back to network access when the offline OSV database is absent or stale.
+
+Raw scanner output is bounded, parsed from ephemeral storage, and discarded.
+Gitleaks output is fully redacted. Only normalized safe findings and tool
+receipts are persisted.
 
 ## Authentication and workspace isolation
 
-Local development auth is accepted only under explicit local/dev configuration,
-uses constant-time token comparison, and must not use example credentials.
-Production-like authentication requires an OIDC bearer token with strict
-issuer, audience, RS256 signature, `sub`, `exp`, and `iat` validation.
+Local development auth is accepted only with explicit
+`APP_ENV=local`/dev-mode settings and constant-time bearer comparison.
+Production-like use requires strict OIDC issuer, audience, RS256 signature,
+`sub`, `exp`, and `iat` validation.
 
-Every protected API lookup is scoped by the authenticated workspace. Direct IDs
-must never be treated as authorization. Worker jobs persist their workspace and
-user context and reject mismatches.
+Every protected service/API lookup includes authenticated workspace context.
+Direct IDs are never authorization. Worker jobs persist and revalidate workspace
+context before execution.
 
-Target auth profiles are not platform identities. Supported profile secrets are
-Fernet-encrypted at rest, never returned by the API, and injected only into the
-guarded passive HTTP client. Browser/ZAP authentication, login automation, and
-password-form workflows are not supported. Rotation and revocation are blocked
-while a nonterminal scan references a profile; revocation destroys encrypted
-material and leaves only a history-safe tombstone.
+Target auth profiles are not platform identities. Supported secrets are
+Fernet-encrypted, write-only, and injected only into ScopeHarbor passive
+requests through the relay. They never enter ZAP, browser scans, repository
+scans, findings, reports, AI, receipts, status, artifacts, logs, or audits.
 
-Keep `AUTH_PROFILE_SECRET_KEY`, its temporary previous key, development tokens,
-OIDC settings, ZAP keys, database passwords, and AI provider keys in local
-environment configuration. Never commit them.
+Plaintext auth-profile create/rotate requests are accepted only when
+`APP_ENV=local`. Non-local requests require direct HTTPS or an exact trusted
+proxy IP asserting HTTPS. Rotation, revocation, attachment, target updates, and
+scan launch follow one profile→target→scan transaction-lock order and revalidate
+state after locking.
 
-## Data minimization and redaction
+Keep `.env`, `AUTH_PROFILE_SECRET_KEY`, previous Fernet keys, development/OIDC
+tokens, relay/ZAP/database secrets, and AI keys out of Git.
 
-All persistence boundaries must independently sanitize their input. Scanner
-claims such as `redaction_applied` are not trusted. Before any database or
-artifact write, ScopeHarbor removes URL userinfo, queries, and fragments; caps
-free text; redacts credential-like material; and converts failures into stable
-operator-safe codes and messages.
+## Execution safety
 
-The following must not cross database, artifact, API, report, audit, cache, log,
-or external-AI boundaries:
+A worker owns a scan through a bounded lease renewed by a separate database
+session. Every execution-state write is fenced by `lease_owner`. Lease loss,
+cancellation, or deadline expiry aborts execution.
 
-- raw HTTP request or response bodies;
+Passive requests, ZAP polling, and repository processes check cancellation,
+deadline, and lease ownership. Scanner subprocesses use isolated process groups
+and terminate descendants on abort. ZAP clients ignore inherited proxy
+environment, disable redirects, request explicit stop operations, and keep the
+advisory lock until external work is confirmed stopped.
+
+Active/browser work is not automatically replayed after interruption.
+
+## Data minimization
+
+Every boundary independently sanitizes and caps input; source-provided redaction
+flags are never trusted. These values must not cross database, artifact, API,
+report, AI, cache, audit, or log boundaries:
+
+- raw HTTP request/response bodies or passive crawl summaries;
 - cookies, authorization values, API keys, passwords, or session material;
 - raw ZAP/Gitleaks/OSV output;
-- raw provider errors, tracebacks, or internal exception details;
+- raw provider errors, exceptions, or tracebacks;
 - absolute repository paths;
-- URLs containing userinfo, queries, or fragments;
-- unredacted finding evidence.
+- URL userinfo, queries, or fragments;
+- unredacted evidence or target-controlled markup.
 
-Reports use normalized safe projections, atomic no-follow writes, restrictive
-file permissions, HTML escaping, and a strict report content security policy.
-The optional external AI provider receives only a bounded safe projection and
-validated structured output; it never receives repository or modern-crawl
-findings.
+Reports use normalized projections, idempotent uniqueness, Markdown-structure
+escaping, safe dynamic fences, HTML escaping, atomic no-follow writes,
+restrictive permissions, and report CSP. External AI receives a bounded safe
+projection only for eligible web profiles, streams under a hard response cap,
+and must return incrementally valid structured output. GET never initiates
+external paid/network work.
 
-If a canary secret appears in any persisted or returned surface, treat it as a
-security defect and stop the affected workflow.
+If a canary appears in any persisted or returned surface, stop the affected
+workflow and treat it as a security defect.
 
 ## Operational expectations
 
-- Run the bootstrap before first use and protect the generated `.env`.
-- Keep container digests and dependency locks reviewed and current.
-- Update the OSV offline database deliberately before dependency scans.
+- Run bootstrap after every upgrade; it merges new settings and preserves a
+  non-empty user-managed Fernet key.
+- Review every allowlist/CA change and reauthorize affected targets.
+- Keep container digests and hash locks reviewed and current.
+- Update OSV deliberately before repository dependency scans.
 - Review maintenance dry-runs before adding `--apply`.
 - Never automatically prune audit logs, findings, reports, or scan history.
-- Use a clean temporary database for release verification and migration tests.
-- Restrict API CORS origins and trusted hosts to exact operator-controlled
-  values.
-- Treat `/health` as liveness only; use authenticated platform health and
-  operator logs for diagnostics.
+- Use a clean temporary database for release and migration verification.
+- Keep CORS, trusted hosts, and trusted proxy IPs exact.
+- Treat `/health` as liveness only; use `/ready`, protected platform health, and
+  safe structured diagnostics for readiness.
 
 ## Explicit non-goals
 
-ScopeHarbor 1.0 does not provide:
+ScopeHarbor 1.1 does not provide arbitrary public/cloud scanning, hosted
+scanning, mutually hostile multi-user isolation, RBAC/team administration,
+authenticated browser sessions, login automation, business-logic/IDOR testing,
+remote repository cloning, dependency installation, Nuclei, Semgrep/full SAST,
+PDF export, or a guarantee that a target is secure.
 
-- arbitrary public or cloud scanning;
-- authorization for any target;
-- multi-tenant SaaS hardening, RBAC, or team administration;
-- authenticated browser sessions, login automation, or business-logic tests;
-- user-to-user IDOR test automation;
-- Nuclei, Semgrep, or full SAST coverage;
-- remote repository cloning or dependency installation;
-- PDF reports;
-- a guarantee that an assessed target is secure.
-
-Security findings are signals for qualified human review. Scanner output can be
-incomplete, incorrect, or context-dependent.
+Findings are signals for qualified human review and can contain false positives
+or false negatives.

@@ -162,7 +162,7 @@ class RiskDashboardTests(unittest.TestCase):
         incomplete = self.client.get(f"/api/v1/scans/{first_scan_id}/comparison?baseline_scan_id={queued_scan_id}", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(cross_target.status_code, 400)
-        self.assertIn("same target", cross_target.json()["detail"])
+        self.assertIn("same subject", cross_target.json()["detail"])
         self.assertEqual(incomplete.status_code, 400)
         self.assertIn("completed scan", incomplete.json()["detail"])
 

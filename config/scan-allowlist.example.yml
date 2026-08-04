@@ -1,0 +1,57 @@
+# Allowlist schema v2 examples. Copy only the entries you need into
+# scan-allowlist.yml, replace every example value, then reauthorize affected
+# targets through the API. These examples never permit public or private-LAN
+# destinations.
+version: 2
+targets:
+  # Any exact HTTP service attached to ScopeHarbor's scan-target network.
+  - id: local-compose-app
+    name: Local Compose Application
+    base_url: "http://my-local-app:8080/app/"
+    connection:
+      kind: compose_service
+      host: my-local-app
+      port: 8080
+    profile_engines:
+      passive-web: ["scopeharbor-passive"]
+    disposable_demo: false
+    tls:
+      trust: system
+    max_redirects: 3
+
+  # A same-machine HTTP application reached through Docker's host gateway.
+  # Resolve scopeharbor-host from inside the relay container and pin the exact
+  # resulting address below. Do not substitute a LAN or public address.
+  - id: local-host-http
+    name: Same-Machine HTTP Application
+    base_url: "http://scopeharbor-host:8081/"
+    connection:
+      kind: host_gateway
+      host: scopeharbor-host
+      port: 8081
+      expected_ips: ["REPLACE_WITH_EXACT_HOST_GATEWAY_IP"]
+    profile_engines:
+      passive-web: ["scopeharbor-passive"]
+    disposable_demo: false
+    tls:
+      trust: system
+    max_redirects: 3
+
+  # A same-machine HTTPS application using a confined operator CA bundle.
+  # The certificate must include scopeharbor-host in its SANs. There is no
+  # insecure TLS mode.
+  - id: local-host-https
+    name: Same-Machine HTTPS Application
+    base_url: "https://scopeharbor-host:8443/"
+    connection:
+      kind: host_gateway
+      host: scopeharbor-host
+      port: 8443
+      expected_ips: ["REPLACE_WITH_EXACT_HOST_GATEWAY_IP"]
+    profile_engines:
+      passive-web: ["scopeharbor-passive"]
+    disposable_demo: false
+    tls:
+      trust: custom_ca
+      ca_bundle_path: "/app/config/certs/local-development-ca.pem"
+    max_redirects: 3

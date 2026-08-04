@@ -109,6 +109,7 @@ def rotate_auth_profile(
 ) -> AuthProfileRead:
     require_secure_credential_transport(request)
     profile = _locked_profile(db, auth_profile_id, principal.workspace_id)
+    _lock_profile_targets(db, profile)
     if profile.revoked_at is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Revoked auth profiles cannot be rotated.")
     _reject_in_use(db, profile)
@@ -145,6 +146,7 @@ def revoke_auth_profile(
     db: Session = Depends(get_db),
 ) -> AuthProfileRead:
     profile = _locked_profile(db, auth_profile_id, principal.workspace_id)
+    _lock_profile_targets(db, profile)
     if profile.revoked_at is not None:
         return auth_profile_to_read(profile)
     _reject_in_use(db, profile)
@@ -185,17 +187,35 @@ def _locked_profile(db: Session, profile_id: str, workspace_id: str) -> AuthProf
 
 def _reject_in_use(db: Session, profile: AuthProfile) -> None:
     in_use = db.scalar(
-        select(Scan.id).where(
+        select(Scan.id)
+        .where(
             Scan.workspace_id == profile.workspace_id,
             Scan.auth_profile_id == profile.id,
             Scan.status.in_(NONTERMINAL_SCAN_STATUSES),
-        ).limit(1)
+        )
+        .order_by(Scan.id.asc())
+        .with_for_update()
+        .limit(1)
     )
     if in_use is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Auth profile cannot change while a nonterminal scan references it.",
         )
+
+
+def _lock_profile_targets(db: Session, profile: AuthProfile) -> None:
+    list(
+        db.scalars(
+            select(Target)
+            .where(
+                Target.workspace_id == profile.workspace_id,
+                Target.auth_profile_id == profile.id,
+            )
+            .order_by(Target.id.asc())
+            .with_for_update()
+        ).all()
+    )
 
 
 def auth_profile_to_read(profile: AuthProfile) -> AuthProfileRead:
@@ -230,6 +250,8 @@ def require_secure_credential_transport(request: Request, config: Settings = set
 
 
 def _is_local_request(request: Request, config: Settings) -> bool:
+    if config.app_env.strip().lower() != "local":
+        return False
     client_host = request.client.host if request.client is not None else ""
     try:
         if ip_address(client_host).is_loopback:
@@ -239,7 +261,7 @@ def _is_local_request(request: Request, config: Settings) -> bool:
 
     # Docker Desktop may expose a loopback-bound host port through a bridge IP.
     # This exception is limited to explicit local mode and an exact local Host.
-    return config.app_env.strip().lower() == "local" and request.url.hostname in {
+    return request.url.hostname in {
         "localhost",
         "127.0.0.1",
         "::1",

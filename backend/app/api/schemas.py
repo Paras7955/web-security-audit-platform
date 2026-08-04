@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.contracts import CONTRACTS
 from app.security.sanitization import sanitize_metadata
@@ -23,11 +23,18 @@ KNOWN_ACKNOWLEDGEMENTS = _known_acknowledgements()
 
 
 class ScanCreate(BaseModel):
-    target_id: str = Field(min_length=1, max_length=64)
+    target_id: str | None = Field(default=None, min_length=1, max_length=64)
+    repository_asset_id: str | None = Field(default=None, min_length=1, max_length=64)
     scan_profile_id: str = Field(min_length=1, max_length=80)
     acknowledgements: set[str] = Field(max_length=20)
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_subject(self) -> "ScanCreate":
+        if (self.target_id is None) == (self.repository_asset_id is None):
+            raise ValueError("Provide exactly one of target_id or repository_asset_id.")
+        return self
 
     @field_validator("acknowledgements")
     @classmethod
@@ -48,7 +55,10 @@ class ScanFailureRead(BaseModel):
 
 class ScanRead(BaseModel):
     id: str
-    target_id: str
+    target_id: str | None
+    repository_asset_id: str | None = None
+    subject_type: str = "web_target"
+    subject_id: str
     scan_profile_id: str
     status: str
     current_step: str | None
@@ -67,6 +77,7 @@ class FindingRead(BaseModel):
     id: str
     scan_id: str
     target_id: str | None = None
+    repository_asset_id: str | None = None
     title: str
     severity: str
     confidence: str
@@ -95,23 +106,32 @@ class FindingLifecycleUpdate(BaseModel):
 
 
 class SuppressionRuleCreate(BaseModel):
-    target_id: str = Field(min_length=1, max_length=64)
+    target_id: str | None = Field(default=None, min_length=1, max_length=64)
+    repository_asset_id: str | None = Field(default=None, min_length=1, max_length=64)
     dedupe_key: str | None = Field(default=None, max_length=500)
     severity: str | None = Field(default=None, max_length=40)
     source_tool: str | None = Field(default=None, max_length=100)
     reason: str = Field(min_length=1, max_length=2000)
     expires_at: datetime | None = None
 
+    @model_validator(mode="after")
+    def validate_subject(self) -> "SuppressionRuleCreate":
+        if (self.target_id is None) == (self.repository_asset_id is None):
+            raise ValueError("Provide exactly one of target_id or repository_asset_id.")
+        return self
+
 
 class SuppressionRuleRead(BaseModel):
     id: str
-    target_id: str
+    target_id: str | None
+    repository_asset_id: str | None = None
     dedupe_key: str | None
     severity: str | None
     source_tool: str | None
     reason: str
     created_by_user_id: str
     expires_at: datetime | None
+    revoked_at: datetime | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -125,6 +145,7 @@ class TagRead(BaseModel):
     id: str
     label: str
     created_at: datetime
+    archived_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -236,6 +257,14 @@ class TargetCreate(BaseModel):
     auth_profile_id: str | None = Field(default=None, max_length=64)
 
 
+class TargetValidationCreate(BaseModel):
+    target_url: str = Field(min_length=1, max_length=2048)
+
+
+class TargetReauthorize(BaseModel):
+    permission_confirmed: bool
+
+
 class TargetRepoPathUpdate(BaseModel):
     repo_path: str | None = Field(default=None, max_length=2048)
 
@@ -253,6 +282,11 @@ class TargetRead(BaseModel):
     has_repo_path: bool
     auth_profile_id: str | None
     available_scan_profile_ids: list[str]
+    connection_class: str
+    scope_path: str
+    tls_trust: str
+    policy_status: str
+    policy_fingerprint: str | None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -265,6 +299,41 @@ class TargetValidationRead(BaseModel):
     available_scan_profile_ids: list[str]
     max_redirects: int
     local_demo: bool
+    connection_class: str
+    scope_path: str
+    tls_trust: str
+    policy_fingerprint: str
+
+
+class TargetPolicyRead(BaseModel):
+    allowlist_id: str
+    name: str
+    base_url: str
+    connection_class: str
+    scope_path: str
+    tls_trust: str
+    available_scan_profile_ids: list[str]
+    max_redirects: int
+    disposable_demo: bool
+    policy_fingerprint: str
+
+
+class RepositoryAssetCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    repo_path: str = Field(min_length=1, max_length=2048)
+    permission_confirmed: bool
+
+
+class RepositoryAssetRead(BaseModel):
+    id: str
+    name: str
+    relative_path: str
+    permission_confirmed: bool
+    authorization_confirmed_at: datetime | None
+    archived_at: datetime | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AuthProfileCreate(BaseModel):
@@ -314,7 +383,8 @@ class CursorPage[PageItem](BaseModel):
 
 class RiskScoreRead(BaseModel):
     id: str
-    target_id: str
+    target_id: str | None
+    repository_asset_id: str | None = None
     scan_id: str | None
     scoring_model_version: str
     score: int
@@ -329,13 +399,22 @@ class RiskScoreRead(BaseModel):
     def safe_input_summary(cls, value: object) -> dict[str, Any]:
         if not isinstance(value, dict):
             return {}
-        allowed = {"finding_count", "severity_counts", "confidence_counts", "weighted_total", "scan_profile_id"}
+        allowed = {
+            "finding_count",
+            "severity_counts",
+            "confidence_counts",
+            "weighted_total",
+            "scan_profile_id",
+        }
         return {str(key): item for key, item in value.items() if key in allowed}
 
 
 class DashboardScanSummaryRead(BaseModel):
     id: str
-    target_id: str
+    target_id: str | None
+    repository_asset_id: str | None = None
+    subject_type: str = "web_target"
+    subject_id: str
     target_name: str
     scan_profile_id: str
     status: str
@@ -346,12 +425,17 @@ class DashboardScanSummaryRead(BaseModel):
 
 class DashboardOverviewRead(BaseModel):
     targets_count: int
+    repository_assets_count: int = 0
     scans_count: int
     completed_scans_count: int
     findings_count: int
     severity_counts: dict[str, int]
     latest_risk_score: RiskScoreRead | None
     recent_scans: list[DashboardScanSummaryRead]
+    posture_basis: str = "latest completed scan per subject and profile"
+    current_posture_score: RiskScoreRead | None = None
+    historical_findings_count: int = 0
+    historical_severity_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class TargetDashboardRead(BaseModel):
@@ -364,6 +448,26 @@ class TargetDashboardRead(BaseModel):
     severity_counts: dict[str, int]
     latest_risk_score: RiskScoreRead | None
     recent_scans: list[DashboardScanSummaryRead]
+    posture_basis: str = "latest completed scan per subject and profile"
+    current_posture_score: RiskScoreRead | None = None
+    historical_findings_count: int = 0
+    historical_severity_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class RepositoryDashboardRead(BaseModel):
+    repository_asset_id: str
+    repository_asset_name: str
+    relative_path: str
+    scan_count: int
+    completed_scan_count: int
+    findings_count: int
+    severity_counts: dict[str, int]
+    latest_risk_score: RiskScoreRead | None
+    recent_scans: list[DashboardScanSummaryRead]
+    posture_basis: str = "latest completed scan per subject and profile"
+    current_posture_score: RiskScoreRead | None = None
+    historical_findings_count: int = 0
+    historical_severity_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class FindingChangeRead(BaseModel):
@@ -376,7 +480,10 @@ class FindingChangeRead(BaseModel):
 
 
 class ScanComparisonRead(BaseModel):
-    target_id: str
+    target_id: str | None
+    repository_asset_id: str | None = None
+    subject_type: str = "web_target"
+    subject_id: str
     baseline_scan_id: str
     comparison_scan_id: str
     scoring_model_version: str

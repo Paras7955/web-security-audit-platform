@@ -11,6 +11,7 @@ from app.demo_seed import (
     FINDING_SEEDS,
     JUICE_TARGET_ID,
     LATEST_SCAN_ID,
+    REPO_ASSET_ID,
     REPO_SCAN_ID,
     REPO_TARGET_ID,
     seed_demo_data,
@@ -21,6 +22,7 @@ from app.models import (
     FindingOccurrenceState,
     FindingState,
     ReportArtifact,
+    RepositoryAsset,
     RiskScore,
     Scan,
     SuppressionRule,
@@ -47,6 +49,7 @@ class DemoSeedTests(unittest.TestCase):
 
             self.assertEqual(first, second)
             self.assertEqual(second.targets, 2)
+            self.assertEqual(second.repository_assets, 1)
             self.assertEqual(second.scans, 3)
             self.assertEqual(second.findings, len(FINDING_SEEDS))
             self.assertEqual(second.reports, 4)
@@ -54,6 +57,7 @@ class DemoSeedTests(unittest.TestCase):
 
             with session() as db:
                 self.assertEqual(db.query(Target).filter(Target.id.in_([JUICE_TARGET_ID, REPO_TARGET_ID])).count(), 2)
+                self.assertEqual(db.query(RepositoryAsset).filter(RepositoryAsset.id == REPO_ASSET_ID).count(), 1)
                 self.assertEqual(db.query(Scan).filter(Scan.id.in_([BASELINE_SCAN_ID, LATEST_SCAN_ID, REPO_SCAN_ID])).count(), 3)
                 self.assertEqual(db.query(Finding).filter(Finding.id.in_([seed.id for seed in FINDING_SEEDS])).count(), len(FINDING_SEEDS))
                 self.assertEqual(db.query(ReportArtifact).filter(ReportArtifact.id.like("demo-report-%")).count(), 4)
@@ -156,10 +160,11 @@ def cleanup_demo_seed() -> None:
         db.execute(delete(ReportArtifact).where(ReportArtifact.id.like("demo-report-%")))
         db.execute(delete(RiskScore).where(RiskScore.id.like("demo-risk-%")))
         db.execute(delete(FindingOccurrenceState).where(FindingOccurrenceState.finding_id.in_([seed.id for seed in FINDING_SEEDS])))
-        db.execute(delete(FindingState).where(FindingState.target_id.in_([JUICE_TARGET_ID, REPO_TARGET_ID])))
+        db.execute(delete(FindingState).where(FindingState.id.like("demo-state-%")))
         db.execute(delete(SuppressionRule).where(SuppressionRule.id.like("demo-suppression-%")))
         db.execute(delete(Finding).where(Finding.id.in_([seed.id for seed in FINDING_SEEDS])))
         db.execute(delete(Scan).where(Scan.id.in_([BASELINE_SCAN_ID, LATEST_SCAN_ID, REPO_SCAN_ID])))
+        db.execute(delete(RepositoryAsset).where(RepositoryAsset.id == REPO_ASSET_ID))
         db.execute(delete(Target).where(Target.id.in_([JUICE_TARGET_ID, REPO_TARGET_ID])))
         db.execute(delete(AuthIdentity).where(AuthIdentity.id == "demo-auth-identity"))
         db.execute(delete(Workspace).where(Workspace.id == "demo-seed-other-workspace"))

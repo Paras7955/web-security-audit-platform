@@ -28,9 +28,13 @@ USER 10001:10001
 EXPOSE 8000
 
 FROM base AS api
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header", "--no-access-log"]
 
 FROM base AS worker
 COPY --from=gitleaks --chown=scopeharbor:scopeharbor /usr/bin/gitleaks /usr/local/bin/gitleaks
 COPY --from=osv-scanner --chown=scopeharbor:scopeharbor /osv-scanner /usr/local/bin/osv-scanner
 CMD ["python", "-m", "worker.main"]
+
+FROM base AS relay
+EXPOSE 8090
+CMD ["uvicorn", "relay.main:app", "--host", "0.0.0.0", "--port", "8090", "--no-server-header", "--no-access-log", "--workers", "1"]

@@ -2,87 +2,93 @@
 
 ## Scope
 
-This model covers ScopeHarbor 1.0 running locally through the supplied Docker
-Compose configuration. It focuses on malicious or malformed scan targets,
-repositories, scanner output, identities, provider output, and local
-misconfiguration. Host compromise, malicious Docker/OS kernels, and a fully
-compromised operator account are outside the application boundary.
+This model covers ScopeHarbor 1.1 running locally with the supplied Compose
+topology. It addresses malicious/malformed targets, redirects, DNS, repositories,
+scanner/provider output, identities, concurrent operations, and local
+misconfiguration. A compromised host/kernel/container runtime or fully
+compromised operator account is outside the application boundary.
 
 ## Assets
 
-- Platform identities and workspace-owned records.
-- Target auth-profile secrets and local environment secrets.
-- Authorized target applications and their availability.
-- Local repository contents and filesystem paths.
-- Findings, reports, risk scores, audit history, and operator trust in results.
-- Scanner scope, destination integrity, and worker availability.
+- Platform identities, workspace records, and authorization history.
+- Target credentials, local secrets, and relay capabilities.
+- Authorized applications and their availability.
+- Repository contents, relative scope identities, and host paths.
+- Findings, reports, scores, audit history, and operator trust in results.
+- Destination integrity, scan scope, leases, and scanner availability.
 
 ## Trust boundaries
 
 1. Browser to loopback frontend/API.
-2. Bearer token to authenticated workspace principal.
-3. API to PostgreSQL and report storage.
-4. API/worker configuration to allowlist and filesystem roots.
-5. Worker to target network and ZAP.
-6. Worker to untrusted repository contents and scanner processes.
-7. Normalized findings to reports, caches, logs, audits, and optional AI.
-8. One-shot OSV updater to the external advisory source.
+2. Bearer token to authenticated workspace.
+3. API/worker to PostgreSQL and report storage.
+4. Trusted operator allowlist/root/CA configuration to launch authority.
+5. Worker to minimal relay through signed capabilities.
+6. Relay to exact Docker/same-machine target.
+7. Worker to ZAP and untrusted repository/tool processes.
+8. Normalized findings to reports, API, audit, cache, logs, and optional AI.
+9. One-shot OSV updater and CI dependency/vulnerability tooling to the network.
 
 ## Threats and controls
 
 | Threat | Primary controls | Residual concern |
 | --- | --- | --- |
-| Unauthorized or public scanning | exact static allowlist, authorization confirmation, profile acknowledgements, local-demo flags | operator can deliberately edit local config |
-| SSRF/DNS rebinding | URL normalization, HTTP-only support, IP policy, destination pinning, per-hop validation, no automatic redirects | Docker/network configuration remains trusted |
-| ZAP scope escape | internal-only daemon, API key, exact context, destination pinning, local-demo restriction, advisory lock, time/alert caps | third-party scanner defects |
-| Cross-workspace IDOR | bearer principal, workspace predicates on direct/list reads, persisted worker context | future routes must preserve the pattern |
-| Credential disclosure | Fernet encryption, secret-free API schemas, constant-time dev auth, redaction, safe logs/errors/audits | host/env access can reveal local secrets |
-| Malicious repository | root confinement, regular-file-only staging, excluded trees, trusted config, no code/build/hooks, tmpfs and resource caps | content parsers/tool defects |
-| Symlink/path traversal | resolved root checks, relative persisted path, no-follow artifact/report handling, symlink exclusion | privileged host mutation outside container boundary |
-| Scanner-output injection | bounded output, JSON/schema checks, independent sanitization, HTML escaping, report CSP | novel secret patterns may require redactor updates |
-| Raw data sent to AI | safe projection, finding/payload caps, profile restrictions, structured-output validation, template default | external provider is still a separate processor |
-| Provider error leakage | stable fallback codes and generic messages; raw errors not persisted/returned | local process diagnostics must stay structured |
-| Queue duplication/stale jobs | row locking, worker leases, heartbeat, attempt counters, interruption failure, no active/browser retry | hard termination can leave external work briefly running |
-| Resource exhaustion | request, page, crawl, staging, file, output, finding, timeout, rate, and tmpfs caps | operator can raise local limits unsafely |
-| Unsafe upgrade data | migration cleanup of errors/URLs/text/stubs, report/risk invalidation, retired AJAX handling | backups retain historical raw data under operator control |
-| Report script/content injection | HTML escaping, no-follow atomic writes, restrictive modes, strict response CSP | downloaded HTML opened outside ScopeHarbor loses response headers |
-| Audit/history deletion | maintenance excludes audit, finding, report, and scan history | direct database administration remains trusted |
+| Unauthorized/public scanning | exact static v2 policy, connection class/IP pin, authorization/acknowledgements, no worker route | trusted operator can deliberately edit config |
+| SSRF/DNS rebinding | prohibited address classes, all-answer validation, signed policy fingerprint, relay re-resolution/pinning, every-hop validation | Docker/host routing remains trusted |
+| Path/redirect escape | canonical path rules, segment-boundary prefix, ambiguous encoding rejection, same-origin/base-path redirect policy | target parsing defects |
+| TLS interception | verified SNI/hostname, system or confined CA trust, no insecure mode | operator-controlled CA can expand trust |
+| Capability theft/replay | HMAC, short expiry, request binding, in-memory single-use nonce cache | relay restart forgets consumed nonces; expiry remains limiting |
+| Relay privilege creep | non-root/read-only/capability-free, minimal env/mounts, no data/AI/ZAP/repo access | container-runtime compromise |
+| ZAP scope/key escape | internal daemon, exact context, API-key header, `trust_env=False`, no redirects, demo-only policy, serialized cleanup | third-party scanner defect |
+| Cross-workspace IDOR | principal plus workspace predicates in API/services/worker | future routes must preserve pattern |
+| Credential disclosure | Fernet, write-only schemas, HTTPS submission rule, passive-relay-only injection, multi-boundary redaction | local host/env access can reveal secrets |
+| Credential race | profile→target→scan row locks, post-lock revalidation, immutable scan references | direct database administration |
+| Malicious repository | immutable asset snapshot, root confinement, regular-file staging, trusted config, no code/build/hooks/network | scanner/parser defect |
+| Symlink/path race | relative identity, resolved-root checks, staging metadata checks, no-follow writes | privileged concurrent host mutation |
+| Scanner/provider injection | bounded streaming/output, schemas, independent sanitization, Markdown/HTML escaping/CSP | novel secret formats need redactor updates |
+| AI disclosure/cost | eligible profiles only, safe projection, atomic reservation, explicit POST, bounded incremental JSON | external provider remains a processor |
+| Duplicate/stale worker | row claim, separate-session renewal, owner-fenced writes, lease checkpoints | abrupt process death can delay detection to lease expiry |
+| Orphan external work | process groups, descendant termination, ZAP stop/cleanup before unlock | unresponsive third-party process/container |
+| Resource exhaustion | request/page/crawl/body/header/staging/tool/finding/time/rate/tmpfs caps and startup cross-validation | trusted operator can raise limits |
+| Report race/injection | database uniqueness, nested transaction handling, safe Markdown fences, HTML escaping, atomic no-follow writes | downloaded HTML lacks API response CSP |
+| Unsafe legacy data | migration cleanup/invalidation tasks; no old-migration rewrite | backups retain pre-upgrade data |
+| Log leakage | access log disabled, queryless structured paths, safe request IDs/codes | host/container engine diagnostics |
+| Supply-chain compromise | hashes/digests, pinned actions, pinned Gitleaks/OSV, digest-pinned Trivy, SBOM, audits | upstream compromise before pin review |
 
-## Abuse cases that must remain denied
+## Abuse cases that remain denied
 
-- Starting a scan for a URL that is not an exact allowlist match.
-- Adding an HTTPS target before pinned TLS has correct SNI/certificate checks.
-- Following a redirect to a different service, host, port, or prohibited IP.
-- Attaching another workspace's target, scan, report, finding, or auth profile.
-- Sending an auth-profile secret through ZAP, Client Spider, reports, AI, or logs.
-- Scanning a repository outside `REPO_SCAN_ROOT` or through a symlink.
-- Honoring repository `.gitleaks*`, OSV config, ignore, package-manager, or build
-  instructions.
-- Falling back to online dependency resolution during an ordinary scan.
-- Persisting raw scanner output, response bodies, query strings, tracebacks, or
-  provider errors.
-- Automatically retrying a browser or active scan after worker interruption.
+- A URL outside an exact operator policy, including public/private-LAN targets.
+- Metadata, loopback, link-local, mixed-DNS, rebinding, or IPv4-mapped bypasses.
+- Userinfo/query/fragment target roots or ambiguous/traversal paths.
+- Redirects outside origin/base path or credential forwarding across policy.
+- Unverified HTTPS, wrong hostname, expired certificate, or insecure TLS.
+- ZAP use on a generalized/non-disposable target.
+- Another workspace's target, asset, scan, finding, report, or auth profile.
+- Auth material in ZAP, repositories, reports, AI, receipts, logs, or status.
+- Repository scope outside `REPO_SCAN_ROOT`, symlinks, remote access, dependency
+  resolution, repository-supplied scanner config, or code execution.
+- Raw bodies/output/query strings/exceptions/evidence crossing a persistence or
+  output boundary.
+- External AI generation caused by GET.
+- State writes after worker lease ownership is lost.
+- Automatic active/browser retry after interruption.
 
-## Security invariants for review
+## Review invariants
 
-Changes affecting outbound requests, URLs, persistence, reports, AI, auth,
-artifacts, repositories, migrations, or worker recovery require tests at both
-the success and denial boundary. Use synthetic canary values and verify their
-absence from database rows, files, API responses, captured logs, audit metadata,
-AI request/cache entries, and reports.
+Changes to requests, URLs, policies, capabilities, persistence, reports, AI,
+auth, artifacts, repositories, migrations, or worker recovery require success
+and denial tests. Use synthetic canaries and verify absence from database,
+artifacts, reports, AI/cache, audit, API, and captured real-server logs.
 
-A new feature that needs broader network access, executes repository code, uses
-authenticated browser sessions, or permits public targets is not an incremental
-implementation detail; it changes this threat model and requires explicit scope
-approval.
+Broader network access, repository execution, authenticated browser workflows,
+or public targets change this threat model and require explicit approval.
 
 ## Accepted limitations
 
-- A trusted local operator controls `.env`, Compose, allowlist, filesystem
-  mounts, and Docker; deliberate unsafe reconfiguration is not preventable.
+- The local operator controls `.env`, Docker, mounts, policies, and CAs.
 - ScopeHarbor does not isolate mutually hostile operators on one deployment.
-- Static redaction cannot prove that every possible secret format is detected.
-- Third-party scanners may produce false positives, false negatives, or defects.
-- A downloaded HTML report is protected by escaping but not by the API response
-  CSP after it leaves ScopeHarbor.
+- Capability replay memory is process-local; short expiry limits restart risk.
+- Static redaction cannot prove every secret format is recognized.
+- Third-party tools can be wrong or defective.
+- Current frontend does not expose all 1.1 backend capabilities.
 - No scan result is a security guarantee.

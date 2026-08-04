@@ -1,75 +1,95 @@
 # ScopeHarbor
 
-**Local AppSec Audit Platform · 1.0.0**
+**Local AppSec Audit Platform · 1.1.0**
 
 ScopeHarbor is a defensive, local-first application security audit platform for
-targets and repositories you are authorized to test. It combines guarded web
-scanning, isolated repository analysis, normalized findings, risk tracking,
-reports, and optional AI-assisted explanations in one workspace-aware system.
+web applications and repositories you own or are explicitly authorized to test.
+It combines guarded web scanning, isolated repository analysis, normalized
+findings, current-posture risk tracking, reports, and optional AI explanations.
 
-ScopeHarbor is source-visible, not currently open source: no license is granted
-and all reuse rights are reserved. See [CONTRIBUTING.md](CONTRIBUTING.md).
+This is a portfolio project for local, single-operator use—not a hosted scanning
+service or a multi-tenant SaaS product. It is available under the
+[MIT License](LICENSE).
 
-## What it does
+## Capabilities
 
-- Runs a bounded passive crawl against an exact allowlisted HTTP service.
-- Runs ZAP passive and active-demo scans against configured local demo targets.
-- Uses ZAP Client Spider for a bounded modern web crawl.
-- Stages local repository files into an isolated workspace and runs pinned
-  Gitleaks and OSV-Scanner binaries without executing repository code.
-- Normalizes and redacts findings before they cross persistence, API, report,
-  audit, cache, log, or AI boundaries.
-- Tracks finding lifecycle, suppressions, tags, scan comparisons, and `risk-v1`
-  scores by workspace.
-- Produces restrictive Markdown and HTML reports from safe projections.
-- Supports encrypted bearer-token and static-header target auth profiles for the
-  guarded passive scanner only.
-- Provides a responsive operator workspace with dedicated overview, scanning,
-  findings, intelligence, credentials, and operations tabs, plus light/dark
-  themes and a reduced-motion-aware WebGL scope visualization.
+- Bounded passive scanning for exact configured Docker services and
+  same-machine applications.
+- Verified HTTP and HTTPS transport through a non-root guarded relay. HTTPS uses
+  system trust or an operator-mounted CA bundle; insecure TLS is not supported.
+- ZAP Passive, Active Demo, and Client Spider for explicitly compatible,
+  disposable HTTP demo containers only.
+- Workspace-scoped repository assets and immutable repository scan snapshots
+  below `REPO_SCAN_ROOT`.
+- Pinned Gitleaks and offline OSV-Scanner execution without cloning, installing,
+  building, running hooks, resolving dependencies, or executing repository code.
+- Normalized findings with lifecycle state, revocable suppressions, auditable
+  tags, scan comparisons, immutable `risk-v1`, and dynamic `posture-v1`.
+- Idempotent Markdown/HTML reports and deterministic template explanations.
+- Optional bounded external AI explanations with retrieval-only GET and
+  explicit generation POST behavior.
+- Encrypted bearer/static-header target credentials for passive requests only.
+- Lease-fenced, cancellable worker execution with safe scanner receipts,
+  structured logs, and dry-run-first maintenance.
 
-It does **not** scan arbitrary public URLs. Public cloud scanning, authenticated
-browser workflows, business-logic testing, RBAC/team administration, full SAST,
-and PDF export are outside the 1.0 scope.
+ScopeHarbor never accepts an arbitrary public URL. Private-LAN and public
+destinations remain denied.
 
 ## Safety model
 
-The scanner is deny-by-default. A web target must exactly match
-[`config/scan-allowlist.yml`](config/scan-allowlist.yml), the user must confirm
-authorization, and each scan must supply the acknowledgements published by
-`GET /api/v1/contracts`. Outbound web requests are revalidated for SSRF and
-bound to the validated destination IP; redirects are handled manually. The
-guarded scanner currently supports exact HTTP Docker-service targets only.
+Web authority comes from allowlist schema v2 in
+[`config/scan-allowlist.yml`](config/scan-allowlist.yml). A policy fixes the
+origin, base path, connection class, destination identity, transport trust,
+redirect cap, and eligible engines. Target creation also requires an explicit
+authorization confirmation.
 
-Repository scans accept only existing directories below `REPO_SCAN_ROOT`. They
-stage regular files while excluding symlinks, special files, `.git`, dependency
-trees, caches, and build output. Scans never clone repositories, run package
-managers, execute builds/scripts, or use repository-supplied scanner config.
+The worker cannot connect directly to host or public networks. Passive requests
+use short-lived, signed, single-use capabilities sent to the guarded relay. The
+relay independently validates the capability, allowlist, destination IP,
+method, headers, TLS policy, and response limits. It permits only `GET`, disables
+redirects, and preserves the configured HTTP `Host` and TLS SNI while dialing
+the validated IP. Redirects are followed by the worker only after same-origin,
+base-path, allowlist, and SSRF revalidation.
 
-Read [SECURITY.md](SECURITY.md) before changing scanner, auth, report, AI,
-repository, seed, or ZAP behavior. The full trust analysis is in
-[`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md).
+Changing launch authority makes saved targets stale. A stale target must be
+reauthorized; an origin or base-path change requires a new target so historical
+identity is never rewritten.
+
+Repository authority comes from a workspace-scoped `RepositoryAsset`. Scans
+persist the authorized relative path and acknowledgement snapshot and execute
+only that immutable snapshot.
+
+Queries may exist transiently while making a request, but URL userinfo, query,
+and fragment data never cross database, API, artifact, report, AI, cache, audit,
+or log boundaries. Raw bodies, cookies, credentials, scanner output, provider
+errors, and unredacted evidence are likewise prohibited.
+
+Read [SECURITY.md](SECURITY.md) and the
+[threat model](docs/THREAT_MODEL.md) before changing a trust boundary.
 
 ## Architecture
 
 ```text
-Browser -> Next.js UI -> FastAPI /api/v1 -> PostgreSQL
-                            |                  ^
-                            v                  |
-                         scan queue -> isolated worker
-                                        |       |
-                                        ZAP     Gitleaks + offline OSV
+Operator browser -> Next.js UI -> FastAPI /api/v1 -> PostgreSQL
+                                      |                  ^
+                                      v                  |
+                                  scan queue -> lease-fenced worker
+                                                     |          |
+                                             signed capability  |
+                                                     v          v
+                                            guarded relay     ZAP
+                                                 |       pinned repo tools
+                                    exact local target
 ```
 
-The API owns authentication, authorization, validation, pagination, and safe
-public projections. PostgreSQL holds workspace-scoped application state. A
-separate worker leases queued scans and writes only normalized findings and
-safe tool receipts. ZAP and the local demo target remain on an internal Compose
-network. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Compose separates data, scanner-control, scan-target, host-access,
+operator-access, and updater networks. Only the relay receives host-gateway
+access; the relay receives no database, artifact, ZAP, AI, repository, or
+platform-auth access. See [Architecture](docs/ARCHITECTURE.md).
 
 ## Quick start
 
-Requirements: Docker with Compose v2 and Python 3 for the environment bootstrap.
+Requirements: Docker with Compose v2 and Python 3.
 
 ```bash
 python3 scripts/bootstrap_env.py
@@ -77,180 +97,169 @@ docker compose --profile maintenance run --rm osv-db-update
 docker compose up --build
 ```
 
-The bootstrap creates or completes `.env` and does not overwrite an existing
-Fernet key. `AUTH_PROFILE_SECRET_KEY` is user-managed, must never be committed,
-and may end in `=`. Do not quote it in `.env` unless your environment format
-requires quoting.
+Bootstrap creates or merges `.env`, generates missing local secrets including
+`SCAN_RELAY_SECRET`, and keeps the Compose PostgreSQL URL consistent. It never
+replaces a non-empty user-managed `AUTH_PROFILE_SECRET_KEY`. A Fernet key may
+end in `=` and should not be quoted unless the environment format requires it.
 
-Open the UI at <http://localhost:3001>. The bundled target is available at
-<http://localhost:3000>. API documentation is at <http://localhost:8000/docs>.
+Open:
 
-To stop the stack:
+- UI: <http://localhost:3001>
+- API/docs: <http://localhost:8000/docs>
+- bundled Juice Shop: <http://localhost:3000>
+- readiness: <http://localhost:8000/ready>
+
+Stop without deleting local data:
 
 ```bash
 docker compose down
 ```
 
-Volumes retain PostgreSQL data, reports, and the OSV database. Add `--volumes`
-only when you intentionally want to delete local state.
+Add `--volumes` only when you intentionally want to remove PostgreSQL, reports,
+and the offline OSV cache.
 
-### Optional demo data
+### Current UI boundary
 
-Demo seeding is explicit, gated, fixed-ID, and idempotent:
+The existing UI supports local development authentication and the established
+target-based workflows. The backend also supports strict OIDC and first-class
+repository assets, but OIDC login UX and repository-asset UI integration are
+deferred to a frontend phase. No frontend source was changed for 1.1.0.
+
+### Demo data
+
+Demo seed is explicit, fixed-ID, collision-preflighted, idempotent, and performs
+no scan or network work:
 
 ```bash
 docker compose run --rm -e DEMO_SEED_ENABLED=true backend python -m app.demo_seed
 ```
 
-The seed contains illustrative normalized findings, not real secrets or raw
-scanner output.
+## Scanning another local application
+
+Use [`config/scan-allowlist.example.yml`](config/scan-allowlist.example.yml) as
+a schema v2 reference.
+
+- For another Compose application, attach it to `scan-target` and use an exact
+  `compose_service` policy.
+- For an application running on the same machine, use `host_gateway`, the
+  canonical `scopeharbor-host` name, and the exact gateway IP observed inside
+  the relay container.
+- A Linux-host application must listen on an interface reachable through the
+  Docker host gateway. Docker Desktop provides the normal host-local route.
+- For HTTPS, the certificate hostname must match the configured host. Use
+  system trust or mount one confined CA bundle below `/app/config`; there is no
+  certificate-verification bypass.
+- General local applications are eligible for the ScopeHarbor passive engine
+  only. Do not mark a target disposable merely to enable ZAP.
+
+Policies reject roots with userinfo, queries, or fragments and reject ambiguous
+encoded separators, backslashes, repeated separators, or dot traversal.
+Redirects must remain on the same origin and within the configured base path.
+Detailed migration and validation steps are in the
+[Operator Guide](docs/OPERATOR_GUIDE.md).
 
 ## Local services
 
 | Service | Host address | Purpose |
 | --- | --- | --- |
-| Frontend | `127.0.0.1:3001` | ScopeHarbor UI |
-| Backend | `127.0.0.1:8000` | API and documentation |
-| Juice Shop | `127.0.0.1:3000` | Authorized local demo target |
+| Frontend | `127.0.0.1:3001` | Current operator UI |
+| Backend | `127.0.0.1:8000` | API and OpenAPI documentation |
+| Juice Shop | `127.0.0.1:3000` | Bundled disposable demo |
 | PostgreSQL | `127.0.0.1:5432` | Local persistence |
-| ZAP | not published | Worker-only scanner service |
+| Worker | not published | Lease-owned scan execution |
+| Relay | not published | Guarded local-target transport |
+| ZAP | not published | Demo-only scanner daemon |
 
-Published ports bind to loopback by default and can be changed in `.env`.
-
-## Operator workspace
-
-The frontend separates daily work into six focused tabs instead of one long
-page:
-
-- **Overview** summarizes target, scan, finding, risk, readiness, and recent
-  activity signals.
-- **Targets & scans** manages the authorized target inventory, guarded scan
-  launch controls, searchable scan history, scanner receipts, and cancellation.
-- **Findings** provides severity and management filters, workspace/scan scope,
-  free-text search, lifecycle updates, suppressions, tags, and redacted detail.
-- **Intelligence** groups risk trends, same-target and same-profile comparisons,
-  safe reports, and bounded explanations.
-- **Credentials** contains target auth-profile creation, attachment, rotation,
-  and revocation.
-- **Operations** shows safe database, worker, queue, ZAP, and artifact readiness.
-
-The theme control persists locally in the browser. Animation respects reduced
-motion preferences, and the WebGL visualization has a non-WebGL fallback; no
-scanner or authorization control depends on it.
-
-Removing a saved target is history-preserving. ScopeHarbor blocks removal while
-the target has a nonterminal scan, then archives the target, clears its stored
-repository/auth attachment, and keeps scan, finding, report, risk, and audit
-history readable. This is intentionally not a cascading delete.
+Published ports bind to loopback by default.
 
 ## Authentication
 
-The generated local environment uses a high-entropy development bearer token.
-It is compiled into the local frontend image and accepted only when
-`APP_ENV=local`, `AUTH_MODE=dev`, and `AUTH_PROVIDER=dev`. Rebuild the frontend
+Local bootstrap generates a development bearer token. It is accepted only when
+`APP_ENV=local`, `AUTH_MODE=dev`, and `AUTH_PROVIDER=dev`; rebuild the frontend
 after changing it.
 
-For OIDC, set `AUTH_MODE=required`, use a non-`dev` provider name, and configure
-`AUTH_OIDC_ISSUER`, `AUTH_OIDC_AUDIENCE`, and `AUTH_OIDC_JWKS_URL`. Tokens must be
-RS256-signed and contain `sub`, `exp`, and `iat`. Development and OIDC settings
-cannot coexist. Every protected lookup is scoped to the authenticated workspace.
+Strict OIDC mode requires `AUTH_MODE=required`, a non-`dev` provider identifier,
+and exact issuer, audience, and JWKS URL values. Tokens must be RS256-signed and
+contain `sub`, `exp`, and `iat`. Every protected lookup remains workspace
+scoped.
 
-Target auth profiles are different from platform login. Their secrets are
-Fernet-encrypted, never returned by the API, and available only to future
-passive scans. Rotation changes the future secret. Revocation wipes ciphertext,
-detaches targets, and preserves a metadata tombstone. Either action is rejected
-while a nonterminal scan references the profile.
-
-The credential form accepts the target application's token or header value,
-never `AUTH_PROFILE_SECRET_KEY`. HTTP submission is permitted only through the
-supplied local-only workflow; non-local deployments must use HTTPS. If a trusted
-reverse proxy terminates TLS, configure its exact IP in `TRUSTED_PROXY_IPS`.
+Target auth profiles are separate from platform login. Secrets are
+Fernet-encrypted and write-only. Plaintext credential submission is permitted
+only in local mode; non-local access requires direct HTTPS or an exact trusted
+proxy that asserts HTTPS. Auth material can enter only guarded passive requests
+and never ZAP, repository scans, reports, AI, receipts, status, audit, or logs.
 
 ## Scan profiles
 
 | Profile | Engine | Constraints | Reports | AI |
 | --- | --- | --- | --- | --- |
-| `passive-web` | guarded crawler + passive checks | exact allowlist; optional static auth profile | yes | yes |
-| `active-demo` | ZAP spider/passive/active | local-demo only; explicit active acknowledgement | yes | yes |
-| `modern-web-crawl` | ZAP Client Spider | local-demo only; depth/time/scope caps | no | no |
-| `repository` | Gitleaks + offline OSV | local path below root; repository code never runs | yes | no |
+| `passive-web` | ScopeHarbor passive; optional ZAP Passive only when policy permits | exact v2 policy; optional static auth | yes | yes |
+| `active-demo` | passive checks + ZAP Active | explicitly compatible disposable HTTP demo | yes | yes |
+| `modern-web-crawl` | passive checks + ZAP Client Spider | explicitly compatible disposable HTTP demo | no | no |
+| `repository` | Gitleaks + offline OSV | repository asset below root; no code execution | yes | no |
 
-Historical completed AJAX scans remain readable. The old profile is not
-launchable, and any legacy nonterminal AJAX job fails with a safe retired-profile
-code.
+Historical AJAX records remain readable, but AJAX is not launchable.
 
-## Repository tools and OSV data
+## Repository tools
 
-The worker image pins Gitleaks `8.30.1` and OSV-Scanner `2.3.8`. Gitleaks runs in
-directory mode with full redaction. OSV-Scanner runs in source mode with
-`--offline-vulnerabilities` and `--no-resolve`. Scanner JSON exists only in
-bounded ephemeral storage and is discarded after normalization.
-
-Update the named OSV cache deliberately before dependency scanning and at least
-weekly while in use:
+The worker image pins Gitleaks `8.30.1` and OSV-Scanner `2.3.8`. Scanner output
+exists only in bounded ephemeral storage and is discarded after normalization.
+Update the offline OSV cache before first use and at least weekly while active:
 
 ```bash
 docker compose --profile maintenance run --rm osv-db-update
 ```
 
-This one-shot command is the only repository-scanner network operation. A
-missing or stale database skips the dependency adapter and completes the scan
-with a warning receipt; Gitleaks unavailability is fatal.
+A missing or stale database skips OSV with a warning receipt; it never falls
+back to online resolution during a scan.
 
 ## Reports and AI
 
-Reports contain normalized, escaped findings and are written atomically with
-restrictive permissions and no-follow path checks. HTML report responses carry
-a strict content security policy. PDF is not supported.
+Report generation is idempotent and race-safe. Markdown structure is escaped,
+code fences exceed any input fence, HTML is escaped, and files use atomic
+no-follow writes with restrictive permissions. PDF is not supported.
 
-AI defaults to the deterministic `template` provider. An external provider is
-optional and receives a bounded safe projection, never raw bodies, scanner
-artifacts, cookies, credentials, or unredacted evidence. Provider errors are
-reduced to stable fallback codes. Repository and modern-crawl findings are not
-sent to AI.
+`AI_PROVIDER=template` is deterministic and local. For an external provider,
+`POST /api/v1/scans/{id}/ai-explanations` explicitly performs generation;
+`GET` retrieves existing external results only. Provider responses are streamed
+under a hard cap and incrementally validated. Repository and modern-crawl data
+are never sent to an AI provider.
 
-## Operations
+## Operations and verification
 
-Root `GET /health` is a minimal liveness response. Protected
-`GET /api/v1/ops/health` reports safe component status. `GET /ready` validates
-configuration and the database migration head. API and worker startup fail
-closed on invalid auth, encryption, ZAP, limits, paths, allowlist, migration, or
-required-tool configuration.
+`/health` is liveness. `/ready` validates runtime configuration and schema
+`0012_portfolio_readiness`. Protected `/api/v1/ops/health` provides safe
+component state.
 
-The maintenance CLI is dry-run-first:
+Maintenance is dry-run-first:
 
 ```bash
 docker compose run --rm backend python -m app.maintenance verify
 docker compose run --rm backend python -m app.maintenance orphan-artifacts
+docker compose run --rm backend python -m app.maintenance scheduled-artifacts
 docker compose run --rm backend python -m app.maintenance prune-operational --older-than-days 30
 docker compose run --rm backend python -m app.maintenance backfill-risk
 ```
 
-Add `--apply` only after reviewing the JSON plan. Maintenance never prunes audit
-logs, findings, reports, or scan history automatically. Fernet key rotation is
-documented in [`docs/OPERATOR_GUIDE.md`](docs/OPERATOR_GUIDE.md).
+Add `--apply` only after reviewing the JSON plan. See the
+[Operator Guide](docs/OPERATOR_GUIDE.md), [API reference](docs/API.md),
+[upgrade guide](docs/UPGRADING.md), and
+[release checklist](docs/RELEASE_CHECKLIST.md).
 
-## API and verification
-
-All product endpoints live below `/api/v1`; there are no compatibility
-redirects. List endpoints return `{"items": [...], "next_cursor": "..."}` with
-a default limit of 50 and maximum of 200. Errors use
-`application/problem+json` and include a safe code and request ID. See
-[`docs/API.md`](docs/API.md).
-
-Local verification commands and expected environment setup are in
-[`docs/OPERATOR_GUIDE.md`](docs/OPERATOR_GUIDE.md). Upgrade instructions are in
-[`docs/UPGRADING.md`](docs/UPGRADING.md). The V1/phase record has moved to
-[`docs/DEVELOPMENT_HISTORY.md`](docs/DEVELOPMENT_HISTORY.md).
+CI runs migrations, backend branch/security coverage, Ruff, Pyright, dependency
+audits, frontend lint/build, Compose hardening/readiness, pinned Gitleaks,
+digest-pinned Trivy image scans, and CycloneDX SBOM generation.
 
 ## Limitations
 
-- ScopeHarbor is a local operator tool, not a multi-tenant SaaS control plane.
-- Only exact configured HTTP Docker-service targets are launchable in 1.0.
-- ZAP active and Client Spider profiles are restricted to marked local demos.
-- Static target credentials work only with the guarded passive HTTP client.
-- Findings require human validation; absence of findings is not proof of safety.
-- No license or support commitment is currently granted.
+- ScopeHarbor is a local portfolio project, not a hosted scanner or SaaS control
+  plane.
+- Authorization is the operator's responsibility; the platform cannot grant it.
+- General local web targets receive passive scans only.
+- Authenticated browser sessions, business-logic automation, RBAC/team
+  administration, public scanning, remote repository cloning, full SAST,
+  Nuclei, Semgrep, PDF export, and security guarantees remain out of scope.
+- Findings require human validation. No findings is not proof of safety.
 
 Use ScopeHarbor only on systems and repositories you own or are explicitly
 authorized to assess.

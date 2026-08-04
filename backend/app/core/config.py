@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     osv_database_path: str = "/var/lib/osv-scanner"
     osv_database_max_age_days: int = 7
     worker_lease_seconds: int = 45
+    scan_relay_url: str | None = None
+    scan_relay_secret: str = ""
+    scan_relay_request_timeout_seconds: int = 10
+    scan_relay_body_bytes: int = 65_536
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

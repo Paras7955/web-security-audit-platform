@@ -1,5 +1,5 @@
 {
-  "product": {"name": "ScopeHarbor", "version": "1.0.0", "subtitle": "Local AppSec Audit Platform"},
+  "product": {"name": "ScopeHarbor", "version": "1.1.0", "subtitle": "Local AppSec Audit Platform"},
   "scan_modes": ["passive", "active_demo", "modern_web_crawl", "repo"],
   "acknowledgement_codes": {
     "active-demo": ["authorized_target", "active_testing_local_demo"],

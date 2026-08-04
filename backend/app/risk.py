@@ -11,6 +11,7 @@ from app.core.contracts import ScanStatus
 from app.models import Finding, RiskScore, Scan
 
 SCORING_MODEL_VERSION = "risk-v1"
+POSTURE_MODEL_VERSION = "posture-v1"
 COMPLETED_SCAN_STATUSES = {ScanStatus.COMPLETED.value, ScanStatus.COMPLETED_WITH_WARNINGS.value}
 
 SEVERITY_WEIGHTS = {
@@ -90,6 +91,7 @@ def persist_scan_risk_score(db: Session, scan: Scan, findings: list[Finding]) ->
         select(RiskScore).where(
             RiskScore.workspace_id == scan.workspace_id,
             RiskScore.target_id == scan.target_id,
+            RiskScore.repository_asset_id == scan.repository_asset_id,
             RiskScore.scan_id == scan.id,
             RiskScore.scoring_model_version == calculated.scoring_model_version,
         )
@@ -101,6 +103,7 @@ def persist_scan_risk_score(db: Session, scan: Scan, findings: list[Finding]) ->
         id=str(uuid4()),
         workspace_id=scan.workspace_id,
         target_id=scan.target_id,
+        repository_asset_id=scan.repository_asset_id,
         scan_id=scan.id,
         scoring_model_version=calculated.scoring_model_version,
         score=calculated.score,
@@ -118,6 +121,7 @@ def persist_scan_risk_score(db: Session, scan: Scan, findings: list[Finding]) ->
             select(RiskScore).where(
                 RiskScore.workspace_id == scan.workspace_id,
                 RiskScore.target_id == scan.target_id,
+                RiskScore.repository_asset_id == scan.repository_asset_id,
                 RiskScore.scan_id == scan.id,
                 RiskScore.scoring_model_version == calculated.scoring_model_version,
             )
@@ -132,6 +136,7 @@ def read_scan_risk_score(db: Session, scan: Scan, findings: list[Finding]) -> Ri
         select(RiskScore).where(
             RiskScore.workspace_id == scan.workspace_id,
             RiskScore.target_id == scan.target_id,
+            RiskScore.repository_asset_id == scan.repository_asset_id,
             RiskScore.scan_id == scan.id,
             RiskScore.scoring_model_version == SCORING_MODEL_VERSION,
         )
@@ -143,6 +148,7 @@ def read_scan_risk_score(db: Session, scan: Scan, findings: list[Finding]) -> Ri
         id=f"calculated-{scan.id}"[:64],
         workspace_id=scan.workspace_id,
         target_id=scan.target_id,
+        repository_asset_id=scan.repository_asset_id,
         scan_id=scan.id,
         scoring_model_version=calculated.scoring_model_version,
         score=calculated.score,
@@ -162,7 +168,7 @@ def dedupe_findings(findings: list[Finding]) -> list[Finding]:
     return [best_by_key[key] for key in sorted(best_by_key)]
 
 
-def dedupe_findings_by_target(findings: list[tuple[str, Finding]]) -> list[tuple[str, Finding]]:
+def dedupe_findings_by_subject(findings: list[tuple[str, Finding]]) -> list[tuple[str, Finding]]:
     best_by_key: dict[tuple[str, str], tuple[str, Finding]] = {}
     for target_id, finding in sorted(findings, key=lambda item: (item[0], finding_sort_key(item[1]))):
         key = (target_id, finding.dedupe_key or finding.id)
@@ -170,6 +176,36 @@ def dedupe_findings_by_target(findings: list[tuple[str, Finding]]) -> list[tuple
         if current is None or finding_priority(finding) > finding_priority(current[1]):
             best_by_key[key] = (target_id, finding)
     return [best_by_key[key] for key in sorted(best_by_key)]
+
+
+dedupe_findings_by_target = dedupe_findings_by_subject
+
+
+def calculate_posture_risk_score(subject_findings: list[tuple[str, Finding]]) -> CalculatedRiskScore:
+    effective_findings = [finding for _, finding in dedupe_findings_by_subject(subject_findings)]
+    severity_counts = Counter(normalize_bucket(finding.severity, "info") for finding in effective_findings)
+    confidence_counts = Counter(normalize_bucket(finding.confidence, "low") for finding in effective_findings)
+    weighted_total = sum(
+        SEVERITY_WEIGHTS.get(normalize_bucket(finding.severity, "info"), SEVERITY_WEIGHTS["info"])
+        * CONFIDENCE_MULTIPLIERS.get(
+            normalize_bucket(finding.confidence, "low"),
+            CONFIDENCE_MULTIPLIERS["low"],
+        )
+        for finding in effective_findings
+    )
+    score = min(100, int(round(weighted_total)))
+    return CalculatedRiskScore(
+        scoring_model_version=POSTURE_MODEL_VERSION,
+        score=score,
+        label=risk_label(score),
+        input_summary={
+            "finding_count": len(effective_findings),
+            "severity_counts": ordered_counts(severity_counts, SEVERITY_WEIGHTS.keys()),
+            "confidence_counts": ordered_counts(confidence_counts, CONFIDENCE_MULTIPLIERS.keys()),
+            "weighted_total": round(weighted_total, 2),
+            "scan_profile_id": "latest-per-subject-profile",
+        },
+    )
 
 
 def finding_priority(finding: Finding) -> tuple[int, int, str, str]:

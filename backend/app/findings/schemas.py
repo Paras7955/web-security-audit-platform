@@ -1,20 +1,6 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.contracts import Confidence, Severity
-
-
-class EvidenceArtifactInput(BaseModel):
-    artifact_type: str = Field(min_length=1, max_length=80)
-    path: str = Field(min_length=1, max_length=2048)
-    redaction_applied: bool = True
-
-    @field_validator("artifact_type", "path")
-    @classmethod
-    def strip_artifact_fields(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("value must not be blank")
-        return normalized
 
 
 class NormalizedFindingInput(BaseModel):
@@ -33,7 +19,8 @@ class NormalizedFindingInput(BaseModel):
     remediation: str | None = None
     false_positive_notes: str | None = None
     redaction_applied: bool | None = None
-    raw_artifact: EvidenceArtifactInput | None = None
+
+    model_config = ConfigDict(extra="forbid")
 
     @field_validator("title", "source_tool")
     @classmethod

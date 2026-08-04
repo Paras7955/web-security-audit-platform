@@ -92,6 +92,27 @@ class ZapPassiveTests(unittest.TestCase):
         self.assertEqual(result.submitted_urls, ())
         self.assertTrue(result.errors)
 
+    def test_worker_checkpoint_failure_interrupts_passive_polling(self) -> None:
+        checkpoint_count = 0
+
+        def lease_lost() -> None:
+            nonlocal checkpoint_count
+            checkpoint_count += 1
+            if checkpoint_count > 1:
+                raise RuntimeError("lease lost")
+
+        with self.assertRaisesRegex(RuntimeError, "lease lost"):
+            run_zap_passive_scan(
+                scan_id="scan-1",
+                target_url="http://juice-shop:3000/",
+                allowlist_target=ALLOWLIST_TARGET,
+                zap_base_url="http://zap:8080",
+                observed_urls=(),
+                client=FakeZapClient(),
+                resolver=resolver,
+                checkpoint=lease_lost,
+            )
+
     def test_zap_alert_normalization_strips_url_query_and_credentials(self) -> None:
         finding = normalize_zap_alert(
             {
@@ -118,9 +139,9 @@ class ZapPassiveTests(unittest.TestCase):
     def test_zap_api_access_url_disables_redirects(self) -> None:
         calls = []
 
-        def handler(url, *, params, headers, timeout):
+        def handler(url, *, params, headers, timeout, follow_redirects, trust_env):
             del timeout
-            calls.append((url, params, headers))
+            calls.append((url, params, headers, follow_redirects, trust_env))
             return MockResponse({"Result": "OK"})
 
         with patch_httpx_get(handler):
@@ -130,10 +151,25 @@ class ZapPassiveTests(unittest.TestCase):
         self.assertEqual(calls[0][0], "http://zap:8080/JSON/core/action/accessUrl/")
         self.assertEqual(calls[0][1]["followRedirects"], "false")
         self.assertIn("X-ZAP-API-Key", calls[0][2])
+        self.assertFalse(calls[0][3])
+        self.assertFalse(calls[0][4])
+
+    def test_retired_ajax_execution_methods_are_absent(self) -> None:
+        for method_name in (
+            "set_ajax_max_duration",
+            "set_ajax_max_crawl_depth",
+            "ajax_scan",
+            "ajax_status",
+            "stop_ajax",
+        ):
+            with self.subTest(method_name=method_name):
+                self.assertFalse(hasattr(ZapApiClient, method_name))
 
     def test_zap_api_alerts_paginates_without_warning_at_exact_cap(self) -> None:
-        def handler(url, *, params, headers, timeout):
+        def handler(url, *, params, headers, timeout, follow_redirects, trust_env):
             del url, headers, timeout
+            self.assertFalse(follow_redirects)
+            self.assertFalse(trust_env)
             start = int(params["start"])
             if start < 500:
                 return MockResponse({"alerts": [{"alert": f"alert-{start + index}"} for index in range(100)]})
@@ -147,8 +183,10 @@ class ZapPassiveTests(unittest.TestCase):
         self.assertFalse(page.truncated)
 
     def test_zap_api_alerts_reports_truncation_above_cap(self) -> None:
-        def handler(url, *, params, headers, timeout):
+        def handler(url, *, params, headers, timeout, follow_redirects, trust_env):
             del url, headers, timeout
+            self.assertFalse(follow_redirects)
+            self.assertFalse(trust_env)
             start = int(params["start"])
             count = int(params["count"])
             if start < 501:

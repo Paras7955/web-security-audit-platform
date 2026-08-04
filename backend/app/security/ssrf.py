@@ -5,7 +5,12 @@ import socket
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from app.security.allowlist import AllowlistTarget
+from app.security.allowlist import (
+    AllowlistTarget,
+    HostGatewayConnection,
+    is_private_target_address,
+    path_is_within_scope,
+)
 from app.security.target_url import NormalizedTargetUrl
 
 
@@ -21,6 +26,8 @@ IpAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 class DestinationValidation:
     host: str
     port: int
+    connection_host: str
+    connection_port: int
     resolved_ips: tuple[str, ...]
 
     @property
@@ -62,39 +69,53 @@ def validate_destination(
         raise SsrfGuardError("target host is not allowlisted")
     if normalized_url.port not in allowlist_target.ports:
         raise SsrfGuardError("target port is not allowlisted")
+    if not path_is_within_scope(normalized_url.path.split("?", 1)[0], allowlist_target.base_path):
+        raise SsrfGuardError("target path is outside the allowlisted base path")
 
-    resolved_ips = resolver(normalized_url.host, normalized_url.port)
+    connection = allowlist_target.connection
+    resolved_ips = resolver(connection.host, connection.port)
     if not resolved_ips:
         raise SsrfGuardError("target host resolved to no addresses")
 
+    normalized_ips: list[str] = []
     for raw_ip in resolved_ips:
-        ip = ipaddress.ip_address(raw_ip)
+        try:
+            ip = ipaddress.ip_address(raw_ip)
+        except ValueError as exc:
+            raise SsrfGuardError("target host resolved to an invalid address") from exc
         validate_ip_for_target(ip, normalized_url.host, allowlist_target)
+        normalized_ips.append(ip.compressed)
 
     return DestinationValidation(
         host=normalized_url.host,
         port=normalized_url.port,
-        resolved_ips=tuple(resolved_ips),
+        connection_host=connection.host,
+        connection_port=connection.port,
+        resolved_ips=tuple(sorted(set(normalized_ips))),
     )
 
 
 def validate_ip_for_target(ip: IpAddress, host: str, allowlist_target: AllowlistTarget) -> None:
+    if host != allowlist_target.hosts[0]:
+        raise SsrfGuardError("target host is not allowlisted")
     if ip in METADATA_IPS:
         raise SsrfGuardError("cloud metadata destinations are blocked")
 
     if is_never_allowed_internal_address(ip):
         raise SsrfGuardError("loopback, link-local, reserved, multicast, and unspecified destinations are blocked")
 
-    if is_local_demo_network_address(ip):
-        if allowlist_target.local_demo and host == allowlist_target.hosts[0]:
-            return
-        raise SsrfGuardError("private, loopback, link-local, and internal destinations are blocked")
+    if not is_private_target_address(ip):
+        raise SsrfGuardError("public and non-target network destinations are blocked")
 
-    if is_internal_address(ip):
-        raise SsrfGuardError("private, loopback, link-local, and internal destinations are blocked")
+    connection = allowlist_target.connection
+    if isinstance(connection, HostGatewayConnection):
+        expected_ips = {ipaddress.ip_address(raw_ip) for raw_ip in connection.expected_ips}
+        if ip not in expected_ips:
+            raise SsrfGuardError("host gateway resolved outside its exact configured addresses")
+        return
 
-    if allowlist_target.local_demo:
-        raise SsrfGuardError("local Docker service targets must resolve only to an RFC1918 container address")
+    if not is_local_demo_network_address(ip):
+        raise SsrfGuardError("Compose service targets must resolve only to RFC1918 or unique-local addresses")
 
 
 def is_internal_address(ip: IpAddress) -> bool:

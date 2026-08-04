@@ -4,13 +4,15 @@ from datetime import UTC, datetime
 from unittest.mock import patch
 from uuid import uuid4
 
+from app.core.config import settings
 from app.core.contracts import ScanStatus, ScanStep
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import ApiRateLimitLog, AuditLog, Scan, Target, WorkerHeartbeat
 from app.ops.heartbeat import record_worker_heartbeat
-from app.ops.rate_limits import lock_rate_limit_scope
+from app.ops.rate_limits import is_limited, lock_rate_limit_scope
 from app.scans.lifecycle import ScanCancelledError, check_scan_cancelled
+from app.security.allowlist import load_allowlist
 from app.security.auth import AuthenticatedPrincipal, ensure_user_workspace_identity
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
@@ -26,6 +28,9 @@ class PlatformOpsTests(unittest.TestCase):
         self.addCleanup(self.scan_destination_guard.stop)
         self.target_id = str(uuid4())
         self.scan_id = str(uuid4())
+        policy = load_allowlist(settings.allowlist_path).get_target("juice-shop")
+        if policy is None:
+            raise AssertionError("bundled juice-shop policy missing")
         with SessionLocal() as db:
             ensure_dev_principal(db)
             db.add(
@@ -36,6 +41,8 @@ class PlatformOpsTests(unittest.TestCase):
                     allowlist_id="juice-shop",
                     name="OWASP Juice Shop",
                     base_url="http://juice-shop:3000/",
+                    policy_fingerprint=policy.policy_fingerprint,
+                    policy_scope_base_url=policy.base_url,
                     permission_confirmed=True,
                 )
             )
@@ -172,7 +179,8 @@ class PlatformOpsTests(unittest.TestCase):
             with SessionLocal() as db:
                 record_worker_heartbeat(db, worker_id="test-worker-health", status="polling")
 
-            with patch("app.api.ops.settings.artifact_root", temp_dir), patch("app.api.ops.httpx.get") as get:
+            with patch("app.api.ops.settings.artifact_root", temp_dir), patch("app.api.ops.httpx.Client") as client:
+                get = client.return_value.__enter__.return_value.get
                 get.return_value.raise_for_status.return_value = None
                 response = self.client.get("/api/v1/ops/health", headers=DEV_AUTH_HEADERS)
 
@@ -185,6 +193,7 @@ class PlatformOpsTests(unittest.TestCase):
         self.assertEqual(body["artifact_root"]["detail"], "artifact root writable")
         self.assertNotIn(temp_dir, body["artifact_root"]["detail"])
         self.assertGreaterEqual(body["queue_depth"], 0)
+        client.assert_called_once_with(trust_env=False, follow_redirects=False)
 
     def test_rate_limit_scope_uses_transaction_advisory_lock_on_postgres(self) -> None:
         class FakeDialect:
@@ -217,6 +226,34 @@ class PlatformOpsTests(unittest.TestCase):
 
         self.assertEqual(fake_session.statements, ["SELECT pg_advisory_xact_lock(:lock_key)"])
         self.assertIsInstance(fake_session.params[0]["lock_key"], int)
+
+    def test_rate_limit_window_uses_database_count(self) -> None:
+        class FakeSession:
+            def __init__(self) -> None:
+                self.statement = ""
+
+            def scalar(self, statement):  # type: ignore[no-untyped-def]
+                self.statement = str(statement)
+                return 2
+
+        fake_session = FakeSession()
+        principal = AuthenticatedPrincipal(
+            user_id=DEV_USER_ID,
+            workspace_id=DEV_WORKSPACE_ID,
+            provider="dev",
+            provider_subject="dev-user",
+        )
+
+        limited = is_limited(
+            fake_session,  # type: ignore[arg-type]
+            principal,
+            action="scan_create",
+            max_requests=2,
+            window_seconds=3600,
+        )
+
+        self.assertTrue(limited)
+        self.assertIn("count(", fake_session.statement.lower())
 
 
 if __name__ == "__main__":

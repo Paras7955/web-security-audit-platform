@@ -1,0 +1,19 @@
+# Audited non-secret local-development and CI sentinels in existing history.
+# Keep these entries fingerprint-specific so new findings in the same files fail.
+59d2fecf4d623bd84afdf899d8c307b153d224a1:.github/workflows/backend-quality.yml:generic-api-key:48
+59d2fecf4d623bd84afdf899d8c307b153d224a1:.github/workflows/container-build.yml:generic-api-key:34
+59d2fecf4d623bd84afdf899d8c307b153d224a1:.github/workflows/container-build.yml:generic-api-key:42
+59d2fecf4d623bd84afdf899d8c307b153d224a1:.github/workflows/container-build.yml:generic-api-key:43
+59d2fecf4d623bd84afdf899d8c307b153d224a1:.github/workflows/container-build.yml:generic-api-key:44
+59d2fecf4d623bd84afdf899d8c307b153d224a1:.github/workflows/container-build.yml:generic-api-key:88
+59d2fecf4d623bd84afdf899d8c307b153d224a1:.github/workflows/container-build.yml:generic-api-key:89
+59d2fecf4d623bd84afdf899d8c307b153d224a1:.github/workflows/container-build.yml:generic-api-key:90
+dbba5c33dcfe93467b116348d87cd0bf0d58f88b:.github/workflows/container-build.yml:generic-api-key:31
+dbba5c33dcfe93467b116348d87cd0bf0d58f88b:.github/workflows/container-build.yml:generic-api-key:32
+dbba5c33dcfe93467b116348d87cd0bf0d58f88b:.github/workflows/backend-quality.yml:generic-api-key:44
+dbba5c33dcfe93467b116348d87cd0bf0d58f88b:.github/workflows/backend-quality.yml:generic-api-key:46
+4b47c8839cdbd29f4ff023a8b42786fb4d4b8195:backend/app/auth_profiles.py:generic-api-key:24
+ff983be1a042f49974550d50fac710d545d0815a:backend/app/auth_profiles.py:generic-api-key:27
+a486f45f68a4a110374a41a9ab073f8b738d0a6c:.env.example:generic-api-key:14
+a486f45f68a4a110374a41a9ab073f8b738d0a6c:docker-compose.yml:generic-api-key:82
+a486f45f68a4a110374a41a9ab073f8b738d0a6c:docker-compose.yml:generic-api-key:120
