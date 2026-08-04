@@ -5,7 +5,7 @@ planned or mocked result.
 
 ## Source and scope
 
-- [ ] Branch is `phase-24-backend-review`; worktree is clean.
+- [ ] Branch is `phase-24-ci-smoke-fix`; worktree is clean.
 - [ ] No UI product code under `frontend/src/` changed; frontend changes are
   limited to dependency, lockfile, generated type, TypeScript compatibility,
   and container hardening work.
@@ -91,7 +91,7 @@ planned or mocked result.
 
 ## Repository owner actions
 
-- [ ] Review and push `phase-24-backend-review`, require all release checks to
+- [ ] Review and push `phase-24-ci-smoke-fix`, require all release checks to
   pass, and merge it before beginning frontend work.
 - [ ] Enable GitHub Private Vulnerability Reporting.
 - [ ] Enable branch protection and require the release CI checks.
