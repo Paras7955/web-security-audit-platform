@@ -154,6 +154,16 @@ for hardening/readiness, and installs cleanup before startup. An independent
 review found no actionable issues. Its remaining runtime gap is hosted CI
 because Docker Desktop was stopped locally.
 
+Authenticated inspection of Backend quality run `30943832795` also showed an
+admission-time workflow error rather than a backend test failure: GitHub does
+not expose the `runner` context inside job-level `env`, so three
+`${{ runner.temp }}` expressions prevented the job from starting. Commit
+`ccad9cf` now derives the artifact, repository-staging, OSV-database, and
+container-smoke environment paths from `$RUNNER_TEMP` inside executable steps,
+exports them through `$GITHUB_ENV` for later steps, and creates the bounded
+directories before use. The same correction was applied to the unpushed
+container hotfix. Independent follow-up review found no actionable issues.
+
 ## Final verification record
 
 - A clean temporary PostgreSQL database migrated from zero through
@@ -185,8 +195,11 @@ because Docker Desktop was stopped locally.
   build, Trivy scan, and SBOM before failing only at Compose readiness. The
   follow-up hotfix passes YAML parsing, Compose rendering/runtime-key
   assertions, hardening checks, focused bootstrap/hardening tests, and diff
-  checks locally. GitHub-hosted CI remains a release blocker until the hotfix
-  branch is pushed and every required check passes.
+  checks locally. Backend quality run `30943832795` was rejected before job
+  startup by invalid job-level `runner.temp` expressions; both affected
+  workflows now initialize their bounded paths at step runtime. GitHub-hosted
+  CI remains a release blocker until the hotfix branch is pushed and every
+  required check passes.
 
 ## Operator actions
 
