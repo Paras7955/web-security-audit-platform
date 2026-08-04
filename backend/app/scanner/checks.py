@@ -4,6 +4,7 @@ from urllib.parse import urljoin
 
 from app.core.contracts import Confidence, Severity
 from app.findings.schemas import NormalizedFindingInput
+from app.scanner.cookies import parse_set_cookie_security
 from app.scanner.crawler import CrawledPage
 from app.scanner.http_client import GuardedHttpClient, ScannerHttpError
 
@@ -61,8 +62,12 @@ def check_security_headers(page: CrawledPage) -> list[NormalizedFindingInput]:
 
 
 def check_cookies(page: CrawledPage) -> list[NormalizedFindingInput]:
-    set_cookie_headers = page.set_cookie_headers or tuple([page.headers["set-cookie"]] if "set-cookie" in page.headers else [])
-    if not set_cookie_headers:
+    cookie_security = page.cookie_security or tuple(
+        [parse_set_cookie_security(page.headers["set-cookie"])]
+        if "set-cookie" in page.headers
+        else []
+    )
+    if not cookie_security:
         return []
 
     findings: list[NormalizedFindingInput] = []
@@ -71,10 +76,14 @@ def check_cookies(page: CrawledPage) -> list[NormalizedFindingInput]:
         "secure": "Cookie Missing Secure Attribute",
         "samesite": "Cookie Missing SameSite Attribute",
     }
-    for set_cookie in set_cookie_headers:
-        lower_cookie = set_cookie.lower()
+    for cookie in cookie_security:
+        present_attributes = {
+            "httponly": cookie.http_only,
+            "secure": cookie.secure,
+            "samesite": cookie.same_site is not None,
+        }
         for attribute, title in attributes.items():
-            if attribute not in lower_cookie:
+            if not present_attributes[attribute]:
                 findings.append(
                     NormalizedFindingInput(
                         title=title,

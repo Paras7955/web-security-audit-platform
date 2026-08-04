@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
 from app.core.contracts import ScanMode
+from app.scanner.relay_protocol import MAX_RELAY_URL_LENGTH
 from app.security.allowlist import (
     AllowlistError,
     AllowlistTarget,
@@ -41,6 +42,8 @@ class TargetMatch:
 def normalize_target_url(raw_url: str) -> NormalizedTargetUrl:
     if not raw_url or not raw_url.strip():
         raise TargetUrlError("target URL is required")
+    if len(raw_url) > MAX_RELAY_URL_LENGTH:
+        raise TargetUrlError("target URL is too long")
 
     parsed = urlsplit(raw_url.strip())
     scheme = parsed.scheme.lower()

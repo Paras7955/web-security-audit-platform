@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
+from app.api.middleware import PublicSafetyMiddleware
 from app.auth_profiles import ALLOWED_CUSTOM_HEADERS
 from app.core.config import settings
 from app.scanner.http_client import GuardedHttpClient, ScannerHttpError
@@ -10,6 +12,14 @@ from app.scanner.relay_capability import (
     ReplayGuard,
     validate_relay_secret,
     verify_relay_capability,
+)
+from app.scanner.relay_protocol import (
+    MAX_RELAY_BODY_BYTES,
+    MAX_RELAY_COOKIE_PROJECTIONS,
+    MAX_RELAY_RESPONSE_HEADER_BYTES,
+    MAX_RELAY_RESPONSE_HEADERS,
+    MAX_RELAY_URL_LENGTH,
+    encode_relay_body,
 )
 from app.security.allowlist import ScanAllowlist, load_allowlist
 from app.security.target_url import TargetUrlError, match_allowlisted_target
@@ -43,14 +53,13 @@ SAFE_RESPONSE_HEADERS = {
 MAX_REQUEST_HEADERS = 4
 MAX_HEADER_NAME = 120
 MAX_HEADER_VALUE = 4096
-MAX_RESPONSE_HEADERS = 50
-MAX_RESPONSE_HEADER_BYTES = 16 * 1024
+MAX_RELAY_REQUEST_BODY_BYTES = 64 * 1024
 
 
 class RelayFetchRequest(BaseModel):
     capability: str = Field(min_length=40, max_length=4096)
     policy_id: str = Field(min_length=1, max_length=100)
-    url: str = Field(min_length=1, max_length=4096)
+    url: str = Field(min_length=1, max_length=MAX_RELAY_URL_LENGTH)
     headers: dict[str, str] = Field(default_factory=dict, max_length=MAX_REQUEST_HEADERS)
 
     model_config = ConfigDict(extra="forbid")
@@ -82,13 +91,21 @@ class RelayFetchRequest(BaseModel):
         return sanitized
 
 
+class RelayCookieSecurity(BaseModel):
+    http_only: bool
+    secure: bool
+    same_site: Literal["Lax", "None", "Strict"] | None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class RelayFetchResponse(BaseModel):
     url: str
     status_code: int
     headers: dict[str, str]
-    body: str
+    body_base64: str
     redirect_chain: list[str]
-    set_cookie_headers: list[str]
+    cookie_security: list[RelayCookieSecurity]
 
 
 app = FastAPI(
@@ -97,6 +114,10 @@ app = FastAPI(
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
+)
+app.add_middleware(
+    PublicSafetyMiddleware,
+    max_body_bytes=MAX_RELAY_REQUEST_BODY_BYTES,
 )
 replay_guard = ReplayGuard()
 
@@ -109,6 +130,8 @@ def relay_allowlist() -> ScanAllowlist:
 @app.on_event("startup")
 def validate_relay_configuration() -> None:
     validate_relay_secret(settings.scan_relay_secret)
+    if not 1 <= settings.scan_relay_body_bytes <= MAX_RELAY_BODY_BYTES:
+        raise RuntimeError("SCAN_RELAY_BODY_BYTES is outside the relay safety limit.")
     relay_allowlist()
 
 
@@ -153,10 +176,18 @@ def fetch(payload: RelayFetchRequest) -> RelayFetchResponse:
         url=response.url.normalized_url,
         status_code=response.status_code,
         headers=safe_response_headers(response.headers),
-        body=response.body,
+        body_base64=encode_relay_body(
+            response.body,
+            source_bytes_limit=settings.scan_relay_body_bytes,
+        ),
         redirect_chain=list(response.redirect_chain),
-        set_cookie_headers=[
-            redact_set_cookie_value(value) for value in response.set_cookie_headers[:MAX_REQUEST_HEADERS]
+        cookie_security=[
+            RelayCookieSecurity(
+                http_only=cookie.http_only,
+                secure=cookie.secure,
+                same_site=cookie.same_site,
+            )
+            for cookie in response.cookie_security[:MAX_RELAY_COOKIE_PROJECTIONS]
         ],
     )
 
@@ -171,18 +202,11 @@ def safe_response_headers(headers: dict[str, str]) -> dict[str, str]:
         bounded_name = lower_name[:MAX_HEADER_NAME]
         bounded_value = value[:MAX_HEADER_VALUE]
         projected = total + len(bounded_name.encode()) + len(bounded_value.encode())
-        if len(safe) >= MAX_RESPONSE_HEADERS or projected > MAX_RESPONSE_HEADER_BYTES:
+        if (
+            len(safe) >= MAX_RELAY_RESPONSE_HEADERS
+            or projected > MAX_RELAY_RESPONSE_HEADER_BYTES
+        ):
             break
         safe[bounded_name] = bounded_value
         total = projected
     return safe
-
-
-def redact_set_cookie_value(value: str) -> str:
-    first_segment, separator, attributes = value.partition(";")
-    cookie_name, equals, _cookie_value = first_segment.partition("=")
-    safe_name = cookie_name.strip()
-    if not equals or not safe_name:
-        return "[REDACTED]"
-    suffix = f";{attributes}" if separator else ""
-    return f"{safe_name}=[REDACTED]{suffix}"[:MAX_HEADER_VALUE]

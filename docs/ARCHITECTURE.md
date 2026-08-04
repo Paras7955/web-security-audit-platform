@@ -62,7 +62,7 @@ normalized findings, subject-aware lifecycle/suppressions/tags/risk, reports,
 safe AI/cache/rate records, cleanup tasks, heartbeats, and audit events.
 
 Every user-data lookup carries a workspace predicate. Alembic schema head is
-`0012_portfolio_readiness`; API and worker fail closed if the database is not at
+`0013_scan_subject_integrity`; API and worker fail closed if the database is not at
 that head.
 
 ### Worker and lease guard
@@ -101,7 +101,10 @@ For each request it independently:
 5. strips hop-by-hop/routing headers and caps all headers;
 6. dials the validated IP with configured `Host` and TLS SNI;
 7. verifies system trust or a confined CA bundle;
-8. disables redirects and caps the response body.
+8. disables automatic redirects, manually validates bounded hops, and caps the
+   response body;
+9. returns body content in a bounded base64 envelope and only structured cookie
+   security attributes.
 
 It never offers insecure TLS and never logs URLs, credentials, headers, or
 bodies.
@@ -110,9 +113,9 @@ bodies.
 
 The ScopeHarbor passive crawler sends capabilities to the relay, evaluates
 bounded response metadata/body content in memory, and persists only normalized
-findings. It does not create a crawl-summary artifact. Each redirect must be
-same-origin, within the base path, and independently revalidated. Credentials
-do not cross an origin/policy boundary.
+findings. It does not create a crawl-summary artifact. The relay follows each
+redirect only after it is confirmed same-origin, within the base path, and
+independently revalidated. Credentials do not cross an origin/policy boundary.
 
 ZAP is internal and API-key protected. Its clients set `trust_env=False` and
 disable redirects so the API key cannot enter an inherited proxy. ZAP Passive,

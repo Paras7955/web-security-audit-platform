@@ -86,7 +86,7 @@ jobs:
           alembic upgrade head
           alembic check
 
-      - name: Verify zero, 0008, and 0011 migration paths
+      - name: Verify zero, 0008, 0011, and 0012 migration paths
         run: python -m unittest backend.tests.test_migrations
 
       - name: Exercise local-target relay and long-running lease boundaries

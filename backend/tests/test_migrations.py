@@ -23,13 +23,18 @@ class MigrationTests(unittest.TestCase):
             isolated_engine = create_engine(database_url)
             try:
                 with isolated_engine.connect() as connection:
-                    self.assertEqual(connection.scalar(text("SELECT version_num FROM alembic_version")), "0012_portfolio_readiness")
+                    self.assertEqual(connection.scalar(text("SELECT version_num FROM alembic_version")), "0013_scan_subject_integrity")
                     tables = set(inspect(connection).get_table_names())
                     self.assertIn("scanner_tool_runs", tables)
                     self.assertIn("auth_profiles", tables)
                     self.assertIn("repository_assets", tables)
                     self.assertIn("artifact_cleanup_tasks", tables)
                     self.assertNotIn("evidence_artifacts", tables)
+                    scan_constraints = {
+                        constraint["name"]
+                        for constraint in inspect(connection).get_check_constraints("scans")
+                    }
+                    self.assertIn("ck_scans_exactly_one_subject", scan_constraints)
                     target_columns = {column["name"] for column in inspect(connection).get_columns("targets")}
                     self.assertIn("archived_at", target_columns)
                     self.assertIn("archived_by_user_id", target_columns)
@@ -98,6 +103,56 @@ class MigrationTests(unittest.TestCase):
                     self.assertEqual(profile["encrypted_secret"], "legacy-ciphertext")
                     self.assertEqual(profile["rotation_count"], 0)
                     self.assertIsNone(profile["revoked_at"])
+            finally:
+                isolated_engine.dispose()
+
+    def test_upgrade_from_0012_repairs_dual_subject_scans_before_constraint(self) -> None:
+        with isolated_schema() as (database_url, migration_config):
+            with patch("app.core.config.settings.database_url", database_url):
+                command.upgrade(migration_config, "0012_portfolio_readiness")
+            isolated_engine = create_engine(database_url)
+            try:
+                with isolated_engine.begin() as connection:
+                    connection.execute(
+                        text(
+                            "INSERT INTO targets "
+                            "(id, workspace_id, created_by_user_id, allowlist_id, name, base_url, permission_confirmed) "
+                            "VALUES ('dual-target','legacy-dev-workspace','legacy-dev-user','juice-shop',"
+                            "'Dual target','http://juice-shop:3000/',true)"
+                        )
+                    )
+                    connection.execute(
+                        text(
+                            "INSERT INTO repository_assets "
+                            "(id, workspace_id, created_by_user_id, name, relative_path, permission_confirmed) "
+                            "VALUES ('dual-repository','legacy-dev-workspace','legacy-dev-user',"
+                            "'Dual repository','security-project',true)"
+                        )
+                    )
+                    connection.execute(
+                        text(
+                            "INSERT INTO scans "
+                            "(id, workspace_id, created_by_user_id, target_id, repository_asset_id, "
+                            "repo_path_snapshot, acknowledgements_snapshot, authorization_snapshot, "
+                            "mode, scan_profile_id, status, progress_percent) "
+                            "VALUES ('dual-scan','legacy-dev-workspace','legacy-dev-user','dual-target',"
+                            "'dual-repository','security-project',CAST('[]' AS JSON),CAST('{}' AS JSON),"
+                            "'repo','repository','queued',0)"
+                        )
+                    )
+
+                with patch("app.core.config.settings.database_url", database_url):
+                    command.upgrade(migration_config, "head")
+
+                with isolated_engine.connect() as connection:
+                    subject = connection.execute(
+                        text(
+                            "SELECT target_id, repository_asset_id FROM scans "
+                            "WHERE id='dual-scan'"
+                        )
+                    ).mappings().one()
+                    self.assertIsNone(subject["target_id"])
+                    self.assertEqual(subject["repository_asset_id"], "dual-repository")
             finally:
                 isolated_engine.dispose()
 

@@ -324,7 +324,7 @@ class RepoScannerTests(unittest.TestCase):
         self.assertEqual(result.receipts[1].status, "skipped")
         self.assertEqual(result.warning_codes, ("repo_tool_unavailable",))
 
-        osv = AdapterResult((), ToolReceipt("osv-scanner", "2.3.8", "completed", None, 0, now, now))
+        osv = AdapterResult((), ToolReceipt("osv-scanner", "2.5.0", "completed", None, 0, now, now))
         with patch("app.repo_scanner.adapters.run_gitleaks", return_value=gitleaks), patch(
             "app.repo_scanner.adapters.run_osv_scanner", return_value=osv
         ):
@@ -342,7 +342,7 @@ class RepoScannerTests(unittest.TestCase):
         ):
             self.assertEqual(_verify_version("gitleaks", "8.30.1"), "8.30.1")
         with patch("app.repo_scanner.adapters._verify_version", side_effect=lambda _binary, expected: expected):
-            self.assertEqual(verify_repo_tools(Settings(_env_file=None)), {"gitleaks": "8.30.1", "osv-scanner": "2.3.8"})
+            self.assertEqual(verify_repo_tools(Settings(_env_file=None)), {"gitleaks": "8.30.1", "osv-scanner": "2.5.0"})
 
         for result in (
             SimpleNamespace(returncode=1, stdout="8.30.1", stderr=""),
@@ -444,7 +444,7 @@ class RepoScannerTests(unittest.TestCase):
             return 1
 
         with tempfile.TemporaryDirectory() as staged_dir, patch(
-            "app.repo_scanner.adapters._verify_version", return_value="2.3.8"
+            "app.repo_scanner.adapters._verify_version", return_value="2.5.0"
         ), patch("app.repo_scanner.adapters._validate_osv_database"), patch(
             "app.repo_scanner.adapters._run_tool", side_effect=fake_run
         ):
@@ -452,7 +452,7 @@ class RepoScannerTests(unittest.TestCase):
         self.assertEqual(result.receipt.status, "completed")
 
         with tempfile.TemporaryDirectory() as staged_dir, patch(
-            "app.repo_scanner.adapters._verify_version", return_value="2.3.8"
+            "app.repo_scanner.adapters._verify_version", return_value="2.5.0"
         ), patch("app.repo_scanner.adapters._validate_osv_database"), patch(
             "app.repo_scanner.adapters._run_tool", return_value=4
         ), self.assertRaises(RepoToolError):

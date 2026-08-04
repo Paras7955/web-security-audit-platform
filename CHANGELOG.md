@@ -19,9 +19,10 @@ versioning for the public source contract.
 - Suppression revocation, audited tag unassignment/archive, current-posture
   dashboards, `posture-v1`, explicit external AI generation POST, bounded AI
   streaming, and race-safe report generation.
-- Schema `0012_portfolio_readiness`, artifact-cleanup tasks, complete environment
-  reference/bootstrap merging, Compose hardening assertions, secret scanning,
-  image vulnerability gates, and CycloneDX SBOM generation.
+- Schemas `0012_portfolio_readiness` and `0013_scan_subject_integrity`,
+  artifact-cleanup tasks, complete environment reference/bootstrap merging,
+  Compose hardening assertions, secret scanning, image vulnerability gates, and
+  CycloneDX SBOM generation.
 - MIT license and public release/operator documentation.
 
 ### Changed
@@ -50,6 +51,14 @@ versioning for the public source contract.
 - Existing target-based repository requests create/reuse repository assets.
 - Existing frontend routes/payloads remain accepted. Frontend source was not
   changed.
+
+### Fixed
+
+- Repository compatibility launches now persist only their repository-asset
+  subject, backed by a repair migration and database constraint.
+- Relay requests are bounded before JSON parsing; relay responses use a bounded
+  base64 envelope and expose only structured cookie security attributes.
+- Frontend dependencies were advanced to audit-clean patched releases.
 
 ## [1.0.0] - 2026-07-14
 

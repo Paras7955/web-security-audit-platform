@@ -145,6 +145,10 @@ class Scan(Base):
     __table_args__ = (
         CheckConstraint("progress_percent >= 0 AND progress_percent <= 100", name="ck_scans_progress_percent"),
         CheckConstraint("attempt_count >= 0", name="ck_scans_attempt_count"),
+        CheckConstraint(
+            "(target_id IS NOT NULL) <> (repository_asset_id IS NOT NULL)",
+            name="ck_scans_exactly_one_subject",
+        ),
         Index("ix_scans_workspace_id", "workspace_id"),
         Index("ix_scans_scan_profile_id", "scan_profile_id"),
         Index("ix_scans_auth_profile_id", "auth_profile_id"),

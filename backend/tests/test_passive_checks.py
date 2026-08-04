@@ -1,6 +1,7 @@
 import unittest
 
 from app.scanner.checks import check_cookies, check_forms, check_security_headers, probe_exposed_files, probe_route_hints
+from app.scanner.cookies import parse_set_cookie_security
 from app.scanner.crawler import CrawledPage
 from app.scanner.html_parser import FormMetadata
 from app.scanner.http_client import ScannerHttpResponse
@@ -51,15 +52,47 @@ class PassiveChecksTests(unittest.TestCase):
     def test_cookie_attribute_findings_check_each_cookie(self) -> None:
         findings = check_cookies(
             page(
-                set_cookie_headers=(
-                    "session=abc123; HttpOnly; Secure; SameSite=Lax",
-                    "theme=light",
+                cookie_security=(
+                    parse_set_cookie_security("session=abc123; HttpOnly; Secure; SameSite=Lax"),
+                    parse_set_cookie_security("theme=light"),
                 )
             )
         )
 
         self.assertEqual({finding.scanner_rule_id for finding in findings}, {"cookie:httponly", "cookie:secure", "cookie:samesite"})
         self.assertTrue(all("theme=light" not in (finding.evidence or "") for finding in findings))
+
+    def test_cookie_attribute_names_are_parsed_instead_of_substring_matched(self) -> None:
+        findings = check_cookies(
+            page(
+                cookie_security=(
+                    parse_set_cookie_security(
+                        "session=secure-httponly-samesite; Path=/secure/httponly/samesite"
+                    ),
+                )
+            )
+        )
+
+        self.assertEqual(
+            {finding.scanner_rule_id for finding in findings},
+            {"cookie:httponly", "cookie:secure", "cookie:samesite"},
+        )
+
+    def test_malformed_cookie_security_attributes_are_not_treated_as_present(self) -> None:
+        findings = check_cookies(
+            page(
+                cookie_security=(
+                    parse_set_cookie_security(
+                        "session=secret; Secure=canary; HttpOnly=canary; SameSite=canary"
+                    ),
+                )
+            )
+        )
+
+        self.assertEqual(
+            {finding.scanner_rule_id for finding in findings},
+            {"cookie:httponly", "cookie:secure", "cookie:samesite"},
+        )
 
     def test_password_get_form_emits_medium_finding(self) -> None:
         findings = check_forms(page(forms=(FormMetadata(action="/login", method="get", inputs=["password"]),)))

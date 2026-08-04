@@ -5,8 +5,10 @@ planned or mocked result.
 
 ## Source and scope
 
-- [ ] Branch is `phase-23-backend-public-readiness`; worktree is clean.
-- [ ] No `frontend/` source file changed in Phase 23.
+- [ ] Branch is `phase-24-backend-review`; worktree is clean.
+- [ ] No UI product code under `frontend/src/` changed; frontend changes are
+  limited to dependency, lockfile, generated type, TypeScript compatibility,
+  and container hardening work.
 - [ ] Version is `1.1.0` in backend and shared contracts.
 - [ ] MIT license has `Copyright (c) 2026 Paras Atwal`.
 - [ ] README, SECURITY, architecture, threat model, API, operator, upgrade,
@@ -47,8 +49,8 @@ planned or mocked result.
 
 - [ ] Ruff passes for `backend` and `scripts`.
 - [ ] Pyright passes.
-- [ ] Migrations pass from zero, `0008`, and `0011`; head is
-  `0012_portfolio_readiness`; `alembic check` is clean.
+- [ ] Migrations pass from zero, `0008`, `0011`, and `0012`; head is
+  `0013_scan_subject_integrity`; `alembic check` is clean.
 - [ ] Full backend suite passes on a clean temporary PostgreSQL database.
 - [ ] Overall branch coverage is at least 85%; security-boundary gates pass.
 - [ ] Real pinned Gitleaks and offline OSV fixtures pass.
@@ -73,7 +75,8 @@ planned or mocked result.
 
 ## Containers and CI
 
-- [ ] Frontend `npm ci`, lint, and production build pass without source changes.
+- [ ] Frontend `npm ci`, audit, lint, and production build pass without UI
+  feature changes.
 - [ ] API, worker, relay, and frontend images build.
 - [ ] `python3 scripts/check_compose_hardening.py` passes.
 - [ ] Compose migration/readiness smoke passes with non-root,
@@ -88,7 +91,8 @@ planned or mocked result.
 
 ## Repository owner actions
 
-- [ ] Review the Phase 23 commits and merge/push the phase branch.
+- [ ] Review and push `phase-24-backend-review`, require all release checks to
+  pass, and merge it before beginning frontend work.
 - [ ] Enable GitHub Private Vulnerability Reporting.
 - [ ] Enable branch protection and require the release CI checks.
 - [ ] Enable GitHub Code Security as desired; for a private repository set

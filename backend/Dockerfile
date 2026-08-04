@@ -1,5 +1,28 @@
-FROM ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f AS gitleaks
-FROM ghcr.io/google/osv-scanner:v2.3.8@sha256:64e86bec6df2466feea5137fc7c78fb3b7c21ec077f014d7130f64810e50676b AS osv-scanner
+FROM golang:1.26.5-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS gitleaks-build
+
+WORKDIR /src/gitleaks
+ADD --checksum=sha256:6b2638a733b85619dc80bdf28e84e4fed7e526a761ab5c148fbf67695aea2115 \
+    https://codeload.github.com/gitleaks/gitleaks/tar.gz/83d9cd684c87d95d656c1458ef04895a7f1cbd8e \
+    /tmp/gitleaks-source.tar.gz
+RUN tar --extract --gzip --file=/tmp/gitleaks-source.tar.gz --strip-components=1 \
+    && go mod edit -require=golang.org/x/crypto@v0.52.0 \
+    && go mod edit -require=golang.org/x/text@v0.39.0 \
+    && go mod tidy \
+    && CGO_ENABLED=0 go build -trimpath -tags gore2regex \
+        -ldflags "-s -w -X=github.com/zricethezav/gitleaks/v8/version.Version=8.30.1-scopeharbor.1" \
+        -o /out/gitleaks .
+
+FROM golang:1.26.5-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS osv-scanner-build
+
+WORKDIR /src/osv-scanner
+ADD --checksum=sha256:a9ba82e4c3f9d13cdb84db566fb58ff8500c90b23f3c99751ed7674a3702871e \
+    https://codeload.github.com/google/osv-scanner/tar.gz/a36e41b0cc33d58231a87ea24d4d1beb3ae2a733 \
+    /tmp/osv-scanner-source.tar.gz
+RUN tar --extract --gzip --file=/tmp/osv-scanner-source.tar.gz --strip-components=1 \
+    && go mod edit -require=golang.org/x/text@v0.39.0 \
+    && go mod tidy \
+    && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
+        -o /out/osv-scanner ./cmd/osv-scanner/
 
 FROM python:3.12.13-slim-bookworm@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b AS base
 
@@ -31,8 +54,8 @@ FROM base AS api
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header", "--no-access-log"]
 
 FROM base AS worker
-COPY --from=gitleaks --chown=scopeharbor:scopeharbor /usr/bin/gitleaks /usr/local/bin/gitleaks
-COPY --from=osv-scanner --chown=scopeharbor:scopeharbor /osv-scanner /usr/local/bin/osv-scanner
+COPY --from=gitleaks-build --chown=scopeharbor:scopeharbor /out/gitleaks /usr/local/bin/gitleaks
+COPY --from=osv-scanner-build --chown=scopeharbor:scopeharbor /out/osv-scanner /usr/local/bin/osv-scanner
 CMD ["python", "-m", "worker.main"]
 
 FROM base AS relay
