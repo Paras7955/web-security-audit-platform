@@ -11,6 +11,7 @@ from app.scanner.http_client import (
     build_ssl_context,
     decode_limited_body,
 )
+from app.scanner.relay_protocol import encode_relay_body
 from app.security.allowlist import AllowlistTarget, ScanAllowlist
 from app.security.ssrf import DestinationValidation, validate_destination
 from app.security.target_url import normalize_target_url
@@ -28,6 +29,7 @@ ALLOWLIST_TARGET = AllowlistTarget.model_validate(
         "local_demo": True,
     }
 )
+RELAY_SECRET = "relay-test-secret-that-is-at-least-thirty-two-bytes"
 
 def resolver(_host: str, _port: int) -> list[str]:
     return ["172.20.0.10"]
@@ -265,7 +267,53 @@ class ScannerHttpTests(unittest.TestCase):
 
         self.assertEqual(response.body, "abc")
 
-    def test_multiple_set_cookie_headers_are_preserved(self) -> None:
+    def test_relay_response_accepts_maximum_expansion_and_structured_cookies(self) -> None:
+        source_limit = 65_536
+        body = "\ufffd" * source_limit
+        client = GuardedHttpClient(
+            allowlist_target=ALLOWLIST_TARGET,
+            timeout_seconds=1,
+            body_bytes_limit=source_limit,
+            relay_base_url="http://relay:8001",
+            relay_secret=RELAY_SECRET,
+        )
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "url": "http://juice-shop:3000/",
+                    "status_code": 200,
+                    "headers": {"content-type": "text/plain"},
+                    "body_base64": encode_relay_body(
+                        body,
+                        source_bytes_limit=source_limit,
+                    ),
+                    "redirect_chain": [],
+                    "cookie_security": [
+                        {"http_only": True, "secure": True, "same_site": "Lax"}
+                    ],
+                },
+            )
+
+        original_client = httpx.Client
+
+        class MockClient(httpx.Client):
+            def __init__(self, *args, **kwargs):
+                kwargs["transport"] = httpx.MockTransport(handler)
+                super().__init__(*args, **kwargs)
+
+        try:
+            httpx.Client = MockClient
+            response = client.get("http://juice-shop:3000/")
+        finally:
+            httpx.Client = original_client
+
+        self.assertEqual(response.body, body)
+        self.assertEqual(len(response.cookie_security), 1)
+        self.assertEqual(response.cookie_security[0].same_site, "Lax")
+
+    def test_multiple_set_cookie_headers_are_reduced_to_security_attributes(self) -> None:
         client = GuardedHttpClient(allowlist_target=ALLOWLIST_TARGET, timeout_seconds=1, resolver=resolver)
 
         def handler(_request: httpx.Request) -> httpx.Response:
@@ -292,8 +340,11 @@ class ScannerHttpTests(unittest.TestCase):
             httpx.Client = original_client
 
         self.assertEqual(
-            response.set_cookie_headers,
-            ("session=abc; HttpOnly; Secure; SameSite=Lax", "theme=light"),
+            [
+                (cookie.http_only, cookie.secure, cookie.same_site)
+                for cookie in response.cookie_security
+            ],
+            [(True, True, "Lax"), (False, False, None)],
         )
 
     def test_manual_redirects_are_guarded(self) -> None:

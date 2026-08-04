@@ -10,7 +10,21 @@ import httpcore
 import httpx
 
 from app.core.config import settings
+from app.scanner.cookies import (
+    CookieSecurityAttributes,
+    cookie_security_from_mapping,
+    parse_set_cookie_security,
+)
 from app.scanner.relay_capability import RelayCapabilityError, create_relay_capability
+from app.scanner.relay_protocol import (
+    MAX_RELAY_BODY_BYTES,
+    MAX_RELAY_COOKIE_PROJECTIONS,
+    MAX_RELAY_RESPONSE_HEADER_BYTES,
+    MAX_RELAY_RESPONSE_HEADERS,
+    MAX_RELAY_URL_LENGTH,
+    decode_relay_body,
+    relay_response_envelope_bytes_limit,
+)
 from app.security.allowlist import AllowlistTarget, ScanAllowlist
 from app.security.redirects import RedirectValidationError, validate_redirect_location
 from app.security.ssrf import DestinationValidation, Resolver, resolve_host, validate_destination
@@ -33,7 +47,7 @@ class ScannerHttpResponse:
     headers: dict[str, str]
     body: str
     redirect_chain: tuple[str, ...]
-    set_cookie_headers: tuple[str, ...] = ()
+    cookie_security: tuple[CookieSecurityAttributes, ...] = ()
 
 
 class GuardedHttpClient:
@@ -49,6 +63,8 @@ class GuardedHttpClient:
         relay_secret: str | None = settings.scan_relay_secret,
         execution_checkpoint: Callable[[], None] | None = None,
     ) -> None:
+        if not 1 <= body_bytes_limit <= MAX_RELAY_BODY_BYTES:
+            raise ValueError("scanner response body limit is invalid")
         self.allowlist_target = allowlist_target
         self.timeout_seconds = timeout_seconds
         self.resolver = resolver
@@ -90,7 +106,10 @@ class GuardedHttpClient:
                                 headers={key.lower(): value for key, value in response.headers.items()},
                                 body=decode_limited_body(read_limited_body(response, self.body_bytes_limit), self.body_bytes_limit),
                                 redirect_chain=tuple(redirect_chain),
-                                set_cookie_headers=tuple(response.headers.get_list("set-cookie")),
+                                cookie_security=tuple(
+                                    parse_set_cookie_security(value)
+                                    for value in response.headers.get_list("set-cookie")[:MAX_RELAY_COOKIE_PROJECTIONS]
+                                ),
                             )
 
                         location = response.headers.get("location")
@@ -147,10 +166,13 @@ class GuardedHttpClient:
                 ) as response:
                     if response.status_code != 200:
                         raise ScannerHttpError("relay request was denied")
-                    response_bytes = read_limited_body(
-                        response,
-                        self.body_bytes_limit + 65_536,
+                    envelope_limit = relay_response_envelope_bytes_limit(
+                        body_bytes_limit=self.body_bytes_limit,
+                        max_redirects=self.allowlist_target.max_redirects,
                     )
+                    response_bytes = read_limited_body(response, envelope_limit + 1)
+                    if len(response_bytes) > envelope_limit:
+                        raise ScannerHttpError("relay response exceeded its envelope limit")
             payload = httpx.Response(
                 status_code=200,
                 content=response_bytes,
@@ -166,27 +188,41 @@ class GuardedHttpClient:
                 raise ScannerHttpError("relay response policy was invalid")
             headers = payload.get("headers")
             redirect_chain = payload.get("redirect_chain")
-            set_cookie_headers = payload.get("set_cookie_headers")
-            body = payload.get("body")
+            cookie_security = payload.get("cookie_security")
+            body_base64 = payload.get("body_base64")
             status_code = payload.get("status_code")
             if (
                 not isinstance(headers, dict)
                 or not all(isinstance(key, str) and isinstance(value, str) for key, value in headers.items())
+                or len(headers) > MAX_RELAY_RESPONSE_HEADERS
+                or sum(len(key.encode()) + len(value.encode()) for key, value in headers.items())
+                > MAX_RELAY_RESPONSE_HEADER_BYTES
                 or not isinstance(redirect_chain, list)
                 or not all(isinstance(item, str) for item in redirect_chain)
-                or not isinstance(set_cookie_headers, list)
-                or not all(isinstance(item, str) for item in set_cookie_headers)
-                or not isinstance(body, str)
+                or len(redirect_chain) > self.allowlist_target.max_redirects
+                or any(len(item) > MAX_RELAY_URL_LENGTH for item in redirect_chain)
+                or not isinstance(cookie_security, list)
+                or len(cookie_security) > MAX_RELAY_COOKIE_PROJECTIONS
+                or not isinstance(body_base64, str)
                 or not isinstance(status_code, int)
+                or not 100 <= status_code <= 599
             ):
                 raise ScannerHttpError("relay response was invalid")
+            try:
+                cookies = tuple(cookie_security_from_mapping(item) for item in cookie_security)
+                body = decode_relay_body(
+                    body_base64,
+                    source_bytes_limit=self.body_bytes_limit,
+                )
+            except ValueError as exc:
+                raise ScannerHttpError("relay response was invalid") from exc
             return ScannerHttpResponse(
                 url=returned_url,
                 status_code=status_code,
                 headers=headers,
-                body=body[: self.body_bytes_limit],
-                redirect_chain=tuple(redirect_chain[: self.allowlist_target.max_redirects]),
-                set_cookie_headers=tuple(set_cookie_headers[:4]),
+                body=body,
+                redirect_chain=tuple(redirect_chain),
+                cookie_security=cookies,
             )
         except (httpx.HTTPError, ValueError) as exc:
             if isinstance(exc, ScannerHttpError):

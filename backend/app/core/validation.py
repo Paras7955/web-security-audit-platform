@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from app.core.config import Settings, settings
+from app.scanner.relay_protocol import MAX_RELAY_BODY_BYTES
 from app.security.allowlist import load_allowlist
 
 
@@ -59,6 +60,10 @@ def validate_runtime_settings(config: Settings = settings, *, require_scanner_fi
         raise RuntimeConfigurationError("REPO_MAX_FILE_BYTES cannot exceed REPO_MAX_TOTAL_BYTES.")
     if config.ai_max_payload_bytes > config.max_request_body_bytes:
         raise RuntimeConfigurationError("AI_MAX_PAYLOAD_BYTES cannot exceed MAX_REQUEST_BODY_BYTES.")
+    if config.scan_relay_body_bytes > MAX_RELAY_BODY_BYTES:
+        raise RuntimeConfigurationError(
+            f"SCAN_RELAY_BODY_BYTES cannot exceed {MAX_RELAY_BODY_BYTES}."
+        )
     if config.worker_lease_seconds < max(15, config.worker_stale_after_seconds):
         raise RuntimeConfigurationError(
             "WORKER_LEASE_SECONDS must be at least 15 and not shorter than WORKER_STALE_AFTER_SECONDS."

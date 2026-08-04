@@ -178,6 +178,7 @@ class SecurityHardeningTests(unittest.TestCase):
                 base.model_copy(update={"page_default_limit": 201}),
                 base.model_copy(update={"repo_max_file_bytes": 20, "repo_max_total_bytes": 10}),
                 base.model_copy(update={"worker_lease_seconds": 14}),
+                base.model_copy(update={"scan_relay_body_bytes": 1_048_577}),
                 base.model_copy(update={"gitleaks_config_path": str(root_path / "missing")}),
             )
             for config in invalid:

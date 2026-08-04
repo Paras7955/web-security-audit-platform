@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
+from app.scanner.cookies import CookieSecurityAttributes
 from app.scanner.html_parser import FormMetadata, extract_html_metadata
 from app.scanner.http_client import GuardedHttpClient, ScannerHttpError
 from app.security.target_url import TargetUrlError, normalize_target_url
@@ -20,7 +21,7 @@ class CrawledPage:
     forms: tuple[FormMetadata, ...]
     inputs: tuple[str, ...]
     redirect_chain: tuple[str, ...]
-    set_cookie_headers: tuple[str, ...] = ()
+    cookie_security: tuple[CookieSecurityAttributes, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -73,7 +74,7 @@ def crawl_site(
             forms=tuple(metadata.forms),
             inputs=tuple(metadata.inputs),
             redirect_chain=response.redirect_chain,
-            set_cookie_headers=response.set_cookie_headers,
+            cookie_security=response.cookie_security,
         )
         pages.append(page)
 
