@@ -17,32 +17,34 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    env:
+      SCOPEHARBOR_ENV_FILE: ${{ runner.temp }}/scopeharbor-ci.env
     steps:
       - name: Check out source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - name: Validate Compose configuration
-        env:
-          SCOPEHARBOR_ENV_FILE: /dev/null
-          POSTGRES_PASSWORD: scopeharbor-ci-database
-          DEV_AUTH_TOKEN: scopeharbor-ci-development-token
-          NEXT_PUBLIC_DEV_AUTH_TOKEN: scopeharbor-ci-development-token
-          AUTH_PROFILE_SECRET_KEY: QyZiRES0KAYWYtkLanwPjjEbVZiKA8tLRoNxxgxqG5M=
-          ZAP_API_KEY: 0123456789abcdef0123456789abcdef
-          SCAN_RELAY_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef
-        run: docker compose config --quiet
+      - name: Prepare Compose CI environment
+        run: python3 scripts/bootstrap_env.py --output "$SCOPEHARBOR_ENV_FILE"
+
+      - name: Validate Compose configuration and runtime environment
+        run: |
+          docker compose --env-file "$SCOPEHARBOR_ENV_FILE" config --quiet
+          docker compose --env-file "$SCOPEHARBOR_ENV_FILE" config --format json | python3 -c '
+          import json, sys
+          environment = json.load(sys.stdin)["services"]["backend"]["environment"]
+          required = ("AUTH_PROFILE_SECRET_KEY", "DEV_AUTH_TOKEN", "SCAN_RELAY_SECRET", "SCAN_RELAY_URL", "ZAP_API_KEY")
+          missing = [name for name in required if not environment.get(name)]
+          assert not missing, f"Backend runtime environment is incomplete: {missing}"
+          '
 
       - name: Enforce Compose network and privilege boundaries
-        env:
-          SCOPEHARBOR_ENV_FILE: /dev/null
-          POSTGRES_PASSWORD: scopeharbor-ci-database
-          DEV_AUTH_TOKEN: scopeharbor-ci-development-token
-          AUTH_PROFILE_SECRET_KEY: QyZiRES0KAYWYtkLanwPjjEbVZiKA8tLRoNxxgxqG5M=
-          ZAP_API_KEY: 0123456789abcdef0123456789abcdef
-          SCAN_RELAY_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef
-        run: python scripts/check_compose_hardening.py
+        run: |
+          set -a
+          source "$SCOPEHARBOR_ENV_FILE"
+          set +a
+          python3 scripts/check_compose_hardening.py
 
       - name: Build API image
         run: docker build --file backend/Dockerfile --target api --tag scopeharbor-api:ci .
@@ -81,14 +83,10 @@ jobs:
           done
 
       - name: Compose readiness smoke test
-        env:
-          SCOPEHARBOR_ENV_FILE: /dev/null
-          POSTGRES_PASSWORD: scopeharbor-ci-database
-          DEV_AUTH_TOKEN: scopeharbor-ci-development-token
-          AUTH_PROFILE_SECRET_KEY: QyZiRES0KAYWYtkLanwPjjEbVZiKA8tLRoNxxgxqG5M=
-          ZAP_API_KEY: 0123456789abcdef0123456789abcdef
-          SCAN_RELAY_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef
         run: |
-          docker compose up --build --detach --wait
+          cleanup() {
+            docker compose --env-file "$SCOPEHARBOR_ENV_FILE" down --volumes --remove-orphans
+          }
+          trap cleanup EXIT
+          docker compose --env-file "$SCOPEHARBOR_ENV_FILE" up --build --detach --wait
           curl --fail --silent --show-error http://127.0.0.1:8000/ready
-          docker compose down --volumes
