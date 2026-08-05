@@ -39,6 +39,9 @@ describe("Phase 25 protected workflow state", () => {
     const clearButton = await screen.findByRole("button", { name: "Clear session token" });
     await waitFor(() => expect((clearButton as HTMLButtonElement).disabled).toBe(false));
 
+    view.rerender(<TargetSetup activeView="credentials" {...props} />);
+    await userEvent.type(screen.getByLabelText("Profile label"), "Cross-workspace credential");
+    await userEvent.type(screen.getByPlaceholderText("Token or API key used by the target"), "target-secret-canary");
     view.rerender(<TargetSetup activeView="overview" {...props} />);
     expect(await screen.findByText("Previously authorized target")).toBeTruthy();
     view.rerender(<TargetSetup activeView="operations" {...props} />);
@@ -48,6 +51,9 @@ describe("Phase 25 protected workflow state", () => {
     view.rerender(<TargetSetup activeView="overview" {...props} />);
     expect(screen.queryByText("Previously authorized target")).toBeNull();
     expect(screen.getByText("Choose an authorized subject")).toBeTruthy();
+    view.rerender(<TargetSetup activeView="credentials" {...props} />);
+    expect(screen.getByLabelText("Profile label")).toHaveProperty("value", "");
+    expect(screen.getByPlaceholderText("Token or API key used by the target")).toHaveProperty("value", "");
   });
 
   it("presents a stale web policy as requiring reauthorization", () => {
@@ -87,6 +93,34 @@ describe("Phase 25 protected workflow state", () => {
     expect(screen.getByText("Archived · 1 active assignment")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Remove legacy" }));
     expect(onUnassignTag).toHaveBeenCalledWith(expect.objectContaining({ id: "assignment-1" }));
+  });
+
+  it("refreshes workspace, subject, and comparison posture after every finding-governance mutation", async () => {
+    setSessionAuthToken("valid-session");
+    const fixture = postureMutationApi();
+    vi.stubGlobal("fetch", fixture.fetchMock);
+    render(<TargetSetup activeView="findings" onActiveViewChange={vi.fn()} onHeroStateChange={vi.fn()} />);
+
+    await screen.findAllByText("Posture regression finding");
+    await waitFor(() => {
+      expect(fixture.counts.overview).toBeGreaterThan(0);
+      expect(fixture.counts.subject).toBeGreaterThan(0);
+      expect(fixture.counts.comparison).toBeGreaterThan(0);
+    });
+
+    let previous = { ...fixture.counts };
+    await userEvent.selectOptions(screen.getByDisplayValue("open"), "confirmed");
+    await expectEveryPostureLayerRefreshed(fixture.counts, previous);
+
+    previous = { ...fixture.counts };
+    await userEvent.type(screen.getByLabelText("Suppression reason"), "Accepted local fixture decision");
+    await userEvent.click(screen.getByRole("button", { name: "Suppress" }));
+    await expectEveryPostureLayerRefreshed(fixture.counts, previous);
+
+    previous = { ...fixture.counts };
+    fireEvent.click(screen.getByText("Suppression and tag history"));
+    await userEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    await expectEveryPostureLayerRefreshed(fixture.counts, previous);
   });
 });
 
@@ -183,4 +217,115 @@ function protectedApiResponse(url: string) {
   });
   if (url.includes("/audit-logs")) return jsonResponse(page());
   return jsonResponse({ detail: `Unexpected test request: ${url}` }, 500);
+}
+
+async function expectEveryPostureLayerRefreshed(
+  counts: { overview: number; subject: number; comparison: number },
+  previous: { overview: number; subject: number; comparison: number },
+) {
+  await waitFor(() => {
+    expect(counts.overview).toBeGreaterThan(previous.overview);
+    expect(counts.subject).toBeGreaterThan(previous.subject);
+    expect(counts.comparison).toBeGreaterThan(previous.comparison);
+  });
+}
+
+function postureMutationApi() {
+  const counts = { overview: 0, subject: 0, comparison: 0 };
+  const finding = {
+    id: "finding-1", scan_id: "scan-2", target_id: "target-1", repository_asset_id: null,
+    title: "Posture regression finding", severity: "high", confidence: "high", affected_url: "http://juice-shop:3000/",
+    affected_file: null, evidence: "Normalized evidence", source_tool: "scopeharbor-passive", scanner_rule_id: "test-rule",
+    dedupe_key: "finding-dedupe", owasp_category: "A05", cwe: "CWE-693", reproduction_steps: null,
+    remediation: "Apply the missing control.", false_positive_notes: null, lifecycle_status: "open", suppressed: false,
+    suppression_rule_id: null, tags: [], created_at: "2026-01-02T00:00:00Z",
+  };
+  const suppression = {
+    id: "suppression-1", target_id: "target-1", repository_asset_id: null, dedupe_key: "finding-dedupe", severity: "high",
+    source_tool: "scopeharbor-passive", reason: "Fixture suppression", expires_at: null, revoked_at: null,
+    created_at: "2026-01-02T00:00:00Z",
+  };
+  const scans = [scanFixture("scan-2", "2026-01-02T00:00:00Z"), scanFixture("scan-1", "2026-01-01T00:00:00Z")];
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (url.includes("/findings/finding-1/lifecycle") && method === "PATCH") return jsonResponse({ ...finding, lifecycle_status: "confirmed" });
+    if (url.endsWith("/suppressions") && method === "POST") return jsonResponse(suppression, 201);
+    if (url.includes("/suppressions/suppression-1/revoke") && method === "POST") return jsonResponse({ ...suppression, revoked_at: "2026-01-03T00:00:00Z" });
+    if (url.includes("/targets/target-1/latest-comparison")) {
+      counts.comparison += 1;
+      return jsonResponse(comparisonFixture());
+    }
+    if (url.includes("/targets/target-1/dashboard")) {
+      counts.subject += 1;
+      return jsonResponse(targetDashboardFixture());
+    }
+    if (url.includes("/dashboard/overview")) {
+      counts.overview += 1;
+      return jsonResponse(overviewFixture(scans));
+    }
+    if (url.includes("/targets/policies")) return jsonResponse([]);
+    if (url.includes("/targets")) return jsonResponse(page([targetFixture()]));
+    if (url.includes("/repository-assets")) return jsonResponse(page());
+    if (url.includes("/auth-profiles")) return jsonResponse(page());
+    if (url.includes("/scans/scan-2/findings")) return jsonResponse(page([finding]));
+    if (url.includes("/scans/scan-2/tool-runs")) return jsonResponse(page());
+    if (url.includes("/scans/scan-2/reports")) return jsonResponse(page());
+    if (url.includes("/scans/scan-2/ai-explanations")) return jsonResponse({ detail: "No explanation yet." }, 404);
+    if (url.includes("/scans")) return jsonResponse(page(scans));
+    if (url.includes("/tags/assignments")) return jsonResponse(page());
+    if (url.includes("/tags")) return jsonResponse(page());
+    if (url.includes("/suppressions")) return jsonResponse(page([suppression]));
+    if (url.includes("/ops/health")) return jsonResponse(healthFixture());
+    if (url.includes("/audit-logs")) return jsonResponse(page());
+    return jsonResponse({ detail: `Unexpected mutation test request: ${method} ${url}` }, 500);
+  });
+  return { counts, fetchMock };
+}
+
+function scanFixture(id: string, createdAt: string) {
+  return {
+    id, target_id: "target-1", repository_asset_id: null, subject_type: "web_target", subject_id: "target-1",
+    scan_profile_id: "passive-web", status: "completed", current_step: "complete", status_message: "Completed safely.",
+    progress_percent: 100, started_at: createdAt, completed_at: createdAt, cancellation_requested_at: null,
+    failure: null, created_at: createdAt,
+  };
+}
+
+function overviewFixture(scans: ReturnType<typeof scanFixture>[]) {
+  return {
+    targets_count: 1, repository_assets_count: 0, scans_count: scans.length, completed_scans_count: scans.length,
+    findings_count: 1, severity_counts: { high: 1 }, latest_risk_score: null, recent_scans: [],
+    posture_basis: "latest completed scan per subject and profile", current_posture_score: null,
+    historical_findings_count: 1, historical_severity_counts: { high: 1 },
+  };
+}
+
+function targetDashboardFixture() {
+  return {
+    target_id: "target-1", target_name: "Previously authorized target", base_url: "http://juice-shop:3000/", scan_count: 2,
+    completed_scan_count: 2, findings_count: 1, severity_counts: { high: 1 }, latest_risk_score: null, recent_scans: [],
+    posture_basis: "latest completed scan per subject and profile", current_posture_score: null,
+    historical_findings_count: 1, historical_severity_counts: { high: 1 },
+  };
+}
+
+function comparisonFixture() {
+  const score = {
+    id: "risk-1", target_id: "target-1", repository_asset_id: null, scan_id: "scan-1", scoring_model_version: "risk-v1",
+    score: 20, label: "low", input_summary: {}, created_at: "2026-01-01T00:00:00Z",
+  };
+  return {
+    target_id: "target-1", repository_asset_id: null, subject_type: "web_target", subject_id: "target-1",
+    baseline_scan_id: "scan-1", comparison_scan_id: "scan-2", scoring_model_version: "risk-v1",
+    baseline_score: score, comparison_score: { ...score, id: "risk-2", scan_id: "scan-2" }, score_delta: 0,
+    new_findings: [], resolved_findings: [], unchanged_findings: [], severity_changed_findings: [],
+  };
+}
+
+function healthFixture() {
+  return {
+    status: "ok", database: { status: "ok", detail: null }, worker: { status: "ok", detail: null }, queue_depth: 0,
+    zap: { status: "ok", detail: null }, artifact_root: { status: "ok", detail: null },
+  };
 }

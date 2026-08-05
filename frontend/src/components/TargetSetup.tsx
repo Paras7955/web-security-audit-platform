@@ -526,6 +526,13 @@ export function TargetSetup({
     setTargetPolicies([]);
     setRepositoryAssets([]);
     setAuthProfiles([]);
+    setSelectedAuthProfileId("");
+    setAuthProfileLabel("");
+    setAuthProfileType("bearer_token");
+    setAuthProfileHeaderName("");
+    setAuthProfileSecret("");
+    setAuthProfileRotationSecret("");
+    setAuthProfileMessage("Create an optional target-app auth profile for passive scans.");
     setScanHistory([]);
     setToolRuns([]);
     setFindings([]);
@@ -549,6 +556,18 @@ export function TargetSetup({
     setSelectedFindingId("");
     setBaselineScanId("");
     setComparisonScanId("");
+    setTargetUrl("");
+    setPermissionConfirmed(false);
+    setRepoPath("");
+    setRepositoryName("");
+    setRepositoryPermissionConfirmed(false);
+    setTagLabel("");
+    setAssignmentTagId("");
+    setSuppressionReason("");
+    setArchiveCandidate(null);
+    setRepositoryArchiveCandidate(null);
+    setRevokeCandidate(null);
+    setConfirmActionError("");
     setActionFeedback(null);
   }
 
