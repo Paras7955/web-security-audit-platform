@@ -30,7 +30,7 @@ describe("Phase 25 protected workflow state", () => {
       if (authorization !== "Bearer valid-session") {
         return jsonResponse({ detail: "Authentication required." }, 401);
       }
-      return protectedApiResponse(String(input));
+      return protectedApiResponse(String(input), init?.method ?? "GET");
     }));
 
     const props = {
@@ -49,6 +49,18 @@ describe("Phase 25 protected workflow state", () => {
     const priorAcknowledgement = screen.getByRole("checkbox", { name: "I confirm I am authorized to assess this saved web target." });
     await userEvent.click(priorAcknowledgement);
     expect((priorAcknowledgement as HTMLInputElement).checked).toBe(true);
+    await userEvent.click(screen.getByRole("tab", { name: /Scope/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Validate" }));
+    expect(await screen.findByText("Target is allowlisted. Confirm authorization before saving it.")).toBeTruthy();
+    await userEvent.click(screen.getByRole("checkbox", { name: "I am authorized to inspect this local repository." }));
+    await userEvent.click(screen.getByRole("button", { name: "Save repository" }));
+    expect(await screen.findByText("Repository fixture is saved as a confined repository subject.")).toBeTruthy();
+    view.rerender(<TargetSetup activeView="findings" {...props} />);
+    await screen.findAllByText("Authentication transition finding");
+    await selectFindingFilter("Scope", "workspace");
+    await selectFindingFilter("Subject", "target:target-1");
+    await selectFindingFilter("Profile", "passive-web");
+    await selectFindingFilter("Tag", "tag-auth");
     view.rerender(<TargetSetup activeView="overview" {...props} />);
     expect(await screen.findByText("Previously authorized target")).toBeTruthy();
     view.rerender(<TargetSetup activeView="operations" {...props} />);
@@ -70,6 +82,17 @@ describe("Phase 25 protected workflow state", () => {
     const newAcknowledgement = screen.getByRole("checkbox", { name: "I confirm I am authorized to assess this saved web target." });
     expect((newAcknowledgement as HTMLInputElement).checked).toBe(false);
     expect(screen.getByRole("button", { name: /Continue to launch review/ })).toHaveProperty("disabled", true);
+    view.rerender(<TargetSetup activeView="findings" {...props} />);
+    await screen.findAllByText("Authentication transition finding");
+    fireEvent.click(screen.getByText("Filters & tags"));
+    expect(screen.getByLabelText("Scope")).toHaveProperty("value", "scan");
+    expect(screen.getByLabelText("Subject")).toHaveProperty("value", "");
+    expect(screen.getByLabelText("Profile")).toHaveProperty("value", "");
+    expect(screen.getByLabelText("Tag")).toHaveProperty("value", "");
+    view.rerender(<TargetSetup activeView="scanning" {...props} />);
+    await userEvent.click(screen.getByRole("tab", { name: /Scope/ }));
+    expect(screen.getByText("Enter an allowlisted local/demo target.")).toBeTruthy();
+    expect(screen.getByText("Authorize a confined local repository path to save it as a scan subject.")).toBeTruthy();
   });
 
   it("presents a stale web policy as requiring reauthorization", () => {
@@ -207,7 +230,16 @@ function page(items: unknown[] = []) {
   return { items, next_cursor: null };
 }
 
-function protectedApiResponse(url: string) {
+function protectedApiResponse(url: string, method = "GET") {
+  if (url.includes("/targets/validate") && method === "POST") return jsonResponse({
+    allowlist_id: "local-demo", name: "Local demo", base_url: "http://juice-shop:3000/", available_scan_profile_ids: ["passive-web"],
+    max_redirects: 2, local_demo: true, connection_class: "compose_service", scope_path: "/", tls_trust: "system",
+    policy_fingerprint: "fingerprint",
+  });
+  if (url.endsWith("/repository-assets") && method === "POST") return jsonResponse({
+    id: "repo-auth", name: "Repository fixture", relative_path: "security-project", permission_confirmed: true,
+    authorization_confirmed_at: "2026-01-01T00:00:00Z", archived_at: null, created_at: "2026-01-01T00:00:00Z",
+  }, 201);
   if (url.includes("/targets/policies")) return jsonResponse([]);
   if (url.includes("/targets/target-1/dashboard")) return jsonResponse({
     target_id: "target-1", target_name: "Previously authorized target", base_url: "http://juice-shop:3000/", scan_count: 0,
@@ -218,14 +250,19 @@ function protectedApiResponse(url: string) {
   if (url.includes("/targets")) return jsonResponse(page([targetFixture()]));
   if (url.includes("/repository-assets")) return jsonResponse(page());
   if (url.includes("/auth-profiles")) return jsonResponse(page());
-  if (url.includes("/scans")) return jsonResponse(page());
+  if (url.includes("/scans/auth-scan/findings")) return jsonResponse(page([authenticationTransitionFinding()]));
+  if (url.includes("/findings?")) return jsonResponse(page([authenticationTransitionFinding()]));
+  if (url.includes("/scans/auth-scan/tool-runs")) return jsonResponse(page());
+  if (url.includes("/scans/auth-scan/reports")) return jsonResponse(page());
+  if (url.includes("/scans/auth-scan/ai-explanations")) return jsonResponse({ detail: "No explanation yet." }, 404);
+  if (url.includes("/scans")) return jsonResponse(page([scanFixture("auth-scan", "2026-01-01T00:00:00Z")]));
   if (url.includes("/dashboard/overview")) return jsonResponse({
     targets_count: 1, repository_assets_count: 0, scans_count: 0, completed_scans_count: 0, findings_count: 0,
     severity_counts: {}, latest_risk_score: null, recent_scans: [], posture_basis: "latest completed scan per subject and profile",
     current_posture_score: null, historical_findings_count: 0, historical_severity_counts: {},
   });
   if (url.includes("/tags/assignments")) return jsonResponse(page());
-  if (url.includes("/tags")) return jsonResponse(page());
+  if (url.includes("/tags")) return jsonResponse(page([{ id: "tag-auth", label: "auth-transition", created_at: "2026-01-01T00:00:00Z", archived_at: null }]));
   if (url.includes("/suppressions")) return jsonResponse(page());
   if (url.includes("/ops/health")) return jsonResponse({
     status: "ok", database: { status: "ok", detail: null }, worker: { status: "ok", detail: null }, queue_depth: 0,
@@ -233,6 +270,17 @@ function protectedApiResponse(url: string) {
   });
   if (url.includes("/audit-logs")) return jsonResponse(page());
   return jsonResponse({ detail: `Unexpected test request: ${url}` }, 500);
+}
+
+function authenticationTransitionFinding() {
+  return {
+    id: "auth-finding", scan_id: "auth-scan", target_id: "target-1", repository_asset_id: null,
+    title: "Authentication transition finding", severity: "medium", confidence: "high", affected_url: "http://juice-shop:3000/",
+    affected_file: null, evidence: "Normalized evidence", source_tool: "scopeharbor-passive", scanner_rule_id: "auth-rule",
+    dedupe_key: "auth-dedupe", owasp_category: "A05", cwe: "CWE-693", reproduction_steps: null, remediation: null,
+    false_positive_notes: null, lifecycle_status: "open", suppressed: false, suppression_rule_id: null, tags: ["auth-transition"],
+    created_at: "2026-01-01T00:00:00Z",
+  };
 }
 
 async function expectEveryPostureLayerRefreshed(
@@ -244,6 +292,14 @@ async function expectEveryPostureLayerRefreshed(
     expect(counts.subject).toBeGreaterThan(previous.subject);
     expect(counts.comparison).toBeGreaterThan(previous.comparison);
   });
+}
+
+async function selectFindingFilter(label: string, value: string) {
+  const summary = screen.getByText("Filters & tags");
+  const details = summary.closest("details");
+  if (!details?.open) fireEvent.click(summary);
+  await userEvent.selectOptions(screen.getByLabelText(label), value);
+  await screen.findAllByText("Authentication transition finding");
 }
 
 function postureMutationApi() {
