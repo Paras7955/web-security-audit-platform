@@ -88,9 +88,12 @@ lease/cancellation/process/ZAP handling, subject-aware posture and finding
 management, explicit external AI generation, idempotent reports, schema `0012`,
 release CI/SBOM/vulnerability gates, and reconciled public documentation.
 
-The current frontend was intentionally preserved. It supports local development
-auth and existing target workflows; OIDC login UX and repository-asset UI
-integration are future frontend work.
+The Phase 23 frontend was intentionally preserved while the backend contracts
+stabilized. Phase 25 then integrated the target-policy catalog and
+reauthorization, first-class repository assets, subject-aware audits and
+comparisons, current posture, explicit AI generation, finding-governance
+controls, and an in-memory OIDC bearer session. It did not broaden scanner
+authority or add an identity-provider redirect flow.
 
 ## Scope decisions retained through 1.1
 

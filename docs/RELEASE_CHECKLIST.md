@@ -5,11 +5,11 @@ planned or mocked result.
 
 ## Source and scope
 
-- [ ] Branch is `phase-24-ci-smoke-fix`; worktree is clean.
-- [ ] No UI product code under `frontend/src/` changed; frontend changes are
-  limited to dependency, lockfile, generated type, TypeScript compatibility,
-  and container hardening work.
-- [ ] Version is `1.1.0` in backend and shared contracts.
+- [ ] Branch is `phase-25-frontend-integration`; worktree is clean.
+- [ ] UI product changes remain contract-only: they do not broaden scanner
+  authority, retain bearer tokens, expose raw scanner data, or bypass backend
+  workspace/policy enforcement.
+- [ ] Version is `1.1.0` in backend, shared contracts, and the frontend package.
 - [ ] MIT license has `Copyright (c) 2026 Paras Atwal`.
 - [ ] README, SECURITY, architecture, threat model, API, operator, upgrade,
   development history, changelog, and handoff agree.
@@ -75,8 +75,9 @@ planned or mocked result.
 
 ## Containers and CI
 
-- [ ] Frontend `npm ci`, audit, lint, and production build pass without UI
-  feature changes.
+- [ ] Frontend `npm ci`, audit, lint, and production build pass.
+- [ ] Responsive keyboard and reduced-motion checks cover the target-policy,
+  repository, subject-aware scan, governance, AI, and OIDC-facing workflows.
 - [ ] API, worker, relay, and frontend images build.
 - [ ] `python3 scripts/check_compose_hardening.py` passes.
 - [ ] Compose migration/readiness smoke passes with non-root,
@@ -91,8 +92,8 @@ planned or mocked result.
 
 ## Repository owner actions
 
-- [ ] Review and push `phase-24-ci-smoke-fix`, require all release checks to
-  pass, and merge it before beginning frontend work.
+- [ ] Review and push `phase-25-frontend-integration`, require all release
+  checks to pass, and merge it before any later phase begins.
 - [ ] Enable GitHub Private Vulnerability Reporting.
 - [ ] Enable branch protection and require the release CI checks.
 - [ ] Enable GitHub Code Security as desired; for a private repository set

@@ -25,8 +25,10 @@ Check:
 - bundled demo: <http://localhost:3000>
 - protected platform state: `/api/v1/ops/health`
 
-The current UI expects local development auth. OIDC and repository-asset APIs
-work through API clients, but their frontend integration is deferred.
+The UI supports local development auth and first-class repository assets. In
+strict OIDC mode, paste an already-issued platform bearer token into
+**Operations → Operator access**. The token remains only in memory for that
+browser tab; ScopeHarbor does not implement an identity-provider redirect flow.
 
 ## Configuration rules
 
@@ -56,7 +58,8 @@ For production-like local use:
 3. Configure exact `AUTH_OIDC_ISSUER`, `AUTH_OIDC_AUDIENCE`, and
    `AUTH_OIDC_JWKS_URL`.
 4. Stop using the development token.
-5. Use an API client/front end that supplies the OIDC bearer token.
+5. Open **Operations → Operator access** and supply an already-issued OIDC
+   bearer token, or use an API client that supplies it.
 6. Rebuild and confirm `/ready` plus one protected request.
 
 ScopeHarbor accepts RS256 tokens with strict issuer/audience and required
@@ -168,13 +171,14 @@ The supplied Compose file mounts this repository read-only at
 read-only bind mount below `/app/repositories`; never mount a home directory or
 host filesystem root.
 
-Create a repository asset through `/api/v1/repository-assets` using the absolute
-in-container path and explicit permission confirmation. ScopeHarbor stores only
-the relative identity. Each scan snapshots it, so later path changes cannot
-retarget queued work.
+In **Audits → Scope**, create a repository asset using the absolute in-container
+path and explicit permission confirmation. The UI uses
+`/api/v1/repository-assets`; ScopeHarbor returns and displays only the confined
+relative identity. Each scan snapshots it, so later path changes cannot retarget
+queued work.
 
-The existing target `repo_path` route remains a frontend compatibility adapter
-and creates/reuses an asset at launch. Prefer repository assets for API clients.
+The existing target `repo_path` route remains a deprecated compatibility
+adapter for historical callers. The current UI does not use it.
 
 Ordinary scans never access a remote or resolve dependencies. Refresh offline
 OSV data before first use, after cache recreation, and at least weekly:
@@ -272,7 +276,7 @@ PYTHONPATH=backend .venv/bin/coverage run --branch -m unittest discover -s backe
 .venv/bin/python scripts/check_security_coverage.py coverage.json
 ```
 
-Also run frontend `npm ci`, lint, and build without changing frontend source;
+Also run frontend `npm ci`, audit, lint, and production build;
 migration upgrades from zero/0008/0011; runtime+dev dependency audits; real
 pinned scanner fixtures; image builds; Compose hardening/readiness; SBOM;
 vulnerability review; and controlled local HTTP/HTTPS scans. The release
