@@ -3,11 +3,20 @@
 ## Current state
 
 ScopeHarbor — Local AppSec Audit Platform is at version `1.1.0`. V1 phases
-1–19 and the approved post-V1 phases 20–23 are complete. The Phase 24
-backend/security review was merged into `main` as pull request 49 at `212316d`.
-The follow-up container-readiness CI repair is complete on
-`phase-24-ci-smoke-fix`. No frontend feature work began. The hotfix must pass
-GitHub-hosted CI and merge into `main` before a frontend phase starts.
+1–19 and post-V1 phases 20–24 are merged into `main`. The Phase 24 CI repair
+merged as pull request 50 at `2875e65`, and the required GitHub-hosted quality
+and container jobs passed. Phase 25 frontend integration is complete on
+`phase-25-frontend-integration` and is waiting for the repository owner to push,
+review, and merge it before any later phase begins.
+
+Phase 25 implementation and review commits:
+
+- `2bdd078` — `feat(frontend): integrate subject-aware audit workflows`
+- `a6ffe16` — `docs(frontend): document integrated operator workflows`
+- `f81c3d8` — `fix(frontend): close protected workflow state gaps`
+- `8783ec4` — `fix(frontend): clear cross-session form state`
+- `d276519` — `fix(frontend): reset cross-session authorization`
+- `aac7d75` — `fix(frontend): clear cross-workspace filters`
 
 The release provides:
 
@@ -92,7 +101,7 @@ Read `SECURITY.md` and `docs/THREAT_MODEL.md` before changing a trust boundary.
 | Reports and AI | `backend/app/reports/`, `backend/app/ai/` | Safe subject-aware downstream projections |
 | Operations | `backend/app/ops/`, `backend/app/maintenance.py` | Audit, health, limits, and dry-run-first maintenance |
 | Public contract | `shared/contracts.json` | Profiles, acknowledgements, limits, and version |
-| Operator UI | `frontend/src/` | Existing dev-auth and target-based operator workflows |
+| Operator UI | `frontend/src/` | Policy, subject-aware audit, governance, posture, report, AI, and in-memory bearer workflows |
 | Runtime/CI | `docker-compose.yml`, `backend/Dockerfile`, `.github/workflows/` | Network isolation, images, quality, secret, SBOM, and vulnerability gates |
 
 Default host endpoints are frontend `127.0.0.1:3001`, API
@@ -105,8 +114,9 @@ Default host endpoints are frontend `127.0.0.1:3001`, API
   reauthorization.
 - Repository-asset create/list/read/archive plus repository dashboard and
   latest-comparison routes.
-- Scan creation by either `target_id` or `repository_asset_id`, with a
-  deprecated target-repository compatibility adapter for the current UI.
+- Scan creation by either `target_id` or `repository_asset_id`. The current UI
+  uses first-class subjects; the target-repository adapter remains deprecated
+  for historical callers.
 - Subject type/ID and repository-asset identity in scan, finding, risk,
   dashboard, comparison, report, and AI projections while retaining existing
   target fields.
@@ -164,6 +174,30 @@ exports them through `$GITHUB_ENV` for later steps, and creates the bounded
 directories before use. The same correction was applied to the unpushed
 container hotfix. Independent follow-up review found no actionable issues.
 
+## Phase 25 review decisions
+
+The independent frontend review found four high-priority state/truthfulness
+defects and one testing gap. All were accepted and fixed:
+
+- Authentication replacement, rejection, and logout now gate the UI behind a
+  loading state and clear all previously protected workspace data before any
+  new session is verified. Credential values, rotation values, form drafts,
+  scan acknowledgements, audit phase, workspace-derived filters/messages, and
+  pending management actions are cleared as well. A rejected OIDC token
+  restores the configured local development session only after reloading it.
+- Stale web-target policies are labelled as requiring reauthorization, show no
+  eligible profiles, and route the operator back to the Scope phase.
+- Finding lifecycle and suppression create/revoke actions refresh workspace
+  posture plus the selected subject dashboard and comparison.
+- Archived tags remain visible in governance history while any active
+  assignments can still be removed.
+- Six automated state/contract tests cover auth and credential-form clearing,
+  stale policy, posture invalidation for lifecycle/suppression mutations,
+  archived-tag assignments, mutually exclusive scan subjects, and explicit AI
+  POST behavior. The frontend quality workflow now runs them.
+
+The final follow-up review found no actionable issues and approved Phase 25.
+
 ## Final verification record
 
 - A clean temporary PostgreSQL database migrated from zero through
@@ -177,9 +211,10 @@ container hotfix. Independent follow-up review found no actionable issues.
   100.00%, SSRF/redirects 95.07%, persistence redaction 100.00%, artifact paths
   100.00%, and repository runner boundaries 96.42%.
 - Ruff and Pyright: clean.
-- Frontend: a clean Linux-compatible `npm ci`, `npm audit --audit-level=high`,
-  lint, and Next.js 16.3.0 production build passed. PostCSS is pinned to
-  8.5.25. No UI product code under `frontend/src/` changed.
+- Frontend: a clean `npm ci`, six Vitest/Testing Library state/contract tests,
+  `npm audit --audit-level=high`, lint, and the Next.js 16.3.0 production build
+  passed. The audit reported zero vulnerabilities. PostCSS remains pinned to
+  8.5.25.
 - Both Python production/development locks install with hashes and pass
   `pip-audit`; cryptography is pinned to 50.0.0.
 - Compose rendering and network/privilege hardening validation passed. API,
@@ -190,23 +225,19 @@ container hotfix. Independent follow-up review found no actionable issues.
 - The worker reports Gitleaks 8.30.1-scopeharbor.1 and OSV-Scanner 2.5.0. The
   current source-built OSV binary was not exercised against a freshly updated
   offline database during this review; that remains an operator release check.
-- Authenticated GitHub Actions inspection confirmed Frontend quality run
-  `30943834977` passed. Container builds run `30943834633` passed every image
-  build, Trivy scan, and SBOM before failing only at Compose readiness. The
-  follow-up hotfix passes YAML parsing, Compose rendering/runtime-key
-  assertions, hardening checks, focused bootstrap/hardening tests, and diff
-  checks locally. Backend quality run `30943832795` was rejected before job
-  startup by invalid job-level `runner.temp` expressions; both affected
-  workflows now initialize their bounded paths at step runtime. GitHub-hosted
-  CI remains a release blocker until the hotfix branch is pushed and every
-  required check passes.
+- The Phase 24 CI repair is merged and its required GitHub-hosted workflows are
+  green. Phase 25 frontend CI has not run because this branch has not been
+  pushed. Compose hardening passed locally with a temporary validation-only
+  relay secret. A local frontend image build could not start because Docker
+  Desktop was stopped; the image build and Trivy scan therefore remain required
+  pull-request checks.
 
 ## Operator actions
 
-1. Push `phase-24-ci-smoke-fix`, open a pull request, and require
-   `Container builds / build` plus every remaining release workflow to pass.
-   Merge the hotfix into `main` and confirm the merge before any frontend
-   feature phase begins.
+1. Push `phase-25-frontend-integration`, open a pull request, and require
+   Frontend quality, Container builds / build, and every remaining required
+   workflow to pass. Merge the branch into `main`, then confirm the merge before
+   any later phase begins.
 2. Run `python3 scripts/bootstrap_env.py`. It adds the relay secret and newly
    introduced settings without replacing a non-empty user-managed
    `AUTH_PROFILE_SECRET_KEY`; review the resulting `.env`.
@@ -238,10 +269,12 @@ container hotfix. Independent follow-up review found no actionable issues.
 - General local targets receive ScopeHarbor passive scans only. ZAP Passive,
   Active Demo, and Client Spider remain explicitly compatible disposable-demo
   features.
-- The current UI supports local dev authentication and existing target-based
-  workflows. Full OIDC operator UX and repository-asset UI integration remain
-  work for a later frontend phase; backend APIs are ready. Do not begin that
-  phase until `phase-24-ci-smoke-fix` is merged and hosted CI is green.
+- The UI supports local development auth and an operator-supplied OIDC bearer
+  token held only in memory for one browser tab. It does not implement provider
+  redirects, refresh-token storage, or session renewal.
+- The current UI uses first-class repository assets. Deprecated target-based
+  repository routes/columns remain only for historical callers and require a
+  separately approved backend phase before removal.
 - The offline OSV database is operator-managed. Missing or stale data produces
   an explicit warning and skips dependency analysis instead of going online.
 - External AI is optional and adds an operator-controlled data processor;
