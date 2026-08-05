@@ -59,6 +59,11 @@ versioning for the public source contract.
 - Relay requests are bounded before JSON parsing; relay responses use a bounded
   base64 envelope and expose only structured cookie security attributes.
 - Frontend dependencies were advanced to audit-clean patched releases.
+- Container CI readiness now uses one bootstrapped runtime environment for
+  Compose interpolation, service startup validation, and guaranteed ordinary
+  failure cleanup.
+- Backend and container workflows now initialize runner-temporary paths inside
+  executable steps, avoiding invalid job-level GitHub context expressions.
 
 ## [1.0.0] - 2026-07-14
 

@@ -46,13 +46,10 @@ jobs:
       ZAP_API_KEY: 0123456789abcdef0123456789abcdef
       SCAN_RELAY_URL: http://relay:8090
       SCAN_RELAY_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef
-      ARTIFACT_ROOT: ${{ runner.temp }}/scopeharbor-artifacts
       REPO_SCAN_ROOT: ${{ github.workspace }}
-      REPO_STAGING_ROOT: ${{ runner.temp }}/scopeharbor-repo-staging
       ALLOWLIST_PATH: ${{ github.workspace }}/config/scan-allowlist.yml
       GITLEAKS_CONFIG_PATH: ${{ github.workspace }}/config/gitleaks.toml
       OSV_CONFIG_PATH: ${{ github.workspace }}/config/osv-scanner.toml
-      OSV_DATABASE_PATH: ${{ runner.temp }}/scopeharbor-osv-db
       TRUSTED_HOSTS: '["localhost","127.0.0.1","testserver"]'
       CORS_ORIGINS: '["http://localhost:3001"]'
     steps:
@@ -72,7 +69,15 @@ jobs:
         run: python -m pip install --require-hashes --requirement backend/requirements-dev.txt
 
       - name: Prepare bounded test paths
-        run: mkdir -p "$ARTIFACT_ROOT" "$REPO_STAGING_ROOT" "$OSV_DATABASE_PATH"
+        run: |
+          artifact_root="${RUNNER_TEMP}/scopeharbor-artifacts"
+          repo_staging_root="${RUNNER_TEMP}/scopeharbor-repo-staging"
+          osv_database_path="${RUNNER_TEMP}/scopeharbor-osv-db"
+          printf '%s\n' \
+            "ARTIFACT_ROOT=$artifact_root" \
+            "REPO_STAGING_ROOT=$repo_staging_root" \
+            "OSV_DATABASE_PATH=$osv_database_path" >> "$GITHUB_ENV"
+          mkdir -p "$artifact_root" "$repo_staging_root" "$osv_database_path"
 
       - name: Check formatting and security lint
         run: ruff check backend
