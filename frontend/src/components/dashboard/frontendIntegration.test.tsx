@@ -23,6 +23,8 @@ afterEach(() => {
 describe("Phase 25 protected workflow state", () => {
   it("clears a previously rendered workspace when the operator session is removed", async () => {
     setSessionAuthToken("valid-session");
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const authorization = new Headers(init?.headers).get("Authorization");
       if (authorization !== "Bearer valid-session") {
@@ -42,6 +44,11 @@ describe("Phase 25 protected workflow state", () => {
     view.rerender(<TargetSetup activeView="credentials" {...props} />);
     await userEvent.type(screen.getByLabelText("Profile label"), "Cross-workspace credential");
     await userEvent.type(screen.getByPlaceholderText("Token or API key used by the target"), "target-secret-canary");
+    view.rerender(<TargetSetup activeView="scanning" {...props} />);
+    await userEvent.click(screen.getByRole("tab", { name: /Authorize/ }));
+    const priorAcknowledgement = screen.getByRole("checkbox", { name: "I confirm I am authorized to assess this saved web target." });
+    await userEvent.click(priorAcknowledgement);
+    expect((priorAcknowledgement as HTMLInputElement).checked).toBe(true);
     view.rerender(<TargetSetup activeView="overview" {...props} />);
     expect(await screen.findByText("Previously authorized target")).toBeTruthy();
     view.rerender(<TargetSetup activeView="operations" {...props} />);
@@ -54,6 +61,15 @@ describe("Phase 25 protected workflow state", () => {
     view.rerender(<TargetSetup activeView="credentials" {...props} />);
     expect(screen.getByLabelText("Profile label")).toHaveProperty("value", "");
     expect(screen.getByPlaceholderText("Token or API key used by the target")).toHaveProperty("value", "");
+    view.rerender(<TargetSetup activeView="operations" {...props} />);
+    await userEvent.type(screen.getByPlaceholderText("Paste an OIDC access token"), "valid-session");
+    await userEvent.click(screen.getByRole("button", { name: "Use token for this tab" }));
+    await screen.findByText("OIDC bearer active");
+    view.rerender(<TargetSetup activeView="scanning" {...props} />);
+    await userEvent.click(screen.getByRole("tab", { name: /Authorize/ }));
+    const newAcknowledgement = screen.getByRole("checkbox", { name: "I confirm I am authorized to assess this saved web target." });
+    expect((newAcknowledgement as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByRole("button", { name: /Continue to launch review/ })).toHaveProperty("disabled", true);
   });
 
   it("presents a stale web policy as requiring reauthorization", () => {

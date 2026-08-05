@@ -553,6 +553,9 @@ export function TargetSetup({
     setSelectedSubjectId("");
     setSelectedScanId("");
     setCurrentAuditScanId("");
+    setScanProfileId("passive-web");
+    setAcknowledgements([]);
+    setAuditPhase("ready");
     setSelectedFindingId("");
     setBaselineScanId("");
     setComparisonScanId("");
