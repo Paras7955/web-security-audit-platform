@@ -1,6 +1,6 @@
 {
   "name": "scopeharbor-frontend",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "overrides": {
     "postcss": "8.5.25"

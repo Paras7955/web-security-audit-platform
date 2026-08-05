@@ -24,7 +24,7 @@ const workflowSteps: Array<{
   {
     number: "02",
     title: "Define exact authorized scope",
-    description: "Choose a saved allowlisted web target or attach an approved local repository path. ScopeHarbor denies destinations outside configured policy.",
+    description: "Choose a saved allowlisted web target or an authorized repository asset. ScopeHarbor denies destinations outside configured policy.",
     action: "Open Scope",
     view: "scanning",
     phase: "scope"
@@ -126,7 +126,7 @@ export function ProductGuide({
               </div>
             </div>
             <div className="guidePrinciples">
-              <div><AppIcon name="target" size={18} /><strong>Exact scope</strong><p>Launches are limited to configured targets or approved local repository paths.</p></div>
+              <div><AppIcon name="target" size={18} /><strong>Exact scope</strong><p>Launches are limited to configured targets or authorized repository assets.</p></div>
               <div><AppIcon name="shield" size={18} /><strong>Safe evidence</strong><p>Raw bodies, secrets, unsafe paths, and unredacted scanner output stay outside reports and AI boundaries.</p></div>
               <div><AppIcon name="finding" size={18} /><strong>Actionable results</strong><p>Scanner output is normalized so triage and remediation remain consistent across profiles.</p></div>
             </div>

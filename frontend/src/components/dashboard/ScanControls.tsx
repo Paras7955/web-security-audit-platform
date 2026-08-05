@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppIcon } from "@/components/AppIcon";
-import type { Scan, ScannerToolRun, Target } from "@/lib/securityAuditApi";
+import type { AuditSubject, Scan, ScannerToolRun } from "@/lib/securityAuditApi";
 import { ACKNOWLEDGEMENT_LABELS, SCAN_PROFILES } from "@/lib/contracts";
 
 export const terminalStatuses = new Set(["completed", "completed_with_warnings", "failed", "cancelled"]);
@@ -42,57 +42,49 @@ export function mergeScan(scans: Scan[], updatedScan: Scan): Scan[] {
 }
 
 export function ScanProfileSelector({
-  targets,
-  selectedTargetId,
-  repoPath,
+  subjects,
+  selectedSubjectId,
   scanProfileId,
-  isBusy,
-  onSelectTarget,
+  onSelectSubject,
   onSelectScanProfile,
-  onAttachRepoPath,
   onContinue
 }: {
-  targets: Target[];
-  selectedTargetId: string;
-  repoPath: string;
+  subjects: AuditSubject[];
+  selectedSubjectId: string;
   scanProfileId: string;
-  isBusy: boolean;
-  onSelectTarget: (targetId: string) => void;
+  onSelectSubject: (subjectId: string) => void;
   onSelectScanProfile: (profileId: string) => void;
-  onAttachRepoPath: () => void;
   onContinue: () => void;
 }) {
-  const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
+  const selectedSubject = subjects.find((subject) => subject.id === selectedSubjectId) ?? null;
   const selectedProfile = profilesById.get(scanProfileId) ?? SCAN_PROFILES[0];
-  const selectedTargetSupportsProfile = selectedTarget?.available_scan_profile_ids.includes(selectedProfile.id) ?? false;
-  const repoPathMissing = selectedProfile.requires_repo_path && Boolean(selectedTarget) && !selectedTarget?.has_repo_path;
-  const authProfileUnsupported = Boolean(selectedTarget?.auth_profile_id && selectedProfile.mode !== "passive");
-  const canAttachRepoPath = Boolean(selectedTarget && repoPath.trim() && !isBusy);
+  const selectedSubjectSupportsProfile = selectedSubject?.availableScanProfileIds.includes(selectedProfile.id) ?? false;
+  const authProfileUnsupported = Boolean(selectedSubject?.target?.auth_profile_id && selectedProfile.mode !== "passive");
 
   return (
     <div className="profileWorkspace">
       <div className="profileSelectorHeader">
         <div>
-          <h2>Choose how to audit this target</h2>
-          <p>Each profile uses a different bounded tool path. Availability is enforced by the selected target.</p>
+          <h2>Choose how to audit this subject</h2>
+          <p>Each profile uses a different bounded tool path. Availability is enforced by the selected web target or repository asset.</p>
         </div>
         <label className="selectLabel compactSelect">
-          <span>Selected target</span>
-          <select value={selectedTargetId} onChange={(event) => onSelectTarget(event.target.value)}>
-            <option value="">No saved targets</option>
-            {targets.map((target) => (
-              <option key={target.id} value={target.id}>{target.name}</option>
+          <span>Selected subject</span>
+          <select value={selectedSubjectId} onChange={(event) => onSelectSubject(event.target.value)}>
+            <option value="">No saved subjects</option>
+            {subjects.map((subject) => (
+              <option key={subject.id} value={subject.id}>{subject.subjectType === "repository_asset" ? "Repository: " : "Web: "}{subject.name}</option>
             ))}
           </select>
-          {selectedTarget ? <small className="compactSelectMeta">{selectedTarget.base_url}</small> : null}
+          {selectedSubject ? <small className="compactSelectMeta">{selectedSubject.detail}</small> : null}
         </label>
       </div>
 
       <div className="profileDecisionGrid">
         <div className="modeGrid" role="group" aria-label="Audit profile choices">
           {SCAN_PROFILES.map((profile) => {
-            const isAvailable = selectedTarget?.available_scan_profile_ids.includes(profile.id) ?? false;
-            const isUnavailable = Boolean(selectedTarget && !isAvailable);
+            const isAvailable = selectedSubject?.availableScanProfileIds.includes(profile.id) ?? false;
+            const isUnavailable = Boolean(selectedSubject && !isAvailable);
             const isSelected = scanProfileId === profile.id;
             const capabilities = profileCapabilities(profile);
             return (
@@ -108,7 +100,7 @@ export function ScanProfileSelector({
                 <span className="modeCardIcon"><AppIcon name={profileIcon(profile.id)} size={28} /></span>
                 <span className="modeCardTop">
                   <strong>{profile.label}</strong>
-                  <em>{!selectedTarget ? "Needs target" : isUnavailable ? "Unavailable" : isSelected ? "Selected" : "Available"}</em>
+                  <em>{!selectedSubject ? "Needs subject" : isUnavailable ? "Unavailable" : isSelected ? "Selected" : "Available"}</em>
                 </span>
                 <span>{profileDecisionCopy(profile.id)}</span>
                 <span className="profileMeta">{capabilities.join(" · ")}</span>
@@ -123,20 +115,19 @@ export function ScanProfileSelector({
             <div><span>Selected profile</span><h3>{selectedProfile.label}</h3></div>
           </div>
           <ul className="profileAssuranceList">
-            <li><AppIcon name="shield" size={17} /><span><strong>Guarded eligibility</strong><small>{selectedTargetSupportsProfile ? "Allowed for the selected target" : "Not allowed for the selected target"}</small></span></li>
+            <li><AppIcon name="shield" size={17} /><span><strong>Guarded eligibility</strong><small>{selectedSubjectSupportsProfile ? "Allowed for the selected subject" : "Not allowed for the selected subject"}</small></span></li>
             <li><AppIcon name="intelligence" size={17} /><span><strong>Sanitized outputs</strong><small>{selectedProfile.reports_enabled ? `Reports${selectedProfile.ai_enabled ? " and explanations" : ""} available` : "No reports or explanations"}</small></span></li>
             <li><AppIcon name="credential" size={17} /><span><strong>Credential boundary</strong><small>{selectedProfile.mode === "passive" ? "Optional guarded credential" : "Credentials are never used"}</small></span></li>
           </ul>
-          {selectedProfile.requires_repo_path ? (
+          {selectedSubject?.repositoryAsset ? (
             <div className="repoPathNotice">
               <p>Repository scans stage bounded regular files only. ScopeHarbor never clones, builds, installs, runs hooks, or executes repository code.</p>
-              <strong>{selectedTarget?.has_repo_path ? "Repository path attached" : "Repository path required"}</strong>
-              <small className="repoPathValue">{repoPath.trim() || "No repository path entered in Scope."}</small>
-              {repoPathMissing ? <button type="button" onClick={onAttachRepoPath} disabled={!canAttachRepoPath}>Attach this repository path</button> : null}
+              <strong>Confined repository identity</strong>
+              <small className="repoPathValue">{selectedSubject.repositoryAsset.relative_path}</small>
             </div>
           ) : null}
           {authProfileUnsupported ? <p className="formMessage errorText">Detach the target credential or choose Passive Web. Credentials never enter active, browser, or repository scans.</p> : null}
-          <button type="button" onClick={onContinue} disabled={!selectedTargetSupportsProfile || repoPathMissing || authProfileUnsupported}>
+          <button type="button" onClick={onContinue} disabled={!selectedSubjectSupportsProfile || authProfileUnsupported}>
             Continue to authorization <AppIcon name="arrow" size={15} />
           </button>
         </aside>
@@ -146,7 +137,7 @@ export function ScanProfileSelector({
 }
 
 export function ScanAuthorization({
-  target,
+  subject,
   scanProfileId,
   acknowledgements,
   profileReady,
@@ -154,7 +145,7 @@ export function ScanAuthorization({
   onOpenCredentials,
   onContinue
 }: {
-  target: Target | null;
+  subject: AuditSubject | null;
   scanProfileId: string;
   acknowledgements: string[];
   profileReady: boolean;
@@ -164,7 +155,7 @@ export function ScanAuthorization({
 }) {
   const profile = profilesById.get(scanProfileId) ?? SCAN_PROFILES[0];
   const allConfirmed = profile.required_acknowledgements.every((code) => acknowledgements.includes(code));
-  const authProfileUnsupported = Boolean(target?.auth_profile_id && profile.mode !== "passive");
+  const authProfileUnsupported = Boolean(subject?.target?.auth_profile_id && profile.mode !== "passive");
 
   return (
     <div className="authorizationLayout">
@@ -175,7 +166,7 @@ export function ScanAuthorization({
         </div>
         <p>ScopeHarbor records these confirmations with the scan request. They do not broaden the backend allowlist.</p>
         <div className="authorizationSummary">
-          <span><AppIcon name="target" size={16} />{target?.name ?? "No target selected"}</span>
+          <span><AppIcon name={subject?.subjectType === "repository_asset" ? "intelligence" : "target"} size={16} />{subject?.name ?? "No subject selected"}</span>
           <span><AppIcon name="scan" size={16} />{profile.label}</span>
         </div>
         <div className="acknowledgementList">
@@ -200,7 +191,7 @@ export function ScanAuthorization({
         <p className="panelKicker">What remains enforced</p>
         <h3>Permission does not replace policy</h3>
         <ul>
-          <li><AppIcon name="check" size={15} /><span><strong>Exact destination</strong>Scanner traffic remains bound to the configured Docker service.</span></li>
+          <li><AppIcon name="check" size={15} /><span><strong>Exact subject</strong>{subject?.subjectType === "repository_asset" ? "Repository access remains confined below the operator root." : "Scanner traffic remains bound to the configured destination policy."}</span></li>
           <li><AppIcon name="check" size={15} /><span><strong>Redirect checks</strong>Every redirect is revalidated; automatic redirects stay disabled.</span></li>
           <li><AppIcon name="check" size={15} /><span><strong>Sanitized output</strong>Queries, fragments, secrets, and raw bodies do not cross report or AI boundaries.</span></li>
         </ul>
@@ -217,14 +208,14 @@ export function ScanAuthorization({
 }
 
 export function ScanLaunchPanel({
-  target,
+  subject,
   scanProfileId,
   canStartScan,
   platformReady,
   isBusy,
   onStartScan
 }: {
-  target: Target | null;
+  subject: AuditSubject | null;
   scanProfileId: string;
   canStartScan: boolean;
   platformReady: boolean;
@@ -237,11 +228,11 @@ export function ScanLaunchPanel({
       <div>
         <p className="panelKicker">Launch review</p>
         <h2>{profile.label} is ready to queue</h2>
-        <p>Review the exact target and profile once more. The worker will revalidate workspace, target, and policy context before any tool runs.</p>
+        <p>Review the exact subject and profile once more. The worker will revalidate workspace and immutable launch authority before any tool runs.</p>
       </div>
       <dl>
-        <div><dt>Target</dt><dd>{target?.name ?? "Not selected"}</dd></div>
-        <div><dt>Canonical address</dt><dd>{target?.base_url ?? "—"}</dd></div>
+        <div><dt>Subject</dt><dd>{subject?.name ?? "Not selected"}</dd></div>
+        <div><dt>{subject?.subjectType === "repository_asset" ? "Relative path" : "Canonical address"}</dt><dd>{subject?.detail ?? "—"}</dd></div>
         <div><dt>Profile</dt><dd>{profile.label}</dd></div>
         <div><dt>Platform</dt><dd>{platformReady ? "Ready" : "Needs attention"}</dd></div>
       </dl>
@@ -263,14 +254,14 @@ function profileCapabilities(profile: ScanProfileMetadata) {
 function profileDecisionCopy(profileId: string): string {
   if (profileId === "active-demo") return "Bounded ZAP testing for local demos.";
   if (profileId === "modern-web-crawl") return "Client Spider crawl for local demos.";
-  if (profileId === "repo") return "Gitleaks and offline OSV; code is never run.";
+  if (profileId === "repository") return "Gitleaks and offline OSV; code is never run.";
   return "Passive checks for allowlisted targets.";
 }
 
 function profileIcon(profileId: string): "target" | "operations" | "activity" | "intelligence" {
   if (profileId === "active-demo") return "operations";
   if (profileId === "modern-web-crawl") return "activity";
-  if (profileId === "repo") return "intelligence";
+  if (profileId === "repository") return "intelligence";
   return "target";
 }
 
