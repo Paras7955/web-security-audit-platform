@@ -57,10 +57,12 @@ import {
   ValidationResult,
   apiBaseUrl,
   apiOrigin,
+  aiExplanationRequest,
   apiFetch,
   readAllPages,
   readJson,
-  readPage
+  readPage,
+  scanLaunchPayload
 } from "@/lib/securityAuditApi";
 
 export const workspaceViews = [
@@ -125,6 +127,7 @@ export function TargetSetup({
   const [toolRuns, setToolRuns] = useState<ScannerToolRun[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
+  const [governanceTags, setGovernanceTags] = useState<Tag[]>([]);
   const [suppressions, setSuppressions] = useState<SuppressionRule[]>([]);
   const [tagAssignments, setTagAssignments] = useState<TagAssignment[]>([]);
   const [reports, setReports] = useState<ReportArtifact[]>([]);
@@ -502,6 +505,8 @@ export function TargetSetup({
   }
 
   async function reloadAuthenticatedWorkspace() {
+    setIsBootstrapping(true);
+    clearProtectedWorkspaceState();
     try {
       const response = await apiFetch(`${apiBaseUrl}/dashboard/overview`);
       await readJson<DashboardOverview>(response, "Operator authentication failed.");
@@ -510,7 +515,41 @@ export function TargetSetup({
     } catch (error) {
       setBootstrapError(error instanceof Error ? error.message : "Operator authentication failed.");
       return false;
+    } finally {
+      setIsBootstrapping(false);
     }
+  }
+
+  function clearProtectedWorkspaceState() {
+    setValidation(null);
+    setTargets([]);
+    setTargetPolicies([]);
+    setRepositoryAssets([]);
+    setAuthProfiles([]);
+    setScanHistory([]);
+    setToolRuns([]);
+    setFindings([]);
+    setTags([]);
+    setGovernanceTags([]);
+    setSuppressions([]);
+    setTagAssignments([]);
+    setReports([]);
+    setAiExplanation(null);
+    setDashboardOverview(null);
+    setTargetDashboard(null);
+    setRepositoryDashboard(null);
+    setScanComparison(null);
+    setPlatformHealth(null);
+    setAuditLogs([]);
+    setSelectedTargetId("");
+    setSelectedRepositoryAssetId("");
+    setSelectedSubjectId("");
+    setSelectedScanId("");
+    setCurrentAuditScanId("");
+    setSelectedFindingId("");
+    setBaselineScanId("");
+    setComparisonScanId("");
+    setActionFeedback(null);
   }
 
   async function validateTarget(event: FormEvent<HTMLFormElement>) {
@@ -728,12 +767,7 @@ export function TargetSetup({
       const response = await apiFetch(`${apiBaseUrl}/scans`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          target_id: selectedAuditSubject.target?.id ?? null,
-          repository_asset_id: selectedAuditSubject.repositoryAsset?.id ?? null,
-          scan_profile_id: selectedProfile.id,
-          acknowledgements
-        })
+        body: JSON.stringify(scanLaunchPayload(selectedAuditSubject, selectedProfile.id, acknowledgements))
       });
       const scan = await readJson<Scan>(response, "Scan creation failed.");
       setScanHistory((current) => mergeScan(current, scan));
@@ -1112,8 +1146,10 @@ export function TargetSetup({
   }
 
   async function loadTags(preferredTagId?: string) {
-    const items = await readAllPages<Tag>(`${apiBaseUrl}/tags`, "Tag list load failed.");
+    const allItems = await readAllPages<Tag>(`${apiBaseUrl}/tags?include_archived=true`, "Tag list load failed.");
+    const items = allItems.filter((tag) => !tag.archived_at);
     setTags(items);
+    setGovernanceTags(allItems);
     const requestedTagId = preferredTagId ?? assignmentTagId;
     setAssignmentTagId(items.some((tag) => tag.id === requestedTagId) ? requestedTagId : items[0]?.id ?? "");
     setBootstrapError("");
@@ -1233,6 +1269,8 @@ export function TargetSetup({
       if (selectedScanIdRef.current) {
         await loadFindings(selectedScanIdRef.current, { onlyIfSelected: true });
       }
+      const affectedFinding = findings.find((finding) => finding.id === findingId) ?? null;
+      await refreshDerivedPosture(affectedFinding?.target_id ?? null, affectedFinding?.repository_asset_id ?? null);
       setActionFeedback({ tone: "success", text: "Finding lifecycle updated." });
     } catch (error) {
       setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Finding lifecycle update failed." });
@@ -1266,6 +1304,7 @@ export function TargetSetup({
       if (selectedScanIdRef.current) {
         await loadFindings(selectedScanIdRef.current, { onlyIfSelected: true });
       }
+      await refreshDerivedPosture(finding.target_id, finding.repository_asset_id);
       setActionFeedback({ tone: "success", text: "Finding suppression saved." });
     } catch (error) {
       setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Suppression rule creation failed." });
@@ -1337,7 +1376,8 @@ export function TargetSetup({
     try {
       const response = await apiFetch(`${apiBaseUrl}/suppressions/${rule.id}/revoke`, { method: "POST" });
       await readJson<SuppressionRule>(response, "Suppression revocation failed.");
-      await Promise.all([loadSuppressions(), selectedScanIdRef.current ? loadFindings(selectedScanIdRef.current, { onlyIfSelected: true }) : Promise.resolve(), loadDashboardOverview()]);
+      await Promise.all([loadSuppressions(), selectedScanIdRef.current ? loadFindings(selectedScanIdRef.current, { onlyIfSelected: true }) : Promise.resolve()]);
+      await refreshDerivedPosture(rule.target_id, rule.repository_asset_id);
       setActionFeedback({ tone: "success", text: "Suppression revoked. Current posture has been refreshed." });
     } catch (error) {
       setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Suppression revocation failed." });
@@ -1376,6 +1416,15 @@ export function TargetSetup({
     }
   }
 
+  async function refreshDerivedPosture(targetId: string | null, repositoryAssetId: string | null) {
+    await loadDashboardOverview();
+    const subject = auditSubjects.find((item) =>
+      item.target?.id === targetId || item.repositoryAsset?.id === repositoryAssetId
+    );
+    if (!subject || selectedSubjectIdRef.current !== subject.id) return;
+    await Promise.allSettled([loadSubjectDashboard(subject), loadLatestComparison(subject)]);
+  }
+
   async function loadReports(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
     try {
       const body = await readAllPages<ReportArtifact>(`${apiBaseUrl}/scans/${scanId}/reports`, "Reports could not be loaded.");
@@ -1408,7 +1457,8 @@ export function TargetSetup({
 
   async function loadAiExplanation(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
     try {
-      const response = await apiFetch(`${apiBaseUrl}/scans/${scanId}/ai-explanations`);
+      const request = aiExplanationRequest(scanId);
+      const response = await apiFetch(request.url, request.init);
       if (!response.ok) {
         if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
           return;
@@ -1456,7 +1506,8 @@ export function TargetSetup({
     setIsGeneratingAi(true);
     setAiMessage("Generating bounded explanations from normalized findings…");
     try {
-      const response = await apiFetch(`${apiBaseUrl}/scans/${selectedScan.id}/ai-explanations`, { method: "POST" });
+      const request = aiExplanationRequest(selectedScan.id, true);
+      const response = await apiFetch(request.url, request.init);
       const body = await readJson<AiExplanation>(response, "AI explanation generation failed.");
       setAiExplanation(body);
       setAiMessage(body.fallback_used ? "The safe template fallback is ready." : "AI explanations are ready.");
@@ -1664,7 +1715,7 @@ export function TargetSetup({
             selectedSubject={selectedAuditSubject}
             onNavigate={(view) => {
               if (view === "scanning") {
-                setAuditPhase("profile");
+                setAuditPhase(selectedAuditSubject?.target?.policy_status === "current" || selectedAuditSubject?.repositoryAsset ? "profile" : "scope");
               }
               onActiveViewChange(view as WorkspaceView);
             }}
@@ -1926,7 +1977,7 @@ export function TargetSetup({
             )}
             <FindingGovernancePanel
               suppressions={suppressions}
-              tags={tags}
+              tags={governanceTags}
               assignments={tagAssignments}
               busyActionId={governanceActionId}
               onRevokeSuppression={revokeSuppression}

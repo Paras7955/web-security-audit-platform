@@ -50,8 +50,8 @@ export function FindingGovernancePanel({
                 const tagAssignments = assignments.filter((assignment) => assignment.tag_id === tag.id);
                 return (
                   <li key={tag.id}>
-                    <div><strong>{tag.label}</strong><small>{tagAssignments.length} active assignment{tagAssignments.length === 1 ? "" : "s"}</small></div>
-                    <button type="button" className="secondaryButton" onClick={() => onArchiveTag(tag)} disabled={busyActionId === tag.id}>{busyActionId === tag.id ? "Archiving…" : "Archive"}</button>
+                    <div><strong>{tag.label}</strong><small>{tag.archived_at ? "Archived · " : ""}{tagAssignments.length} active assignment{tagAssignments.length === 1 ? "" : "s"}</small></div>
+                    {tag.archived_at ? <span className="contextBadge">History</span> : <button type="button" className="secondaryButton" onClick={() => onArchiveTag(tag)} disabled={busyActionId === tag.id}>{busyActionId === tag.id ? "Archiving…" : "Archive"}</button>}
                     {tagAssignments.length ? (
                       <ul className="tagAssignmentList">
                         {tagAssignments.map((assignment) => (

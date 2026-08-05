@@ -25,8 +25,14 @@ export function OperatorSessionPanel({ onSessionChange }: { onSessionChange: () 
       setMessage("Operator bearer session active in memory for this browser tab.");
     } catch {
       clearSessionAuthToken();
-      setSource(authSessionSource());
-      setMessage("The bearer token was not accepted. It was cleared from memory.");
+      const fallbackSource = authSessionSource();
+      setSource(fallbackSource);
+      if (fallbackSource === "development") {
+        await onSessionChange();
+        setMessage("The bearer token was not accepted. It was cleared, and the local development session was restored.");
+      } else {
+        setMessage("The bearer token was not accepted. It and the previous protected workspace state were cleared from memory.");
+      }
     } finally {
       setIsBusy(false);
     }

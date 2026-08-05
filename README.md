@@ -251,7 +251,7 @@ Add `--apply` only after reviewing the JSON plan. See the
 [release checklist](docs/RELEASE_CHECKLIST.md).
 
 CI runs migrations, backend branch/security coverage, Ruff, Pyright, dependency
-audits, frontend lint/build, Compose hardening/readiness, pinned Gitleaks,
+audits, frontend state/contract tests plus lint/build, Compose hardening/readiness, pinned Gitleaks,
 digest-pinned Trivy image scans, and CycloneDX SBOM generation.
 
 Phase-end independent reviews use `gpt-5.6-sol` with medium reasoning, the

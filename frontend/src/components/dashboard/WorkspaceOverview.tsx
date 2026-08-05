@@ -20,6 +20,8 @@ export function WorkspaceOverview({
   const criticalCount = overview?.severity_counts.critical ?? 0;
   const highCount = overview?.severity_counts.high ?? 0;
   const riskScore = overview?.current_posture_score?.score;
+  const webPolicyCurrent = selectedSubject?.target?.policy_status === "current";
+  const requiresReauthorization = Boolean(selectedSubject?.target && !webPolicyCurrent);
 
   return (
     <div className="overviewWorkspace productPage">
@@ -48,9 +50,9 @@ export function WorkspaceOverview({
             <div className="focusTarget">
               <div className="focusTargetUrl"><AppIcon name={selectedSubject.subjectType === "repository_asset" ? "intelligence" : "target"} size={16} />{selectedSubject.detail}</div>
               <div className="focusCapabilities">
-                <span><AppIcon name="shield" size={15} />Authorized</span>
+                <span className={requiresReauthorization ? "errorText" : undefined}><AppIcon name="shield" size={15} />{requiresReauthorization ? "Reauthorization required" : "Authorized"}</span>
                 <span><AppIcon name="scan" size={15} />{selectedSubject.availableScanProfileIds.length} scan profile{selectedSubject.availableScanProfileIds.length === 1 ? "" : "s"}</span>
-                <span><AppIcon name="intelligence" size={15} />{selectedSubject.subjectType === "repository_asset" ? "Offline repository tools" : "Destination policy current"}</span>
+                <span className={requiresReauthorization ? "errorText" : undefined}><AppIcon name="intelligence" size={15} />{selectedSubject.subjectType === "repository_asset" ? "Offline repository tools" : webPolicyCurrent ? "Destination policy current" : "Destination policy stale"}</span>
               </div>
             </div>
           ) : (
@@ -59,7 +61,7 @@ export function WorkspaceOverview({
 
           <div className="quickActions">
             <button type="button" onClick={() => onNavigate("scanning")}>
-              <AppIcon name="scan" /> Configure a scan <AppIcon name="arrow" size={15} />
+              <AppIcon name={requiresReauthorization ? "shield" : "scan"} /> {requiresReauthorization ? "Reauthorize target" : "Configure a scan"} <AppIcon name="arrow" size={15} />
             </button>
             <button type="button" className="secondaryButton" onClick={() => onNavigate("findings")}>
               Review findings

@@ -373,6 +373,27 @@ let sessionAuthToken = "";
 
 export type AuthSessionSource = "oidc" | "development" | "none";
 
+export function scanLaunchPayload(subject: AuditSubject, scanProfileId: string, acknowledgements: string[]) {
+  const targetId = subject.target?.id ?? null;
+  const repositoryAssetId = subject.repositoryAsset?.id ?? null;
+  if ((targetId === null) === (repositoryAssetId === null)) {
+    throw new Error("Select exactly one authorized audit subject before launch.");
+  }
+  return {
+    target_id: targetId,
+    repository_asset_id: repositoryAssetId,
+    scan_profile_id: scanProfileId,
+    acknowledgements,
+  };
+}
+
+export function aiExplanationRequest(scanId: string, generate = false) {
+  return {
+    url: `${apiBaseUrl}/scans/${encodeURIComponent(scanId)}/ai-explanations`,
+    init: generate ? { method: "POST" } satisfies RequestInit : undefined,
+  };
+}
+
 export function setSessionAuthToken(token: string) {
   sessionAuthToken = token.trim();
 }

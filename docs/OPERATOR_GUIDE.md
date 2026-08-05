@@ -276,7 +276,7 @@ PYTHONPATH=backend .venv/bin/coverage run --branch -m unittest discover -s backe
 .venv/bin/python scripts/check_security_coverage.py coverage.json
 ```
 
-Also run frontend `npm ci`, audit, lint, and production build;
+Also run frontend `npm ci`, audit, state/contract tests, lint, and production build;
 migration upgrades from zero/0008/0011; runtime+dev dependency audits; real
 pinned scanner fixtures; image builds; Compose hardening/readiness; SBOM;
 vulnerability review; and controlled local HTTP/HTTPS scans. The release

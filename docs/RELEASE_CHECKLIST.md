@@ -75,7 +75,8 @@ planned or mocked result.
 
 ## Containers and CI
 
-- [ ] Frontend `npm ci`, audit, lint, and production build pass.
+- [ ] Frontend `npm ci`, audit, state/contract tests, lint, and production build
+  pass.
 - [ ] Responsive keyboard and reduced-motion checks cover the target-policy,
   repository, subject-aware scan, governance, AI, and OIDC-facing workflows.
 - [ ] API, worker, relay, and frontend images build.
