@@ -87,7 +87,7 @@ services:
 
   juice-shop:
     <<: *container-hardening
-    image: bkimminich/juice-shop:v20.1.1@sha256:cd58d79c5cb4d82f22fbaf616f9ff43bbd04ba630cd6b448a9ed99cf652fcebf
+    image: bkimminich/juice-shop:v20.2.0@sha256:8739101ade29358abb5469ee66ae78e582c97ed0a5543a4ad102e5fa5193526b
     user: "65532:65532"
     # Juice Shop updates its bundled demo database and fixtures during startup,
     # so its root filesystem cannot be read-only. It remains non-root/capability-free.
