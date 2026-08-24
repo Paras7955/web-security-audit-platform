@@ -1,4 +1,4 @@
-FROM golang:1.26.5-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS gitleaks-build
+FROM golang:1.27.0-bookworm@sha256:484ef6066fa69acb059fdfeda7ba2b8f7391f2ef6abc6f9b8411e669ebd56466 AS gitleaks-build
 
 WORKDIR /src/gitleaks
 ADD --checksum=sha256:6b2638a733b85619dc80bdf28e84e4fed7e526a761ab5c148fbf67695aea2115 \
@@ -12,7 +12,7 @@ RUN tar --extract --gzip --file=/tmp/gitleaks-source.tar.gz --strip-components=1
         -ldflags "-s -w -X=github.com/zricethezav/gitleaks/v8/version.Version=8.30.1-scopeharbor.1" \
         -o /out/gitleaks .
 
-FROM golang:1.26.5-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS osv-scanner-build
+FROM golang:1.27.0-bookworm@sha256:484ef6066fa69acb059fdfeda7ba2b8f7391f2ef6abc6f9b8411e669ebd56466 AS osv-scanner-build
 
 WORKDIR /src/osv-scanner
 ADD --checksum=sha256:a9ba82e4c3f9d13cdb84db566fb58ff8500c90b23f3c99751ed7674a3702871e \
