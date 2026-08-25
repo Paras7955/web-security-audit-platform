@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-import httpx
 from fastapi import APIRouter, Depends
 from sqlalchemy import and_, or_, select, text
 from sqlalchemy.orm import Session
@@ -25,10 +24,11 @@ def platform_health(
     db: Session = Depends(get_db),
 ) -> PlatformHealthRead:
     database = database_status(db)
-    worker = worker_status(db)
-    zap = zap_status()
+    heartbeat = latest_worker_heartbeat(db)
+    worker = worker_status(heartbeat)
+    zap = zap_status(heartbeat, worker)
     artifact_root = artifact_root_status()
-    components = (database, worker, zap, artifact_root)
+    components = (database, worker, artifact_root)
     overall = "ok" if all(component.status == "ok" for component in components) else "degraded"
     return PlatformHealthRead(
         status=overall,
@@ -67,8 +67,11 @@ def database_status(db: Session) -> HealthComponentRead:
         return HealthComponentRead(status="degraded", detail="database unavailable")
 
 
-def worker_status(db: Session) -> HealthComponentRead:
-    heartbeat = db.scalar(select(WorkerHeartbeat).order_by(WorkerHeartbeat.last_seen_at.desc()).limit(1))
+def latest_worker_heartbeat(db: Session) -> WorkerHeartbeat | None:
+    return db.scalar(select(WorkerHeartbeat).order_by(WorkerHeartbeat.last_seen_at.desc()).limit(1))
+
+
+def worker_status(heartbeat: WorkerHeartbeat | None) -> HealthComponentRead:
     if heartbeat is None:
         return HealthComponentRead(status="degraded", detail="no worker heartbeat recorded")
     last_seen = heartbeat.last_seen_at
@@ -82,18 +85,12 @@ def worker_status(db: Session) -> HealthComponentRead:
     return HealthComponentRead(status="ok", detail="worker responding")
 
 
-def zap_status() -> HealthComponentRead:
-    try:
-        with httpx.Client(trust_env=False, follow_redirects=False) as client:
-            response = client.get(
-                f"{settings.zap_base_url}/JSON/core/view/version/",
-                headers={"X-ZAP-API-Key": settings.zap_api_key},
-                timeout=settings.health_zap_timeout_seconds,
-            )
-            response.raise_for_status()
-        return HealthComponentRead(status="ok", detail="zap reachable")
-    except Exception:
-        return HealthComponentRead(status="degraded", detail="zap unavailable")
+def zap_status(heartbeat: WorkerHeartbeat | None, worker: HealthComponentRead) -> HealthComponentRead:
+    if worker.status != "ok":
+        return HealthComponentRead(status="degraded", detail="worker ZAP readiness unavailable")
+    if heartbeat is None or heartbeat.zap_status not in {"ok", "degraded"}:
+        return HealthComponentRead(status="degraded", detail="worker has not reported ZAP readiness")
+    return HealthComponentRead(status=heartbeat.zap_status, detail=heartbeat.zap_detail)
 
 
 def artifact_root_status() -> HealthComponentRead:

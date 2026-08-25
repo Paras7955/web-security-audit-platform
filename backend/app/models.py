@@ -492,6 +492,8 @@ class WorkerHeartbeat(Base):
     status: Mapped[str] = mapped_column(String(80), nullable=False)
     current_scan_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("scans.id"), nullable=True)
     queue_depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    zap_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    zap_detail: Mapped[str | None] = mapped_column(String(160), nullable=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

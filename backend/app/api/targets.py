@@ -25,7 +25,7 @@ from app.core.contracts import SCAN_PROFILES, ScanMode, ScanStatus
 from app.models import AuthProfile, Scan, Target
 from app.ops.audit import record_audit_event
 from app.repo_scanner.paths import RepoPathError, repo_path_for_storage
-from app.security.allowlist import AllowlistTarget, ScanAllowlist
+from app.security.allowlist import AllowlistTarget, ScanAllowlist, ScanEngine
 from app.security.auth import AuthenticatedPrincipal
 from app.security.sanitization import sanitize_text
 from app.security.ssrf import SsrfGuardError, validate_destination
@@ -479,6 +479,7 @@ def target_to_read(target: Target, allowlist: ScanAllowlist) -> TargetRead:
         has_repo_path=target.repo_path is not None,
         auth_profile_id=target.auth_profile_id,
         available_scan_profile_ids=profile_ids,
+        zap_required_scan_profile_ids=zap_required_profile_ids(allowlist_target) if policy_status == "current" and allowlist_target else [],
         connection_class=allowlist_target.connection.kind if allowlist_target is not None else "unavailable",
         scope_path=scope_path,
         tls_trust=allowlist_target.tls.trust if allowlist_target is not None else "unavailable",
@@ -507,6 +508,7 @@ def validation_to_read(target: AllowlistTarget) -> TargetValidationRead:
         name=target.name,
         base_url=target.base_url,
         available_scan_profile_ids=profile_ids_for_policy(target),
+        zap_required_scan_profile_ids=zap_required_profile_ids(target),
         max_redirects=target.max_redirects,
         local_demo=target.local_demo,
         connection_class=target.connection.kind,
@@ -525,6 +527,7 @@ def policy_to_read(target: AllowlistTarget) -> TargetPolicyRead:
         scope_path=target.base_path,
         tls_trust=target.tls.trust,
         available_scan_profile_ids=profile_ids_for_policy(target),
+        zap_required_scan_profile_ids=zap_required_profile_ids(target),
         max_redirects=target.max_redirects,
         disposable_demo=target.disposable_demo,
         policy_fingerprint=target.policy_fingerprint,
@@ -534,6 +537,16 @@ def policy_to_read(target: AllowlistTarget) -> TargetPolicyRead:
 def profile_ids_for_policy(target: AllowlistTarget) -> list[str]:
     configured = set(target.profile_engines)
     return [profile.id for profile in SCAN_PROFILES if profile.id in configured]
+
+
+def zap_required_profile_ids(target: AllowlistTarget) -> list[str]:
+    zap_engines = {ScanEngine.ZAP_PASSIVE, ScanEngine.ZAP_ACTIVE, ScanEngine.ZAP_CLIENT_SPIDER}
+    return [
+        profile.id
+        for profile in SCAN_PROFILES
+        if profile.id in target.profile_engines
+        and bool(set(target.engines_for_profile(profile.id)) & zap_engines)
+    ]
 
 
 def available_scan_profile_ids(allowed_modes: Iterable[ScanMode]) -> list[str]:
