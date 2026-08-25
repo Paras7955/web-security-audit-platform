@@ -212,6 +212,7 @@ export function ScanLaunchPanel({
   scanProfileId,
   canStartScan,
   platformReady,
+  readinessMessage,
   isBusy,
   onStartScan
 }: {
@@ -219,6 +220,7 @@ export function ScanLaunchPanel({
   scanProfileId: string;
   canStartScan: boolean;
   platformReady: boolean;
+  readinessMessage: string;
   isBusy: boolean;
   onStartScan: () => void;
 }) {
@@ -239,7 +241,7 @@ export function ScanLaunchPanel({
       <button type="button" onClick={onStartScan} disabled={!canStartScan || isBusy}>
         {isBusy ? "Queuing audit…" : `Launch ${profile.label}`} <AppIcon name="arrow" size={15} />
       </button>
-      {!platformReady ? <p className="formMessage errorText">Confirm platform readiness before launch. Run Preflight again after the worker and database are healthy.</p> : null}
+      {!platformReady ? <p className="formMessage errorText">{readinessMessage}</p> : null}
     </section>
   );
 }

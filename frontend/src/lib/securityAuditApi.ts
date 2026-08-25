@@ -3,6 +3,7 @@ export type ValidationResult = {
   name: string;
   base_url: string;
   available_scan_profile_ids: string[];
+  zap_required_scan_profile_ids: string[];
   max_redirects: number;
   local_demo: boolean;
   connection_class: string;
@@ -19,6 +20,7 @@ export type TargetPolicy = {
   scope_path: string;
   tls_trust: string;
   available_scan_profile_ids: string[];
+  zap_required_scan_profile_ids: string[];
   max_redirects: number;
   disposable_demo: boolean;
   policy_fingerprint: string;
@@ -33,6 +35,7 @@ export type Target = {
   has_repo_path: boolean;
   auth_profile_id: string | null;
   available_scan_profile_ids: string[];
+  zap_required_scan_profile_ids: string[];
   connection_class: string;
   scope_path: string;
   tls_trust: string;

@@ -134,6 +134,44 @@ describe("Phase 25 protected workflow state", () => {
     expect(onUnassignTag).toHaveBeenCalledWith(expect.objectContaining({ id: "assignment-1" }));
   });
 
+  it("keeps non-ZAP passive audits launchable when worker-reported ZAP readiness is degraded", async () => {
+    const target = targetFixture({
+      available_scan_profile_ids: ["passive-web"],
+      zap_required_scan_profile_ids: [],
+    });
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
+    vi.stubGlobal("fetch", readinessApi(target, "degraded"));
+    render(<TargetSetup activeView="scanning" onActiveViewChange={vi.fn()} onHeroStateChange={vi.fn()} />);
+
+    await screen.findByText("Allowed for the selected subject");
+    await userEvent.click(screen.getByRole("tab", { name: /Authorize/ }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "I confirm I am authorized to assess this saved web target." }));
+    await userEvent.click(screen.getByRole("button", { name: /Continue to launch review/ }));
+
+    expect(screen.getByRole("button", { name: /Launch Passive Web/ })).toHaveProperty("disabled", false);
+    expect(screen.getByText("Ready", { selector: "dd" })).toBeTruthy();
+  });
+
+  it("blocks only the selected target profiles whose policy requires degraded ZAP", async () => {
+    const target = targetFixture({
+      available_scan_profile_ids: ["passive-web"],
+      zap_required_scan_profile_ids: ["passive-web"],
+    });
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
+    vi.stubGlobal("fetch", readinessApi(target, "degraded"));
+    render(<TargetSetup activeView="scanning" onActiveViewChange={vi.fn()} onHeroStateChange={vi.fn()} />);
+
+    await screen.findByText("Allowed for the selected subject");
+    await userEvent.click(screen.getByRole("tab", { name: /Authorize/ }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "I confirm I am authorized to assess this saved web target." }));
+    await userEvent.click(screen.getByRole("button", { name: /Continue to launch review/ }));
+
+    expect(screen.getByRole("button", { name: /Launch Passive Web/ })).toHaveProperty("disabled", true);
+    expect(screen.getByText(/This target policy requires ZAP/)).toBeTruthy();
+  });
+
   it("refreshes workspace, subject, and comparison posture after every finding-governance mutation", async () => {
     setSessionAuthToken("valid-session");
     const fixture = postureMutationApi();
@@ -212,6 +250,7 @@ function targetFixture(overrides: Partial<Target> = {}): Target {
     has_repo_path: false,
     auth_profile_id: null,
     available_scan_profile_ids: ["passive-web"],
+    zap_required_scan_profile_ids: [],
     connection_class: "compose_service",
     scope_path: "/",
     tls_trust: "system",
@@ -233,6 +272,7 @@ function page(items: unknown[] = []) {
 function protectedApiResponse(url: string, method = "GET") {
   if (url.includes("/targets/validate") && method === "POST") return jsonResponse({
     allowlist_id: "local-demo", name: "Local demo", base_url: "http://juice-shop:3000/", available_scan_profile_ids: ["passive-web"],
+    zap_required_scan_profile_ids: [],
     max_redirects: 2, local_demo: true, connection_class: "compose_service", scope_path: "/", tls_trust: "system",
     policy_fingerprint: "fingerprint",
   });
@@ -400,4 +440,16 @@ function healthFixture() {
     status: "ok", database: { status: "ok", detail: null }, worker: { status: "ok", detail: null }, queue_depth: 0,
     zap: { status: "ok", detail: null }, artifact_root: { status: "ok", detail: null },
   };
+}
+
+function readinessApi(target: Target, zapStatus: "ok" | "degraded") {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/targets?") || url.endsWith("/targets")) return jsonResponse(page([target]));
+    if (url.includes("/ops/health")) return jsonResponse({
+      ...healthFixture(),
+      zap: { status: zapStatus, detail: zapStatus === "ok" ? "zap reachable from worker" : "zap unavailable to worker" },
+    });
+    return protectedApiResponse(url, init?.method ?? "GET");
+  });
 }
