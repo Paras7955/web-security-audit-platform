@@ -57,7 +57,9 @@ Protected target-policy routes:
 
 Target roots reject userinfo, queries, fragments, ambiguous separators, and
 traversal. Reauthorization returns `409` if origin/base path changed; create a
-new target instead.
+new target instead. Target, policy, and validation responses include
+`zap_required_scan_profile_ids`, derived from the exact policy engines, so a
+client can gate only the profiles that depend on ZAP.
 
 ## Create subjects and scans
 
@@ -231,8 +233,13 @@ modern-crawl scans are ineligible for external AI.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/ops/health` | Protected safe database/worker/queue/ZAP/artifact state |
+| GET | `/ops/health` | Protected core readiness plus worker-mediated, bounded ZAP readiness |
 | GET | `/audit-logs` | Cursor-paginated safe audit metadata |
+
+The top-level `status` covers database, worker, and artifact readiness. `zap`
+is an independent dependency signal reported by the worker; clients must use
+the selected target's `zap_required_scan_profile_ids` before treating degraded
+ZAP readiness as a launch blocker.
 
 ## Client security notes
 

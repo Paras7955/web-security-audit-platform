@@ -115,6 +115,14 @@ requires exactly one of `target_id` or `repository_asset_id` on every scan.
 The compatibility request remains accepted, but its persisted scan and response
 use only the repository-asset subject.
 
+## Schema 0014
+
+`0014_worker_scanner_readiness` adds bounded ZAP status/detail fields to worker
+heartbeats. No target data, scanner output, URL, or credential is stored. After
+upgrade, restart the worker so it can publish the probe; until a fresh heartbeat
+arrives the API safely reports ZAP as degraded while keeping core readiness
+separate.
+
 ## Repository-asset compatibility
 
 `Target.repo_path` and target-based repository launch remain temporarily
@@ -146,8 +154,8 @@ Read `/api/v1/contracts` and `/openapi.json` at runtime.
 From schema `0008`, migrations `0009`–`0011` first sanitize legacy failures and
 findings, remove deterministic repository stubs, invalidate derived results,
 retire nonterminal AJAX work, add receipts/leases/indexes, and introduce
-history-preserving target archive. Then `0012` and `0013` apply the changes
-above.
+history-preserving target archive. Then `0012`, `0013`, and `0014` apply the
+changes above.
 
 Review backups because intentionally removed unsafe/stub data is not
 reconstructable from the upgraded database.

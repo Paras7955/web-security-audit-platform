@@ -85,6 +85,11 @@ Only `scopeharbor-passive` should be configured for an ordinary local
 application. ZAP engines require all required engines for that profile and an
 explicitly compatible disposable HTTP demo.
 
+The protected operations health response separates core readiness from ZAP
+readiness. If ZAP is degraded, only target profiles listed in
+`zap_required_scan_profile_ids` are unavailable; do not treat that condition as
+an outage for independent passive or repository scans.
+
 ### Add another Compose service
 
 1. Attach the application service to ScopeHarbor's `scan-target` network.
@@ -255,6 +260,8 @@ files. Follow [UPGRADING.md](UPGRADING.md).
   certificate hostname/trust, and relay health. Never enable insecure TLS.
 - worker degraded: inspect safe heartbeat/queue/receipt state and structured
   logs; do not paste raw target/tool data into issues.
+- ZAP degraded with core status healthy: inspect the internal ZAP service and
+  worker connectivity; independent non-ZAP profiles can continue safely.
 - dependency warning: refresh the OSV cache.
 - stale development rows: use a clean temporary database for verification.
 

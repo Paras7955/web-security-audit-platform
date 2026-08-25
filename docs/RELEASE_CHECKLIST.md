@@ -5,7 +5,7 @@ planned or mocked result.
 
 ## Source and scope
 
-- [ ] Branch is `phase-25-frontend-integration`; worktree is clean.
+- [ ] Release branch worktree is clean and based on merged Phase 25.
 - [ ] UI product changes remain contract-only: they do not broaden scanner
   authority, retain bearer tokens, expose raw scanner data, or bypass backend
   workspace/policy enforcement.
@@ -50,7 +50,7 @@ planned or mocked result.
 - [ ] Ruff passes for `backend` and `scripts`.
 - [ ] Pyright passes.
 - [ ] Migrations pass from zero, `0008`, `0011`, and `0012`; head is
-  `0013_scan_subject_integrity`; `alembic check` is clean.
+  `0014_worker_scanner_readiness`; `alembic check` is clean.
 - [ ] Full backend suite passes on a clean temporary PostgreSQL database.
 - [ ] Overall branch coverage is at least 85%; security-boundary gates pass.
 - [ ] Real pinned Gitleaks and offline OSV fixtures pass.
@@ -83,6 +83,8 @@ planned or mocked result.
 - [ ] `python3 scripts/check_compose_hardening.py` passes.
 - [ ] Compose migration/readiness smoke passes with non-root,
   capability-dropped, read-only services and expected networks/mounts.
+- [ ] Stopping ZAP leaves core status healthy, keeps non-ZAP profiles
+  launchable, and blocks each policy profile that explicitly requires ZAP.
 - [ ] Pinned Gitleaks history scan passes.
 - [ ] Digest-pinned Trivy `0.70.0` image scans are reviewed. Do not replace it
   with mutable Trivy action tags; review the
@@ -93,8 +95,8 @@ planned or mocked result.
 
 ## Repository owner actions
 
-- [ ] Review and push `phase-25-frontend-integration`, require all release
-  checks to pass, and merge it before any later phase begins.
+- [ ] Review and merge the post-Phase-25 readiness fix, requiring all release
+  checks to pass before tagging.
 - [ ] Enable GitHub Private Vulnerability Reporting.
 - [ ] Enable branch protection and require the release CI checks.
 - [ ] Enable GitHub Code Security as desired; for a private repository set
