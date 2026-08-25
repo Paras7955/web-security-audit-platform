@@ -1,4 +1,4 @@
-FROM golang:1.26.5-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS gitleaks-build
+FROM golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36 AS gitleaks-build
 
 WORKDIR /src/gitleaks
 ADD --checksum=sha256:6b2638a733b85619dc80bdf28e84e4fed7e526a761ab5c148fbf67695aea2115 \
@@ -12,13 +12,15 @@ RUN tar --extract --gzip --file=/tmp/gitleaks-source.tar.gz --strip-components=1
         -ldflags "-s -w -X=github.com/zricethezav/gitleaks/v8/version.Version=8.30.1-scopeharbor.1" \
         -o /out/gitleaks .
 
-FROM golang:1.26.5-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS osv-scanner-build
+FROM golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36 AS osv-scanner-build
 
 WORKDIR /src/osv-scanner
 ADD --checksum=sha256:a9ba82e4c3f9d13cdb84db566fb58ff8500c90b23f3c99751ed7674a3702871e \
     https://codeload.github.com/google/osv-scanner/tar.gz/a36e41b0cc33d58231a87ea24d4d1beb3ae2a733 \
     /tmp/osv-scanner-source.tar.gz
 RUN tar --extract --gzip --file=/tmp/osv-scanner-source.tar.gz --strip-components=1 \
+    && go mod edit -require=github.com/go-git/go-git/v5@v5.19.2 \
+    && go mod edit -require=golang.org/x/mod@v0.40.0 \
     && go mod edit -require=golang.org/x/text@v0.39.0 \
     && go mod tidy \
     && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \

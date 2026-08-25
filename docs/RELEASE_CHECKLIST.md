@@ -42,6 +42,8 @@ planned or mocked result.
 
 - [ ] Confirm no `httpx2`, `httpcore2`, or orphan `truststore` entry remains.
 - [ ] Install both locks with `--require-hashes` on Python 3.12.13.
+- [ ] Confirm the development lock installs pip 26.2 or later and that the lock
+  compiler itself remains a documented, reproducible version.
 - [ ] `pip-audit` passes for runtime and development locks.
 - [ ] `npm audit --audit-level=high` passes.
 
@@ -80,6 +82,8 @@ planned or mocked result.
 - [ ] Responsive keyboard and reduced-motion checks cover the target-policy,
   repository, subject-aware scan, governance, AI, and OIDC-facing workflows.
 - [ ] API, worker, relay, and frontend images build.
+- [ ] Source-built scanner binaries use Go 1.26.6 or later; review the explicit
+  OSV-Scanner go-git and x/mod security pins before changing them.
 - [ ] `python3 scripts/check_compose_hardening.py` passes.
 - [ ] Compose migration/readiness smoke passes with non-root,
   capability-dropped, read-only services and expected networks/mounts.
