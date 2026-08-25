@@ -254,6 +254,20 @@ class PlatformOpsTests(unittest.TestCase):
             timeout=1.5,
         )
 
+    def test_worker_zap_probe_normalizes_trailing_slash(self) -> None:
+        with patch("app.ops.health.httpx.Client") as client:
+            get = client.return_value.__enter__.return_value.get
+            get.return_value.raise_for_status.return_value = None
+
+            result = probe_zap(base_url="http://zap:8080/", api_key="test-key", timeout_seconds=1.5)
+
+        self.assertEqual(result.status, "ok")
+        get.assert_called_once_with(
+            "http://zap:8080/JSON/core/view/version/",
+            headers={"X-ZAP-API-Key": "test-key"},
+            timeout=1.5,
+        )
+
     def test_rate_limit_scope_uses_transaction_advisory_lock_on_postgres(self) -> None:
         class FakeDialect:
             name = "postgresql"

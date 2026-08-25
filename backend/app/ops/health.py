@@ -11,9 +11,10 @@ class ComponentProbe:
 
 def probe_zap(*, base_url: str, api_key: str, timeout_seconds: float) -> ComponentProbe:
     try:
+        normalized_base_url = base_url.rstrip("/")
         with httpx.Client(trust_env=False, follow_redirects=False) as client:
             response = client.get(
-                f"{base_url}/JSON/core/view/version/",
+                f"{normalized_base_url}/JSON/core/view/version/",
                 headers={"X-ZAP-API-Key": api_key},
                 timeout=timeout_seconds,
             )
