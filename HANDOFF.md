@@ -24,6 +24,7 @@ Post-Phase-25 readiness correction commits:
 - `0165492` — `fix(frontend): gate scans by required dependencies`
 - `d3f6d41` — `docs(ops): document profile-specific readiness`
 - `35b7c43` — `fix(ops): normalize ZAP readiness URL`
+- `bf4ff3e` — `fix(ci): clear backend and worker security gates`
 
 The release provides:
 
@@ -228,6 +229,20 @@ Review decision:
 - Follow-up: a regression test was added; the focused follow-up review approved
   the commit with no new actionable findings.
 
+Review decision:
+- Finding: the Phase 25 merge passed frontend quality and all code/test steps,
+  but Backend quality failed because pip 26.1.2 acquired `PYSEC-2026-3721` and
+  Container builds failed at Trivy because Go 1.26.5, go-git 5.19.1, and x/mod
+  0.37.0 acquired HIGH advisories.
+- Decision: accepted and fixed in `bf4ff3e`.
+- Rationale: these failures were independent supply-chain gates, not caused or
+  resolved by profile-readiness behavior. The development lock now pins pip
+  26.2; scanner tools build with digest-pinned Go 1.26.6; OSV-Scanner explicitly
+  pins go-git 5.19.2 and x/mod 0.40.0.
+- Follow-up: the Python 3.12 hash install and pip-audit, four image builds, the
+  exact four-image Trivy loop, and the real Gitleaks redaction fixture passed.
+  Independent review found no actionable issues.
+
 ## Final verification record
 
 - A clean temporary PostgreSQL database migrated from zero through
@@ -247,12 +262,14 @@ Review decision:
   Alpine-compatible lock includes the required optional emnapi packages and
   Nano ID 3.3.18. PostCSS remains pinned to 8.5.25.
 - Both Python production/development locks install with hashes and pass
-  `pip-audit`; cryptography is pinned to 50.0.0.
+  `pip-audit`; cryptography is pinned to 50.0.0 and development pip to 26.2.
 - Compose rendering and network/privilege hardening validation passed. API,
   worker, relay, and frontend images built, and a clean isolated stack migrated
   and reached healthy/ready state before its disposable volumes were removed.
 - Digest-pinned Trivy 0.70.0 reported no HIGH or CRITICAL findings for all four
-  project images. CycloneDX SBOMs generated and validated for each image.
+  project images after updating the scanner builders to Go 1.26.6 and the
+  affected OSV-Scanner modules. CycloneDX SBOMs generated and validated for
+  each image.
 - The worker reports Gitleaks 8.30.1-scopeharbor.1 and OSV-Scanner 2.5.0. The
   current source-built OSV binary was not exercised against a freshly updated
   offline database during this review; that remains an operator release check.
