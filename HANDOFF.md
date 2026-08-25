@@ -3,11 +3,10 @@
 ## Current state
 
 ScopeHarbor — Local AppSec Audit Platform is at version `1.1.0`. V1 phases
-1–19 and post-V1 phases 20–24 are merged into `main`. The Phase 24 CI repair
-merged as pull request 50 at `2875e65`, and the required GitHub-hosted quality
-and container jobs passed. Phase 25 frontend integration is complete on
-`phase-25-frontend-integration` and is waiting for the repository owner to push,
-review, and merge it before any later phase begins.
+1–19 and post-V1 phases 20–25 are merged into `main`; Phase 25 merged at
+`9706b6e`. A post-merge launch-readiness correction is complete and reviewed on
+`codex/fix-profile-readiness`. It must pass pull-request CI and merge before any
+later phase begins.
 
 Phase 25 implementation and review commits:
 
@@ -18,6 +17,13 @@ Phase 25 implementation and review commits:
 - `d276519` — `fix(frontend): reset cross-session authorization`
 - `aac7d75` — `fix(frontend): clear cross-workspace filters`
 - `1c69176` — `fix(frontend): synchronize secure npm lockfile`
+
+Post-Phase-25 readiness correction commits:
+
+- `0b8ba0d` — `fix(platform): mediate scanner readiness through worker`
+- `0165492` — `fix(frontend): gate scans by required dependencies`
+- `d3f6d41` — `docs(ops): document profile-specific readiness`
+- `35b7c43` — `fix(ops): normalize ZAP readiness URL`
 
 The release provides:
 
@@ -199,20 +205,43 @@ defects and one testing gap. All were accepted and fixed:
 
 The final follow-up review found no actionable issues and approved Phase 25.
 
+## Post-Phase-25 readiness review decision
+
+Review decision:
+- Finding: the API container cannot reach the scanner-control network, so its
+  direct ZAP probe always degraded overall platform status and the frontend
+  disabled every scan profile.
+- Decision: accepted and fixed.
+- Rationale: API isolation is intentional. The worker now performs the bounded,
+  proxy-independent ZAP probe and records only safe readiness state; target
+  policy responses identify the exact profiles that require ZAP, and the UI
+  gates only those profiles.
+- Follow-up: migration `0014_worker_scanner_readiness`, backend/frontend tests,
+  controlled ZAP failure/recovery, and a rebuilt Compose stack passed.
+
+Review decision:
+- Finding: a valid trailing slash in `ZAP_BASE_URL` could create a double-slash
+  readiness URL and a false degraded result.
+- Decision: accepted and fixed in `35b7c43`.
+- Rationale: runtime validation permits the trailing slash and the scanner
+  client already normalizes it.
+- Follow-up: a regression test was added; the focused follow-up review approved
+  the commit with no new actionable findings.
+
 ## Final verification record
 
 - A clean temporary PostgreSQL database migrated from zero through
-  `0013_scan_subject_integrity`. Upgrade tests from `0008`, `0011`, and `0012`,
+  `0014_worker_scanner_readiness`. Upgrade tests from `0008`, `0011`, and `0012`,
   repair/constraint fixtures, cleanup-task creation, and Alembic model drift
   all passed.
-- Backend: 333 tests passed; 2 environment-dependent real-binary tests were
+- Backend: 334 tests passed; 2 environment-dependent real-binary tests were
   skipped in the full run. The real Gitleaks redaction fixture passed
   separately and executed no repository scripts.
 - Backend branch coverage: 85% overall. Focused coverage: authentication
   100.00%, SSRF/redirects 95.07%, persistence redaction 100.00%, artifact paths
   100.00%, and repository runner boundaries 96.42%.
 - Ruff and Pyright: clean.
-- Frontend: a clean npm 10.9.8 `npm ci`, six Vitest/Testing Library
+- Frontend: a clean npm 10.9.8 `npm ci`, eight Vitest/Testing Library
   state/contract tests, `npm audit --audit-level=high`, lint, and the Next.js
   16.3.0 production build passed. The audit reported zero vulnerabilities. The
   Alpine-compatible lock includes the required optional emnapi packages and
@@ -227,20 +256,18 @@ The final follow-up review found no actionable issues and approved Phase 25.
 - The worker reports Gitleaks 8.30.1-scopeharbor.1 and OSV-Scanner 2.5.0. The
   current source-built OSV binary was not exercised against a freshly updated
   offline database during this review; that remains an operator release check.
-- The Phase 24 CI repair is merged and its required GitHub-hosted workflows are
-  green. Phase 25 frontend CI has not run because this branch has not been
-  pushed. Compose hardening passed locally with a temporary validation-only
-  relay secret. The no-cache frontend image build now passes with the same
-  Alpine/npm 10 environment used by the Dockerfile, and the local stack reached
-  backend readiness with a responsive frontend. The full image/Trivy workflow
-  remains a required pull-request check.
+- Phase 25 is merged. The readiness correction passes local backend/frontend
+  quality checks, image builds, migration/readiness smoke, and controlled ZAP
+  failure/recovery: core status remained healthy, non-ZAP profiles remained
+  available, and ZAP-dependent profiles were blocked. The full image/Trivy
+  workflow remains a required pull-request check.
 
 ## Operator actions
 
-1. Push `phase-25-frontend-integration`, open a pull request, and require
-   Frontend quality, Container builds / build, and every remaining required
-   workflow to pass. Merge the branch into `main`, then confirm the merge before
-   any later phase begins.
+1. Push `codex/fix-profile-readiness`, open a pull request, and require Backend
+   quality, Frontend quality, Container builds / build, and every remaining
+   required workflow to pass. Merge the branch into `main`, then confirm the
+   merge before any later phase begins.
 2. Run `python3 scripts/bootstrap_env.py`. It adds the relay secret and newly
    introduced settings without replacing a non-empty user-managed
    `AUTH_PROFILE_SECRET_KEY`; review the resulting `.env`.
