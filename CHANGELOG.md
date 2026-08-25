@@ -5,6 +5,19 @@ versioning for the public source contract.
 
 ## [1.1.0] - 2026-07-29
 
+### Fixed
+
+- Development dependency auditing now pins pip 26.2, resolving
+  `PYSEC-2026-3721` while retaining a Python 3.12 hash-locked environment.
+- Source-built scanner tools now use digest-pinned Go 1.26.6; OSV-Scanner also
+  pins go-git 5.19.2 and x/mod 0.40.0 to clear the current HIGH Trivy findings.
+- Scanner readiness is now probed by the isolated worker and projected through
+  its safe heartbeat instead of being probed from the API container, which has
+  no scanner-control network access.
+- The operator UI gates launches by the selected profile's actual dependencies:
+  degraded ZAP readiness blocks ZAP profiles without disabling independent
+  ScopeHarbor-passive or repository scans.
+
 ### Added
 
 - Allowlist schema v2 with exact origin/base-path scope, Compose/host-gateway
@@ -19,7 +32,8 @@ versioning for the public source contract.
 - Suppression revocation, audited tag unassignment/archive, current-posture
   dashboards, `posture-v1`, explicit external AI generation POST, bounded AI
   streaming, and race-safe report generation.
-- Schemas `0012_portfolio_readiness` and `0013_scan_subject_integrity`,
+- Schemas `0012_portfolio_readiness`, `0013_scan_subject_integrity`, and
+  `0014_worker_scanner_readiness`,
   artifact-cleanup tasks, complete environment reference/bootstrap merging,
   Compose hardening assertions, secret scanning, image vulnerability gates, and
   CycloneDX SBOM generation.

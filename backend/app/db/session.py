@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 
-EXPECTED_MIGRATION_HEAD = "0013_scan_subject_integrity"
+EXPECTED_MIGRATION_HEAD = "0014_worker_scanner_readiness"
 engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 

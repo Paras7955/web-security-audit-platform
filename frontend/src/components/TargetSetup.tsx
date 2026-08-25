@@ -234,6 +234,15 @@ export function TargetSetup({
   ) ?? null : null;
   const selectedProfile = SCAN_PROFILES.find((profile) => profile.id === scanProfileId) ?? SCAN_PROFILES[0];
   const platformReady = platformHealth?.status === "ok";
+  const selectedProfileRequiresZap = Boolean(
+    selectedAuditSubject?.target?.zap_required_scan_profile_ids.includes(selectedProfile.id)
+  );
+  const scanDependenciesReady = Boolean(
+    platformReady && (!selectedProfileRequiresZap || platformHealth?.zap.status === "ok")
+  );
+  const scanReadinessMessage = selectedProfileRequiresZap && platformHealth?.zap.status !== "ok"
+    ? "This target policy requires ZAP for the selected profile. Restore worker-reported ZAP readiness, then run Preflight again."
+    : "Confirm core platform readiness before launch. Run Preflight again after the worker and database are healthy.";
   const canCreate = useMemo(() => Boolean(validation && permissionConfirmed && !isBusy), [validation, permissionConfirmed, isBusy]);
   const profileReady = Boolean(
     selectedAuditSubject &&
@@ -244,7 +253,7 @@ export function TargetSetup({
     profileReady &&
       selectedProfile.required_acknowledgements.every((code) => acknowledgements.includes(code))
   );
-  const canStartScan = authorizationReady && platformReady && !isBusy;
+  const canStartScan = authorizationReady && scanDependenciesReady && !isBusy;
   const reviewReady = Boolean(selectedScan && ["completed", "completed_with_warnings"].includes(selectedScan.status));
   const currentAuditReviewReady = Boolean(currentAuditScan && ["completed", "completed_with_warnings"].includes(currentAuditScan.status));
   const selectedScanMatchesDraft = Boolean(
@@ -1034,7 +1043,13 @@ export function TargetSetup({
       const response = await apiFetch(`${apiBaseUrl}/ops/health`);
       const body = await readJson<PlatformHealth>(response, "Platform health load failed.");
       setPlatformHealth(body);
-      setOpsMessage(body.status === "ok" ? "Platform components are healthy." : "One or more platform components are degraded.");
+      setOpsMessage(
+        body.status !== "ok"
+          ? "One or more core platform components are degraded."
+          : body.zap.status === "ok"
+            ? "Core platform components and ZAP are healthy."
+            : "Core platform components are healthy. ZAP-required profiles remain unavailable."
+      );
       setBootstrapError("");
     } catch (error) {
       setPlatformHealth(null);
@@ -1968,7 +1983,8 @@ export function TargetSetup({
                     subject={selectedAuditSubject}
                     scanProfileId={scanProfileId}
                     canStartScan={canStartScan}
-                    platformReady={platformReady}
+                    platformReady={scanDependenciesReady}
+                    readinessMessage={scanReadinessMessage}
                     isBusy={isBusy}
                     onStartScan={startScan}
                   />

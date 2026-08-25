@@ -232,8 +232,11 @@ are never sent to an AI provider.
 ## Operations and verification
 
 `/health` is liveness. `/ready` validates runtime configuration and schema
-`0013_scan_subject_integrity`. Protected `/api/v1/ops/health` provides safe
-component state.
+`0014_worker_scanner_readiness`. Protected `/api/v1/ops/health` provides safe
+core-component state plus the worker's bounded ZAP readiness probe. A degraded
+ZAP dependency blocks only profiles whose exact target policy requires ZAP;
+ScopeHarbor-passive and repository profiles remain available when their core
+dependencies are healthy.
 
 Maintenance is dry-run-first:
 

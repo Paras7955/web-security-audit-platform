@@ -33,7 +33,8 @@ export function OpsHealthPanel({
         ["Artifacts", health.artifact_root]
       ]
     : [];
-  const healthyComponents = components.filter(([, component]) => component.status === "ok").length;
+  const coreComponents = components.filter(([label]) => label !== "ZAP");
+  const healthyCoreComponents = coreComponents.filter(([, component]) => component.status === "ok").length;
   const isAuditContext = context === "audit";
 
   return (
@@ -57,7 +58,7 @@ export function OpsHealthPanel({
             <div>
               <dt>{isAuditContext ? "Preflight result" : "Overall status"}</dt>
               <dd className={`health-${health.status}`}>{health.status === "ok" ? (isAuditContext ? "Ready to audit" : "All systems ready") : "Needs attention"}</dd>
-              <small>{healthyComponents} of {components.length} required services healthy</small>
+              <small>{healthyCoreComponents} of {coreComponents.length} core services healthy · ZAP {health.zap.status}</small>
             </div>
             <div>
               <dt>Waiting audits</dt>

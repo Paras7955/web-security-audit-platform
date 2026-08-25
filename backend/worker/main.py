@@ -9,6 +9,7 @@ from app.core.contracts import ScanMode
 from app.core.logging import configure_logging, log_event
 from app.core.validation import validate_runtime_settings
 from app.db.session import SessionLocal, check_database_ready, engine
+from app.ops.health import probe_zap
 from app.ops.heartbeat import record_worker_heartbeat
 from app.repo_scanner.adapters import verify_repo_tools
 from app.scans.lifecycle import (
@@ -22,8 +23,31 @@ from app.scans.lifecycle import (
 from app.security.allowlist import load_allowlist
 from app.security.auth import validate_auth_settings
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger("scopeharbor.worker")
+
+
+def record_ready_heartbeat(
+    db: Session,
+    *,
+    worker_id: str,
+    status: str,
+    current_scan_id: str | None = None,
+) -> None:
+    zap = probe_zap(
+        base_url=settings.zap_base_url,
+        api_key=settings.zap_api_key,
+        timeout_seconds=settings.health_zap_timeout_seconds,
+    )
+    record_worker_heartbeat(
+        db,
+        worker_id=worker_id,
+        status=status,
+        current_scan_id=current_scan_id,
+        zap_status=zap.status,
+        zap_detail=zap.detail,
+    )
 
 
 class ScanExecutionMonitor:
@@ -75,7 +99,7 @@ class ScanExecutionMonitor:
             )
             if not renewed:
                 return False
-            record_worker_heartbeat(
+            record_ready_heartbeat(
                 db,
                 worker_id=self.worker_id,
                 status="processing",
@@ -114,12 +138,12 @@ def main() -> None:
     log_event(logger, "worker_ready", worker_id=settings.worker_id)
     while True:
         with SessionLocal() as db:
-            record_worker_heartbeat(db, worker_id=settings.worker_id, status="polling")
+            record_ready_heartbeat(db, worker_id=settings.worker_id, status="polling")
             recover_stale_scan_leases(db)
             scan = claim_next_queued_scan(db, worker_id=settings.worker_id)
             if scan is not None:
                 log_event(logger, "scan_claimed", worker_id=settings.worker_id, scan_id=scan.id)
-                record_worker_heartbeat(db, worker_id=settings.worker_id, status="processing", current_scan_id=scan.id)
+                record_ready_heartbeat(db, worker_id=settings.worker_id, status="processing", current_scan_id=scan.id)
                 with ScanExecutionMonitor(scan_id=scan.id, worker_id=settings.worker_id) as execution:
                     if scan.mode == ScanMode.REPO.value:
                         run_repo_scan_job(
@@ -139,7 +163,7 @@ def main() -> None:
                             zap_base_url=settings.zap_base_url,
                             execution_checkpoint=execution.checkpoint,
                         )
-                record_worker_heartbeat(db, worker_id=settings.worker_id, status="polling")
+                record_ready_heartbeat(db, worker_id=settings.worker_id, status="polling")
                 continue
         time.sleep(5)
 

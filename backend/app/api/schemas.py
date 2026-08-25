@@ -282,6 +282,7 @@ class TargetRead(BaseModel):
     has_repo_path: bool
     auth_profile_id: str | None
     available_scan_profile_ids: list[str]
+    zap_required_scan_profile_ids: list[str]
     connection_class: str
     scope_path: str
     tls_trust: str
@@ -297,6 +298,7 @@ class TargetValidationRead(BaseModel):
     name: str
     base_url: str
     available_scan_profile_ids: list[str]
+    zap_required_scan_profile_ids: list[str]
     max_redirects: int
     local_demo: bool
     connection_class: str
@@ -313,6 +315,7 @@ class TargetPolicyRead(BaseModel):
     scope_path: str
     tls_trust: str
     available_scan_profile_ids: list[str]
+    zap_required_scan_profile_ids: list[str]
     max_redirects: int
     disposable_demo: bool
     policy_fingerprint: str

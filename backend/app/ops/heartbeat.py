@@ -18,6 +18,8 @@ def record_worker_heartbeat(
     worker_id: str,
     status: str,
     current_scan_id: str | None = None,
+    zap_status: str | None = None,
+    zap_detail: str | None = None,
 ) -> WorkerHeartbeat:
     heartbeat = db.scalar(select(WorkerHeartbeat).where(WorkerHeartbeat.worker_id == worker_id))
     now = datetime.now(UTC)
@@ -28,12 +30,17 @@ def record_worker_heartbeat(
             status=status,
             current_scan_id=current_scan_id,
             queue_depth=queue_depth(db),
+            zap_status=zap_status,
+            zap_detail=zap_detail,
             last_seen_at=now,
         )
     else:
         heartbeat.status = status
         heartbeat.current_scan_id = current_scan_id
         heartbeat.queue_depth = queue_depth(db)
+        if zap_status is not None:
+            heartbeat.zap_status = zap_status
+            heartbeat.zap_detail = zap_detail
         heartbeat.last_seen_at = now
     db.add(heartbeat)
     db.commit()

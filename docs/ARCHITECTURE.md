@@ -63,14 +63,18 @@ normalized findings, subject-aware lifecycle/suppressions/tags/risk, reports,
 safe AI/cache/rate records, cleanup tasks, heartbeats, and audit events.
 
 Every user-data lookup carries a workspace predicate. Alembic schema head is
-`0013_scan_subject_integrity`; API and worker fail closed if the database is not at
-that head.
+`0014_worker_scanner_readiness`; API and worker fail closed if the database is
+not at that head.
 
 ### Worker and lease guard
 
 The worker claims one queued scan, records `lease_owner`/expiry, and executes
 under a `ScanExecutionMonitor`. A separate database session renews the scan
 lease and worker heartbeat. All state writes are fenced by the current owner.
+Because the API is intentionally absent from `scanner-control`, the worker also
+performs the bounded, proxy-independent ZAP readiness probe and records only a
+safe status/detail in its heartbeat. The API's core status remains independent
+of this optional profile dependency.
 Cancellation, deadline, or ownership loss interrupts passive requests, ZAP
 polling, and repository subprocess polling.
 

@@ -9,6 +9,7 @@ from app.core.contracts import ScanStatus, ScanStep
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import ApiRateLimitLog, AuditLog, Scan, Target, WorkerHeartbeat
+from app.ops.health import probe_zap
 from app.ops.heartbeat import record_worker_heartbeat
 from app.ops.rate_limits import is_limited, lock_rate_limit_scope
 from app.scans.lifecycle import ScanCancelledError, check_scan_cancelled
@@ -177,11 +178,15 @@ class PlatformOpsTests(unittest.TestCase):
     def test_platform_health_reports_components(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with SessionLocal() as db:
-                record_worker_heartbeat(db, worker_id="test-worker-health", status="polling")
+                record_worker_heartbeat(
+                    db,
+                    worker_id="test-worker-health",
+                    status="polling",
+                    zap_status="ok",
+                    zap_detail="zap reachable from worker",
+                )
 
-            with patch("app.api.ops.settings.artifact_root", temp_dir), patch("app.api.ops.httpx.Client") as client:
-                get = client.return_value.__enter__.return_value.get
-                get.return_value.raise_for_status.return_value = None
+            with patch("app.api.ops.settings.artifact_root", temp_dir):
                 response = self.client.get("/api/v1/ops/health", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 200)
@@ -193,7 +198,75 @@ class PlatformOpsTests(unittest.TestCase):
         self.assertEqual(body["artifact_root"]["detail"], "artifact root writable")
         self.assertNotIn(temp_dir, body["artifact_root"]["detail"])
         self.assertGreaterEqual(body["queue_depth"], 0)
+
+    def test_platform_health_keeps_core_ready_when_worker_reports_zap_degraded(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with SessionLocal() as db:
+                record_worker_heartbeat(
+                    db,
+                    worker_id="test-worker-health-degraded-zap",
+                    status="polling",
+                    zap_status="degraded",
+                    zap_detail="zap unavailable to worker",
+                )
+
+            with patch("app.api.ops.settings.artifact_root", temp_dir):
+                response = self.client.get("/api/v1/ops/health", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "ok")
+        self.assertEqual(body["worker"]["status"], "ok")
+        self.assertEqual(body["zap"], {"status": "degraded", "detail": "zap unavailable to worker"})
+
+    def test_lease_heartbeat_preserves_last_worker_zap_probe(self) -> None:
+        with SessionLocal() as db:
+            record_worker_heartbeat(
+                db,
+                worker_id="test-worker-preserve-zap",
+                status="polling",
+                zap_status="ok",
+                zap_detail="zap reachable from worker",
+            )
+            heartbeat = record_worker_heartbeat(
+                db,
+                worker_id="test-worker-preserve-zap",
+                status="processing",
+                current_scan_id=self.scan_id,
+            )
+
+        self.assertEqual(heartbeat.zap_status, "ok")
+        self.assertEqual(heartbeat.zap_detail, "zap reachable from worker")
+
+    def test_worker_zap_probe_uses_bounded_proxy_independent_client(self) -> None:
+        with patch("app.ops.health.httpx.Client") as client:
+            get = client.return_value.__enter__.return_value.get
+            get.return_value.raise_for_status.return_value = None
+
+            result = probe_zap(base_url="http://zap:8080", api_key="test-key", timeout_seconds=1.5)
+
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.detail, "zap reachable from worker")
         client.assert_called_once_with(trust_env=False, follow_redirects=False)
+        get.assert_called_once_with(
+            "http://zap:8080/JSON/core/view/version/",
+            headers={"X-ZAP-API-Key": "test-key"},
+            timeout=1.5,
+        )
+
+    def test_worker_zap_probe_normalizes_trailing_slash(self) -> None:
+        with patch("app.ops.health.httpx.Client") as client:
+            get = client.return_value.__enter__.return_value.get
+            get.return_value.raise_for_status.return_value = None
+
+            result = probe_zap(base_url="http://zap:8080/", api_key="test-key", timeout_seconds=1.5)
+
+        self.assertEqual(result.status, "ok")
+        get.assert_called_once_with(
+            "http://zap:8080/JSON/core/view/version/",
+            headers={"X-ZAP-API-Key": "test-key"},
+            timeout=1.5,
+        )
 
     def test_rate_limit_scope_uses_transaction_advisory_lock_on_postgres(self) -> None:
         class FakeDialect:
