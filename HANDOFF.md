@@ -17,6 +17,7 @@ Phase 25 implementation and review commits:
 - `8783ec4` — `fix(frontend): clear cross-session form state`
 - `d276519` — `fix(frontend): reset cross-session authorization`
 - `aac7d75` — `fix(frontend): clear cross-workspace filters`
+- `1c69176` — `fix(frontend): synchronize secure npm lockfile`
 
 The release provides:
 
@@ -211,10 +212,11 @@ The final follow-up review found no actionable issues and approved Phase 25.
   100.00%, SSRF/redirects 95.07%, persistence redaction 100.00%, artifact paths
   100.00%, and repository runner boundaries 96.42%.
 - Ruff and Pyright: clean.
-- Frontend: a clean `npm ci`, six Vitest/Testing Library state/contract tests,
-  `npm audit --audit-level=high`, lint, and the Next.js 16.3.0 production build
-  passed. The audit reported zero vulnerabilities. PostCSS remains pinned to
-  8.5.25.
+- Frontend: a clean npm 10.9.8 `npm ci`, six Vitest/Testing Library
+  state/contract tests, `npm audit --audit-level=high`, lint, and the Next.js
+  16.3.0 production build passed. The audit reported zero vulnerabilities. The
+  Alpine-compatible lock includes the required optional emnapi packages and
+  Nano ID 3.3.18. PostCSS remains pinned to 8.5.25.
 - Both Python production/development locks install with hashes and pass
   `pip-audit`; cryptography is pinned to 50.0.0.
 - Compose rendering and network/privilege hardening validation passed. API,
@@ -228,9 +230,10 @@ The final follow-up review found no actionable issues and approved Phase 25.
 - The Phase 24 CI repair is merged and its required GitHub-hosted workflows are
   green. Phase 25 frontend CI has not run because this branch has not been
   pushed. Compose hardening passed locally with a temporary validation-only
-  relay secret. A local frontend image build could not start because Docker
-  Desktop was stopped; the image build and Trivy scan therefore remain required
-  pull-request checks.
+  relay secret. The no-cache frontend image build now passes with the same
+  Alpine/npm 10 environment used by the Dockerfile, and the local stack reached
+  backend readiness with a responsive frontend. The full image/Trivy workflow
+  remains a required pull-request check.
 
 ## Operator actions
 
