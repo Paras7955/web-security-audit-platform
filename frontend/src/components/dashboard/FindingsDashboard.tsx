@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import type { Finding, Tag, Target } from "@/lib/securityAuditApi";
+import type { Finding, RepositoryAsset, Tag, Target } from "@/lib/securityAuditApi";
 
 const severityFilters = ["all", "info", "low", "medium", "high", "critical"];
 const lifecycleStatuses = ["open", "confirmed", "in_progress", "resolved", "suppressed", "false_positive"];
@@ -38,6 +38,7 @@ export function FindingsDashboard({
   targetFilter,
   profileFilter,
   targets,
+  repositoryAssets,
   scanProfiles,
   tags,
   tagLabel,
@@ -91,6 +92,7 @@ export function FindingsDashboard({
   targetFilter: string;
   profileFilter: string;
   targets: Target[];
+  repositoryAssets: RepositoryAsset[];
   scanProfiles: readonly { id: string; label: string }[];
   tags: Tag[];
   tagLabel: string;
@@ -223,7 +225,7 @@ export function FindingsDashboard({
             <h4>Scope and management</h4>
             <div className="filterGrid filterGridPrimary" aria-label="Finding scope and management filters">
               <label>Scope<select value={findingScope} onChange={(event) => onFindingScope(event.target.value)}><option value="scan">Current scan</option><option value="workspace">Workspace</option></select></label>
-              <label>Target<select value={targetFilter} onChange={(event) => onTargetFilter(event.target.value)} disabled={findingScope !== "workspace"}><option value="">All targets</option>{targets.map((target) => <option value={target.id} key={target.id}>{target.name}</option>)}</select></label>
+              <label>Subject<select value={targetFilter} onChange={(event) => onTargetFilter(event.target.value)} disabled={findingScope !== "workspace"}><option value="">All subjects</option><optgroup label="Web targets">{targets.map((target) => <option value={`target:${target.id}`} key={target.id}>{target.name}</option>)}</optgroup><optgroup label="Repositories">{repositoryAssets.map((asset) => <option value={`repository:${asset.id}`} key={asset.id}>{asset.name}</option>)}</optgroup></select></label>
               <label>Profile<select value={profileFilter} onChange={(event) => onProfileFilter(event.target.value)} disabled={findingScope !== "workspace"}><option value="">All profiles</option>{scanProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.label}</option>)}</select></label>
               <label>Lifecycle<select value={lifecycleFilter} onChange={(event) => onLifecycleFilter(event.target.value)}><option value="all">All states</option>{lifecycleStatuses.map((item) => <option value={item} key={item}>{formatStatus(item)}</option>)}</select></label>
               <label>Confidence<select value={confidenceFilter} onChange={(event) => onConfidenceFilter(event.target.value)}>{confidenceFilters.map((item) => <option value={item} key={item}>{item === "all" ? "All confidence" : item}</option>)}</select></label>
@@ -246,7 +248,10 @@ export function FindingsDashboard({
               <label className="tagLabelInput"><span className="srOnly">New tag label</span><input value={tagLabel} onChange={(event) => onTagLabelChange(event.target.value)} placeholder="Tag label" disabled={isCreatingTag} /></label>
               <button type="button" onClick={onCreateTag} disabled={!tagLabel.trim() || isCreatingTag}>{isCreatingTag ? "Creating…" : "Create tag"}</button>
               <label className="tagAssignmentSelect"><span className="srOnly">Tag to assign</span><select value={assignmentTagId} onChange={(event) => onAssignmentTagChange(event.target.value)} disabled={isAssigningTag}><option value="">Choose tag to assign</option>{tags.map((tag) => <option value={tag.id} key={tag.id}>{tag.label}</option>)}</select></label>
-              <select value={tagResourceType} onChange={(event) => onTagResourceTypeChange(event.target.value)} aria-label="Tag resource type" disabled={isAssigningTag}><option value="target">Target</option><option value="scan">Scan</option></select>
+              <select value={tagResourceType} onChange={(event) => onTagResourceTypeChange(event.target.value)} aria-label="Tag resource type" disabled={isAssigningTag}>
+                {selectedFinding?.repository_asset_id ? <option value="repository_asset">Repository</option> : <option value="target">Web target</option>}
+                <option value="scan">Scan</option>
+              </select>
               <button type="button" onClick={onAssignTag} disabled={!assignmentTagId || !selectedFinding || isAssigningTag}>{isAssigningTag ? "Assigning…" : "Assign tag"}</button>
             </div>
           </div>

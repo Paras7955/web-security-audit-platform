@@ -10,12 +10,14 @@ export function TargetLibrary({
   selectedTargetId,
   isBusy,
   onSelectTarget,
+  onReauthorizeTarget,
   onRequestArchive
 }: {
   targets: Target[];
   selectedTargetId: string;
   isBusy: boolean;
   onSelectTarget: (targetId: string) => void;
+  onReauthorizeTarget: (target: Target) => void;
   onRequestArchive: (target: Target) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -34,8 +36,8 @@ export function TargetLibrary({
       <div className="panelHeader">
         <div>
           <p className="panelKicker">Authorized inventory</p>
-          <h3>Saved targets</h3>
-          <p>Select the exact web service or repository-backed target this audit may inspect.</p>
+          <h3>Saved web targets</h3>
+          <p>Select an exact configured origin. Stale policies require an explicit authorization refresh before launch.</p>
         </div>
         <span className="contextBadge">{targets.length}</span>
       </div>
@@ -56,13 +58,25 @@ export function TargetLibrary({
                   <strong>{target.name}</strong>
                   <small>{target.base_url}</small>
                   <span className="targetCapabilities">
-                    {target.has_repo_path ? <em>Repository</em> : null}
                     {target.auth_profile_id ? <em>Credential</em> : null}
+                    <em>{target.connection_class.replaceAll("_", " ")}</em>
+                    <em>{target.tls_trust.replaceAll("_", " ")}</em>
                     <em>{target.available_scan_profile_ids.length} profiles</em>
+                    <em className={target.policy_status === "current" ? "policyCurrent" : "policyStale"}>{target.policy_status === "current" ? "Policy current" : "Reauthorization required"}</em>
                   </span>
                 </span>
                 {target.id === selectedTargetId ? <span className="selectedTick"><AppIcon name="check" size={14} /></span> : null}
               </button>
+              {target.policy_status !== "current" ? (
+                <button
+                  type="button"
+                  className="targetReauthorizeButton"
+                  onClick={() => onReauthorizeTarget(target)}
+                  disabled={isBusy}
+                >
+                  Reauthorize
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="quietDangerButton"

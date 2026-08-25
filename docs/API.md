@@ -106,9 +106,10 @@ Content-Type: application/json
 Exactly one of `target_id` or `repository_asset_id` is accepted. Repository
 launches use `scan_profile_id=repository` and `authorized_repository`.
 
-Legacy target-based repository launch remains temporarily accepted. The backend
-creates/reuses a repository asset and snapshots it; `Target.repo_path` is not
-worker authority and will be removed after frontend integration.
+Legacy target-based repository launch remains temporarily accepted for
+historical callers. The current frontend uses first-class repository assets.
+The adapter creates/reuses an asset and snapshots it; `Target.repo_path` is not
+worker authority and can be removed only after historical callers are reviewed.
 
 Scan responses retain existing `target_id` fields and add
 `repository_asset_id`, `subject_type`, and `subject_id`. They never expose

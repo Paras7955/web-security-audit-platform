@@ -513,6 +513,10 @@ h4 {
   background: radial-gradient(circle at 70% 48%, var(--accent-soft), transparent 34%);
 }
 
+.scopeFieldFallback canvas {
+  display: none;
+}
+
 .scopeShieldFallback {
   position: absolute;
   inset: 0;
@@ -532,7 +536,7 @@ h4 {
 }
 
 .refreshButton,
-button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .findingSelectButton, .quietDangerButton, .iconButton, .textButton, .modeCard) {
+button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .repositoryAssetSelect, .targetReauthorizeButton, .scanRow, .findingSelectButton, .quietDangerButton, .iconButton, .textButton, .modeCard) {
   display: inline-flex;
   min-height: 39px;
   align-items: center;
@@ -550,12 +554,12 @@ button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scan
 }
 
 :root[data-theme="light"] .refreshButton,
-:root[data-theme="light"] button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .findingSelectButton, .quietDangerButton, .iconButton, .textButton, .modeCard) {
+:root[data-theme="light"] button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .repositoryAssetSelect, .targetReauthorizeButton, .scanRow, .findingSelectButton, .quietDangerButton, .iconButton, .textButton, .modeCard) {
   color: var(--on-action);
 }
 
 .refreshButton:hover:not(:disabled),
-button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .findingSelectButton, .quietDangerButton, .iconButton, .textButton, .modeCard):hover:not(:disabled) {
+button:not(.primaryAction, .primaryNavItem, .auditPhaseTab, .targetSelect, .repositoryAssetSelect, .targetReauthorizeButton, .scanRow, .findingSelectButton, .quietDangerButton, .iconButton, .textButton, .modeCard):hover:not(:disabled) {
   transform: translateY(-1px);
   border-color: var(--accent);
   background: linear-gradient(135deg, color-mix(in oklch, var(--action) 90%, white), var(--action-hover-end));
@@ -4405,12 +4409,331 @@ button:active:not(:disabled):not([aria-disabled="true"]) {
   transform: translateY(1px);
 }
 
-button:disabled:not(.primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .findingSelectButton, .modeCard) {
+button:disabled:not(.primaryNavItem, .auditPhaseTab, .targetSelect, .repositoryAssetSelect, .targetReauthorizeButton, .scanRow, .findingSelectButton, .modeCard) {
   border-color: var(--border);
   background: var(--surface-soft);
   box-shadow: none;
   color: var(--muted);
   opacity: 0.68;
+}
+
+.targetPolicyCatalog,
+.findingGovernancePanel,
+.repositoryAssetsPanel,
+.operatorSessionPanel {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.targetPolicyCatalog > summary,
+.findingGovernancePanel > summary {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: var(--type-meta);
+  font-weight: var(--weight-semibold);
+  list-style: none;
+  padding: var(--space-sm) var(--space-md);
+}
+
+.targetPolicyCatalog > summary::-webkit-details-marker,
+.findingGovernancePanel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.targetPolicyCatalog > summary > span,
+.findingGovernancePanel > summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.targetPolicyCatalog > summary > span:last-child,
+.findingGovernancePanel > summary > span:last-child {
+  color: var(--muted);
+  font-size: var(--type-caption);
+  font-weight: var(--weight-regular);
+}
+
+.targetPolicyTableWrap {
+  overflow-x: auto;
+  border-top: 1px solid var(--border);
+}
+
+.targetPolicyTable td:first-child {
+  min-width: 220px;
+}
+
+.targetPolicyTable td:last-child {
+  min-width: 190px;
+}
+
+.targetPolicyTable td strong,
+.targetPolicyTable td small {
+  display: block;
+}
+
+.targetPolicyTable td small {
+  margin-top: var(--space-2xs);
+  color: var(--muted);
+  font-size: var(--type-caption);
+}
+
+.policyLiteral,
+.repoPathValue {
+  font-family: var(--font-mono);
+  font-size: var(--type-caption);
+  overflow-wrap: anywhere;
+}
+
+.targetCapabilities .policyCurrent {
+  color: var(--success);
+}
+
+.targetCapabilities .policyStale {
+  color: var(--amber);
+}
+
+.targetReauthorizeButton {
+  align-self: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-soft);
+  font-size: var(--type-caption);
+  font-weight: var(--weight-semibold);
+  margin-right: var(--space-xs);
+  padding: 6px 9px;
+}
+
+.targetReauthorizeButton:hover:not(:disabled) {
+  border-color: var(--accent-strong);
+  color: var(--text);
+}
+
+.repositoryAssetsPanel > .sectionHeading,
+.operatorSessionPanel > .sectionHeading {
+  padding: var(--space-md);
+}
+
+.repositoryAssetsLayout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr);
+  border-top: 1px solid var(--border);
+}
+
+.repositoryAssetForm,
+.repositoryAssetLibrary {
+  min-width: 0;
+  padding: var(--space-lg);
+}
+
+.repositoryAssetForm {
+  display: grid;
+  align-content: start;
+  gap: var(--space-sm);
+}
+
+.repositoryAssetForm label,
+.operatorSessionForm label {
+  display: grid;
+  gap: var(--space-xs);
+  color: var(--muted);
+  font-size: var(--type-caption);
+  font-weight: var(--weight-semibold);
+}
+
+.repositoryAssetLibrary {
+  border-left: 1px solid var(--border);
+}
+
+.repositoryAssetList,
+.governanceList,
+.tagAssignmentList {
+  display: grid;
+  gap: var(--space-xs);
+  margin: var(--space-md) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repositoryAssetRow {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.repositoryAssetRowSelected {
+  border-color: color-mix(in oklch, var(--accent) 36%, var(--border));
+  background: var(--accent-soft);
+}
+
+.repositoryAssetSelect {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-sm);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: var(--space-sm);
+  text-align: left;
+}
+
+.repositoryAssetSelect > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+
+.repositoryAssetSelect strong,
+.repositoryAssetSelect small,
+.repositoryAssetSelect em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repositoryAssetSelect small,
+.repositoryAssetSelect em {
+  color: var(--muted);
+  font-size: var(--type-caption);
+  font-style: normal;
+}
+
+.repositoryAssetSelect em {
+  margin-top: var(--space-2xs);
+}
+
+.findingGovernancePanel {
+  margin-top: var(--space-lg);
+}
+
+.findingGovernanceGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--border);
+}
+
+.findingGovernanceGrid > section {
+  min-width: 0;
+  padding: var(--space-lg);
+}
+
+.findingGovernanceGrid > section + section {
+  border-left: 1px solid var(--border);
+}
+
+.governanceList > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm);
+  border-top: 1px solid var(--border);
+  padding: var(--space-sm) 0;
+}
+
+.governanceList > li:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+.governanceList strong,
+.governanceList small {
+  display: block;
+}
+
+.governanceList small,
+.tagAssignmentList li {
+  color: var(--muted);
+  font-size: var(--type-caption);
+}
+
+.tagAssignmentList {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
+.tagAssignmentList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-xs);
+}
+
+.operatorSessionPanel {
+  width: min(1080px, 100%);
+  justify-self: center;
+}
+
+.operatorSessionForm {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  align-items: end;
+  gap: var(--space-md);
+  border-top: 1px solid var(--border);
+  padding: var(--space-md);
+}
+
+.operatorSessionForm .actions,
+.sessionStatus,
+.aiPanelActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.operatorSessionPanel > .formMessage {
+  margin: 0;
+  border-top: 1px solid var(--border);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.sessionStatus {
+  border-radius: var(--radius-pill);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: var(--type-caption);
+  font-weight: var(--weight-semibold);
+  padding: 5px 9px;
+}
+
+.sessionStatus-oidc,
+.sessionStatus-development {
+  color: var(--success);
+}
+
+.aiPanelActions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.aiEmptyState {
+  display: grid;
+  gap: var(--space-2xs);
+}
+
+.aiEmptyState strong {
+  color: var(--text-soft);
+}
+
+.postureHistoryNote {
+  margin: var(--space-sm) 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: var(--type-caption);
+  padding: var(--space-xs) 0;
 }
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
@@ -4512,6 +4835,8 @@ button:disabled:not(.primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .f
 
   .overviewSplit,
   .targetManagementGrid,
+  .repositoryAssetsLayout,
+  .findingGovernanceGrid,
   .riskDashboardGrid,
   .intelligenceGrid,
   .authorizationLayout,
@@ -4591,6 +4916,16 @@ button:disabled:not(.primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .f
   .operationsBoundaryList article + article {
     border-top: 1px solid var(--border);
     border-left: 0;
+  }
+
+  .repositoryAssetLibrary,
+  .findingGovernanceGrid > section + section {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .operatorSessionForm {
+    grid-template-columns: 1fr;
   }
 
   .boundaryGrid article {
@@ -4752,6 +5087,28 @@ button:disabled:not(.primaryNavItem, .auditPhaseTab, .targetSelect, .scanRow, .f
   .authorizationChecklist > button,
   .launchReview > button {
     width: 100%;
+  }
+
+  .targetPolicyCatalog > summary,
+  .findingGovernancePanel > summary,
+  .repositoryAssetsPanel .sectionHeading,
+  .operatorSessionPanel .sectionHeading,
+  .operatorSessionForm .actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .operatorSessionForm .actions > button {
+    width: 100%;
+  }
+
+  .targetListItem {
+    flex-wrap: wrap;
+  }
+
+  .targetReauthorizeButton {
+    width: calc(100% - 56px);
+    margin: 0 0 var(--space-xs) var(--space-xs);
   }
 
   .boundaryStrip {

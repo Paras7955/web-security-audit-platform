@@ -2,7 +2,19 @@ import type { AiExplanation, FindingExplanation } from "@/lib/securityAuditApi";
 
 const visibleExplanationCount = 5;
 
-export function AiExplanationsPanel({ explanation, message }: { explanation: AiExplanation | null; message: string }) {
+export function AiExplanationsPanel({
+  explanation,
+  message,
+  canGenerate,
+  isGenerating,
+  onGenerate
+}: {
+  explanation: AiExplanation | null;
+  message: string;
+  canGenerate: boolean;
+  isGenerating: boolean;
+  onGenerate: () => void;
+}) {
   const visibleExplanations = explanation?.explanations.slice(0, visibleExplanationCount) ?? [];
   const remainingExplanations = explanation?.explanations.slice(visibleExplanationCount) ?? [];
 
@@ -10,7 +22,12 @@ export function AiExplanationsPanel({ explanation, message }: { explanation: AiE
     <div className="aiPanel">
       <div className="panelHeader">
         <div><h3>AI explanations</h3><p>Translate prioritized normalized findings into impact, recommended action, and stated limitations.</p></div>
-        <span className="contextBadge">{explanation?.provider ?? "Template default"}</span>
+        <div className="aiPanelActions">
+          <span className="contextBadge">{explanation?.provider ?? "Template default"}</span>
+          <button type="button" className="secondaryButton" onClick={onGenerate} disabled={!canGenerate || isGenerating}>
+            {isGenerating ? "Generating…" : explanation ? "Generate again" : "Generate explanations"}
+          </button>
+        </div>
       </div>
 
       {explanation ? (
@@ -81,7 +98,10 @@ export function AiExplanationsPanel({ explanation, message }: { explanation: AiE
           ) : null}
         </>
       ) : (
-        <p className="emptyState" role="status" aria-live="polite">{message}</p>
+        <div className="emptyState aiEmptyState" role="status" aria-live="polite">
+          <strong>{canGenerate ? "Explanations are ready to generate" : "Explanations unavailable for this audit"}</strong>
+          <span>{message}</span>
+        </div>
       )}
     </div>
   );

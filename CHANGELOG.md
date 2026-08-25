@@ -37,6 +37,11 @@ versioning for the public source contract.
 - Uvicorn raw access logs are disabled in favor of bounded queryless structured
   diagnostics.
 - Product and public contracts are version `1.1.0`.
+- The operator UI now uses first-class repository assets and subject-aware
+  target/repository workflows, displays current posture separately from
+  history, and exposes policy reauthorization and finding-governance controls.
+- OIDC bearer tokens can be supplied for one browser tab and remain in memory;
+  local development authentication remains available.
 
 ### Removed
 
@@ -48,9 +53,8 @@ versioning for the public source contract.
 
 - Legacy allowlists still load as a migration aid.
 - Historical AJAX records remain readable; AJAX cannot launch.
-- Existing target-based repository requests create/reuse repository assets.
-- Existing frontend routes/payloads remain accepted. Frontend source was not
-  changed.
+- Existing target-based repository requests create/reuse repository assets for
+  historical callers; the current frontend no longer sends them.
 
 ### Fixed
 

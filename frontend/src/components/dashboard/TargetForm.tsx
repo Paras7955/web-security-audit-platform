@@ -4,27 +4,23 @@ import type { ValidationResult } from "@/lib/securityAuditApi";
 
 export function TargetForm({
   targetUrl,
-  repoPath,
   permissionConfirmed,
   validation,
   message,
   isBusy,
   canCreate,
   onTargetUrlChange,
-  onRepoPathChange,
   onPermissionChange,
   onValidate,
   onCreateTarget
 }: {
   targetUrl: string;
-  repoPath: string;
   permissionConfirmed: boolean;
   validation: ValidationResult | null;
   message: string;
   isBusy: boolean;
   canCreate: boolean;
   onTargetUrlChange: (value: string) => void;
-  onRepoPathChange: (value: string) => void;
   onPermissionChange: (value: boolean) => void;
   onValidate: (event: FormEvent<HTMLFormElement>) => void;
   onCreateTarget: () => void;
@@ -32,7 +28,7 @@ export function TargetForm({
   return (
     <div className="panel">
       <div className="panelHeader">
-        <div><h3>Validate a target</h3><p>Confirm the exact allowlist match and optional approved repository path before saving scope.</p></div>
+        <div><h3>Validate a web target</h3><p>Confirm the exact destination policy and truthful profile eligibility before saving scope.</p></div>
         <span className="contextBadge">Allowlisted</span>
       </div>
 
@@ -40,11 +36,6 @@ export function TargetForm({
         <label>
           <span>Target URL</span>
           <input value={targetUrl} onChange={(event) => onTargetUrlChange(event.target.value)} placeholder="http://juice-shop:3000" />
-        </label>
-
-        <label>
-          <span>Optional local repo path</span>
-          <input value={repoPath} onChange={(event) => onRepoPathChange(event.target.value)} placeholder="/app/repositories/security-project" />
         </label>
 
         <label className="checkboxRow">
@@ -83,7 +74,7 @@ export function TargetForm({
               <dd>{validation.base_url}</dd>
             </div>
             <div>
-              <dt>Available Profiles</dt>
+              <dt>Eligible profiles</dt>
               <dd>{validation.available_scan_profile_ids.join(", ")}</dd>
             </div>
             <div>
@@ -91,8 +82,20 @@ export function TargetForm({
               <dd>{validation.max_redirects}</dd>
             </div>
             <div>
-              <dt>Target Class</dt>
-              <dd>{validation.local_demo ? "Local demo" : "Allowlisted service"}</dd>
+              <dt>Connection</dt>
+              <dd>{validation.connection_class.replaceAll("_", " ")}</dd>
+            </div>
+            <div>
+              <dt>Scope path</dt>
+              <dd>{validation.scope_path}</dd>
+            </div>
+            <div>
+              <dt>TLS trust</dt>
+              <dd>{validation.tls_trust.replaceAll("_", " ")}</dd>
+            </div>
+            <div>
+              <dt>Target class</dt>
+              <dd>{validation.local_demo ? "Disposable local demo" : "General local target"}</dd>
             </div>
           </dl>
         </div>

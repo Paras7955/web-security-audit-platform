@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { DashboardOverview, Scan, ScanComparison, Target, TargetDashboard } from "@/lib/securityAuditApi";
+import type { AuditSubject, DashboardOverview, RepositoryDashboard, Scan, ScanComparison, TargetDashboard } from "@/lib/securityAuditApi";
 
 const completedStatuses = new Set(["completed", "completed_with_warnings"]);
 const severityOrder = ["critical", "high", "medium", "low", "info"];
@@ -11,9 +11,9 @@ const comparisonPreviewSize = 4;
 export function RiskDashboardPanel({
   overview,
   targetDashboard,
-  targets,
+  repositoryDashboard,
   scans,
-  selectedTargetId,
+  selectedSubject,
   baselineScanId,
   comparisonScanId,
   comparison,
@@ -26,9 +26,9 @@ export function RiskDashboardPanel({
 }: {
   overview: DashboardOverview | null;
   targetDashboard: TargetDashboard | null;
-  targets: Target[];
+  repositoryDashboard: RepositoryDashboard | null;
   scans: Scan[];
-  selectedTargetId: string;
+  selectedSubject: AuditSubject | null;
   baselineScanId: string;
   comparisonScanId: string;
   comparison: ScanComparison | null;
@@ -40,7 +40,7 @@ export function RiskDashboardPanel({
   onCompare: () => void;
 }) {
   const comparableScans = scans
-    .filter((scan) => scan.target_id === selectedTargetId && completedStatuses.has(scan.status))
+    .filter((scan) => scan.subject_type === selectedSubject?.subjectType && scan.subject_id === (selectedSubject.target?.id ?? selectedSubject.repositoryAsset?.id) && completedStatuses.has(scan.status))
     .sort((left, right) => scanCompletionTime(right).localeCompare(scanCompletionTime(left)));
   const profileCounts = comparableScans.reduce<Map<string, number>>((counts, scan) => {
     counts.set(scan.scan_profile_id, (counts.get(scan.scan_profile_id) ?? 0) + 1);
@@ -56,56 +56,58 @@ export function RiskDashboardPanel({
     : [];
   const displayedBaselineScanId = selectedBaseline?.id ?? "";
   const displayedComparisonScanId = eligibleComparisonScans.some((scan) => scan.id === comparisonScanId) ? comparisonScanId : "";
-  const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
-  const latestScore = targetDashboard?.latest_risk_score ?? null;
+  const subjectDashboard = targetDashboard ?? repositoryDashboard;
+  const currentScore = subjectDashboard?.current_posture_score ?? null;
 
   return (
     <div className="riskDashboard" aria-busy={isLoading}>
       <div className="riskMetricGrid" aria-label="Risk overview">
-        <RiskScoreCard title="Latest scan risk" score={overview?.latest_risk_score ?? null} />
-        <RiskScoreCard title="Target risk" score={latestScore} />
-        <MetricCard label="Targets" value={overview?.targets_count ?? 0} context="Workspace" />
+        <RiskScoreCard title="Workspace posture" score={overview?.current_posture_score ?? null} />
+        <RiskScoreCard title="Subject posture" score={currentScore} />
+        <MetricCard label="Subjects" value={(overview?.targets_count ?? 0) + (overview?.repository_assets_count ?? 0)} context="Web + repository" />
         <MetricCard label="Completed scans" value={overview?.completed_scans_count ?? 0} context="Workspace" />
       </div>
 
       <div className="riskDashboardGrid">
         <div className="panel">
           <div className="panelHeader">
-            <div><h3>Workspace posture</h3><p>Severity distribution and the latest completed audits across this workspace.</p></div>
+            <div><h3>Workspace current posture</h3><p>Latest completed audit per subject and profile after lifecycle and active-suppression decisions.</p></div>
             <span className="contextBadge">{overview?.findings_count ?? 0} findings</span>
           </div>
           <SeverityBars counts={overview?.severity_counts ?? {}} />
+          <p className="postureHistoryNote">Historical evidence: <strong>{overview?.historical_findings_count ?? 0}</strong> findings across all completed audits.</p>
           <CompactScanTable scans={overview?.recent_scans ?? []} />
         </div>
 
         <div className="panel">
           <div className="panelHeader">
-            <div><h3>Selected target posture</h3><p>Current risk inputs for the authorized target selected in this workspace.</p></div>
-            <span className="contextBadge">{selectedTarget?.name ?? "No target"}</span>
+            <div><h3>Selected subject posture</h3><p>Current risk inputs for the authorized web target or repository selected in this workspace.</p></div>
+            <span className="contextBadge">{selectedSubject?.name ?? "No subject"}</span>
           </div>
           {isLoading ? (
-            <p className="emptyState" role="status">Loading target posture…</p>
-          ) : targetDashboard ? (
+            <p className="emptyState" role="status">Loading subject posture…</p>
+          ) : subjectDashboard ? (
             <>
               <dl className="scanMeta">
                 <div>
-                  <dt>Base URL</dt>
-                  <dd>{targetDashboard.base_url}</dd>
+                  <dt>{repositoryDashboard ? "Relative path" : "Base URL"}</dt>
+                  <dd>{repositoryDashboard?.relative_path ?? targetDashboard?.base_url}</dd>
                 </div>
                 <div>
                   <dt>Scans</dt>
-                  <dd>{targetDashboard.completed_scan_count} completed</dd>
+                  <dd>{subjectDashboard.completed_scan_count} completed</dd>
                 </div>
                 <div>
                   <dt>Score model</dt>
-                  <dd>{targetDashboard.latest_risk_score?.scoring_model_version ?? "pending"}</dd>
+                  <dd>{subjectDashboard.current_posture_score?.scoring_model_version ?? "pending"}</dd>
                 </div>
               </dl>
-              <SeverityBars counts={targetDashboard.severity_counts} />
-              <ScoreInputs dashboard={targetDashboard} />
+              <SeverityBars counts={subjectDashboard.severity_counts} />
+              <p className="postureHistoryNote">Historical evidence: <strong>{subjectDashboard.historical_findings_count}</strong> findings across all completed audits.</p>
+              <ScoreInputs dashboard={subjectDashboard} />
             </>
           ) : (
-            <p className="emptyState">{selectedTarget ? "Complete an audit to generate target risk data." : "Select a target to load target risk data."}</p>
+            <p className="emptyState">{selectedSubject ? "Complete an audit to generate subject posture data." : "Select a subject to load posture data."}</p>
           )}
         </div>
       </div>
@@ -113,7 +115,7 @@ export function RiskDashboardPanel({
       <div className="panel comparisonPanel">
         <div className="panelHeader">
           <div><h3>Compare completed scans</h3><p>See what appeared, changed, resolved, or remained between two audits with matching coverage.</p></div>
-          <span className="contextBadge">Same target + profile</span>
+          <span className="contextBadge">Same subject + profile</span>
         </div>
         {eligibleBaselineScans.length >= 2 ? (
           <div className="comparisonControls">
@@ -148,7 +150,7 @@ export function RiskDashboardPanel({
             </button>
           </div>
         ) : (
-          <p className="emptyState">Complete at least two audits with the same profile for this target to unlock a coverage-equivalent comparison.</p>
+          <p className="emptyState">Complete at least two audits with the same profile for this subject to unlock a coverage-equivalent comparison.</p>
         )}
         {eligibleBaselineScans.length >= 2 ? <p className="formMessage" role="status" aria-live="polite">{message}</p> : null}
         {comparison ? <ComparisonSummary comparison={comparison} /> : null}
@@ -226,8 +228,8 @@ function CompactScanTable({ scans }: { scans: DashboardOverview["recent_scans"] 
   );
 }
 
-function ScoreInputs({ dashboard }: { dashboard: TargetDashboard }) {
-  const score = dashboard.latest_risk_score;
+function ScoreInputs({ dashboard }: { dashboard: TargetDashboard | RepositoryDashboard }) {
+  const score = dashboard.current_posture_score;
   if (!score) {
     return <p className="emptyState">Run a completed scan to generate risk inputs.</p>;
   }

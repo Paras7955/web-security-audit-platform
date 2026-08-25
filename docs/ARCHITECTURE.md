@@ -37,10 +37,11 @@ PostgreSQL (data) <------ lease monitor + scanner worker
 
 ### Frontend
 
-The current Next.js UI consumes `/api/v1` and supports local development auth
-plus established target workflows. It does not make authorization decisions.
-Strict OIDC login UX and first-class repository-asset UI are deferred; the
-backend APIs are already available.
+The Next.js UI consumes `/api/v1` for target-policy, repository-asset,
+subject-aware scan, posture, finding-governance, report, and AI workflows. It
+supports the build-provided local development token and an in-memory OIDC bearer
+session supplied by the operator. It does not implement provider redirects,
+persist bearer tokens, or make authorization decisions.
 
 ### API
 

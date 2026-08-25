@@ -118,12 +118,13 @@ use only the repository-asset subject.
 ## Repository-asset compatibility
 
 `Target.repo_path` and target-based repository launch remain temporarily
-accepted for the existing frontend. Launch creates/reuses a repository asset and
-executes its immutable snapshot. New API clients should use
-`/api/v1/repository-assets` directly.
+accepted for historical callers. The current frontend uses
+`/api/v1/repository-assets` directly. Compatibility launch still creates/reuses
+a repository asset and executes its immutable snapshot.
 
-Do not delete compatibility columns/routes until the frontend has migrated and
-historical callers have been reviewed.
+The frontend migration is complete. Do not delete compatibility columns/routes
+until historical callers have been reviewed in a separately approved backend
+phase.
 
 ## API behavior changes
 
@@ -135,7 +136,8 @@ historical callers have been reviewed.
 - External AI generation moved to POST; GET is retrieval-only externally.
 - Suppression revoke, tag unassign/archive, and repository dashboard/comparison
   routes are available.
-- Existing frontend payloads remain accepted in 1.1.0.
+- Historical target-based repository payloads remain accepted in 1.1.0; the
+  current frontend no longer sends them.
 
 Read `/api/v1/contracts` and `/openapi.json` at runtime.
 

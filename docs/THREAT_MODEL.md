@@ -90,5 +90,6 @@ or public targets change this threat model and require explicit approval.
 - Capability replay memory is process-local; short expiry limits restart risk.
 - Static redaction cannot prove every secret format is recognized.
 - Third-party tools can be wrong or defective.
-- Current frontend does not expose all 1.1 backend capabilities.
+- The OIDC-facing UI accepts an already-issued bearer token in memory; it does
+  not implement provider redirects, refresh-token storage, or session renewal.
 - No scan result is a security guarantee.

@@ -16,7 +16,7 @@ const profileTilt: Record<string, number> = {
   "passive-web": -0.035,
   "active-demo": 0.025,
   "modern-web-crawl": 0.045,
-  repo: -0.015
+  repository: -0.015
 };
 
 export function WebGLScopeField({

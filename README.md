@@ -120,10 +120,13 @@ and the offline OSV cache.
 
 ### Current UI boundary
 
-The existing UI supports local development authentication and the established
-target-based workflows. The backend also supports strict OIDC and first-class
-repository assets, but OIDC login UX and repository-asset UI integration are
-deferred to a frontend phase. No frontend source was changed for 1.1.0.
+The UI consumes the protected `/api/v1` contracts for target policies,
+first-class repository assets, subject-aware scans, posture, comparisons,
+finding governance, reports, and explicit AI generation. Local development
+tokens remain supported. In strict OIDC mode an operator can supply an
+identity-provider-issued bearer token for the current browser tab; the UI keeps
+it in memory and never writes it to browser storage. ScopeHarbor does not
+implement an identity-provider redirect or browser login flow.
 
 ### Demo data
 
@@ -248,7 +251,7 @@ Add `--apply` only after reviewing the JSON plan. See the
 [release checklist](docs/RELEASE_CHECKLIST.md).
 
 CI runs migrations, backend branch/security coverage, Ruff, Pyright, dependency
-audits, frontend lint/build, Compose hardening/readiness, pinned Gitleaks,
+audits, frontend state/contract tests plus lint/build, Compose hardening/readiness, pinned Gitleaks,
 digest-pinned Trivy image scans, and CycloneDX SBOM generation.
 
 Phase-end independent reviews use `gpt-5.6-sol` with medium reasoning, the
