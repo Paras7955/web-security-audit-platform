@@ -64,9 +64,12 @@ jobs:
 
       - name: Scan images with digest-pinned Trivy
         run: |
+          trivy_cache="${RUNNER_TEMP}/scopeharbor-trivy-cache"
+          mkdir -p "$trivy_cache"
           for image in scopeharbor-api:ci scopeharbor-worker:ci scopeharbor-relay:ci scopeharbor-frontend:ci; do
             docker run --rm \
               --volume /var/run/docker.sock:/var/run/docker.sock \
+              --volume "$trivy_cache:/root/.cache/trivy" \
               ghcr.io/aquasecurity/trivy:0.70.0@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e \
               image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL "$image"
           done
@@ -78,6 +81,7 @@ jobs:
             docker run --rm \
               --volume /var/run/docker.sock:/var/run/docker.sock \
               --volume "${{ runner.temp }}/scopeharbor-sbom:/output" \
+              --volume "${{ runner.temp }}/scopeharbor-trivy-cache:/root/.cache/trivy" \
               ghcr.io/aquasecurity/trivy:0.70.0@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e \
               image --format cyclonedx --output "/output/$image.cdx.json" "scopeharbor-$image:ci"
             test -s "${{ runner.temp }}/scopeharbor-sbom/$image.cdx.json"
