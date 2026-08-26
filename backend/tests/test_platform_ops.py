@@ -8,13 +8,13 @@ from app.core.config import settings
 from app.core.contracts import ScanStatus, ScanStep
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import ApiRateLimitLog, AuditLog, Scan, Target, WorkerHeartbeat
+from app.models import ApiRateLimitLog, AuditLog, PlatformUser, Scan, Target, WorkerHeartbeat
 from app.ops.health import probe_zap
 from app.ops.heartbeat import record_worker_heartbeat
 from app.ops.rate_limits import is_limited, lock_rate_limit_scope
 from app.scans.lifecycle import ScanCancelledError, check_scan_cancelled
 from app.security.allowlist import load_allowlist
-from app.security.auth import AuthenticatedPrincipal, ensure_user_workspace_identity
+from app.security.auth import AuthenticatedPrincipal
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
@@ -70,6 +70,7 @@ class PlatformOpsTests(unittest.TestCase):
             db.execute(delete(WorkerHeartbeat).where(WorkerHeartbeat.worker_id.like("test-worker%")))
             db.execute(delete(Scan).where(Scan.target_id == self.target_id))
             db.execute(delete(Target).where(Target.id == self.target_id))
+            db.execute(delete(PlatformUser).where(PlatformUser.id == "first-cancel-user"))
             db.commit()
 
     def test_scan_create_rate_limit_denies_and_records_log(self) -> None:
@@ -138,15 +139,8 @@ class PlatformOpsTests(unittest.TestCase):
         first_user_id = "first-cancel-user"
         requested_at = datetime.now(UTC)
         with SessionLocal() as db:
-            ensure_user_workspace_identity(
-                db,
-                user_id=first_user_id,
-                workspace_id=DEV_WORKSPACE_ID,
-                provider="dev",
-                provider_subject=first_user_id,
-                display_name="First Cancel User",
-                workspace_name="Dev Workspace",
-            )
+            db.add(PlatformUser(id=first_user_id, display_name="First Cancel User"))
+            db.flush()
             scan = db.get(Scan, self.scan_id)
             self.assertIsNotNone(scan)
             scan.status = ScanStatus.RUNNING.value

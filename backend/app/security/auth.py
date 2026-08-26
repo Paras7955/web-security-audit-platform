@@ -213,32 +213,86 @@ def ensure_user_workspace_identity(
     display_name: str,
     workspace_name: str,
 ) -> None:
+    try:
+        user, workspace, identity = load_expected_identity_state(
+            db,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            provider=provider,
+            provider_subject=provider_subject,
+        )
+        validate_expected_identity_state(workspace=workspace, identity=identity, user_id=user_id)
+
+        if user is None:
+            db.add(PlatformUser(id=user_id, display_name=sanitize_text(display_name, maximum=200) or "User"))
+            db.flush()
+
+        if workspace is None:
+            db.add(
+                Workspace(
+                    id=workspace_id,
+                    owner_user_id=user_id,
+                    name=sanitize_text(workspace_name, maximum=200) or "Workspace",
+                )
+            )
+            db.flush()
+
+        if identity is None:
+            db.add(
+                AuthIdentity(
+                    id=str(uuid4()),
+                    user_id=user_id,
+                    provider=provider,
+                    provider_subject=provider_subject,
+                )
+            )
+        db.commit()
+    except IntegrityError:
+        # Parallel first requests can race while provisioning the fixed local
+        # identity. The losing transaction is safe only when the committed
+        # winner created the exact state this request expected.
+        db.rollback()
+        user, workspace, identity = load_expected_identity_state(
+            db,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            provider=provider,
+            provider_subject=provider_subject,
+        )
+        if user is None or workspace is None or identity is None:
+            raise AuthError("Identity provisioning could not be completed safely.") from None
+        validate_expected_identity_state(workspace=workspace, identity=identity, user_id=user_id)
+
+
+def load_expected_identity_state(
+    db: Session,
+    *,
+    user_id: str,
+    workspace_id: str,
+    provider: str,
+    provider_subject: str,
+) -> tuple[PlatformUser | None, Workspace | None, AuthIdentity | None]:
     user = db.get(PlatformUser, user_id)
-    if user is None:
-        db.add(PlatformUser(id=user_id, display_name=sanitize_text(display_name, maximum=200) or "User"))
-        db.flush()
-
     workspace = db.get(Workspace, workspace_id)
-    if workspace is None:
-        db.add(Workspace(id=workspace_id, owner_user_id=user_id, name=sanitize_text(workspace_name, maximum=200) or "Workspace"))
-        db.flush()
-
     identity = db.scalar(
         select(AuthIdentity).where(
             AuthIdentity.provider == provider,
             AuthIdentity.provider_subject == provider_subject,
         )
     )
-    if identity is None:
-        db.add(
-            AuthIdentity(
-                id=str(uuid4()),
-                user_id=user_id,
-                provider=provider,
-                provider_subject=provider_subject,
-            )
-        )
-    db.commit()
+    return user, workspace, identity
+
+
+def validate_expected_identity_state(
+    *,
+    workspace: Workspace | None,
+    identity: AuthIdentity | None,
+    user_id: str,
+) -> None:
+    if workspace is not None and workspace.owner_user_id != user_id:
+        raise AuthError("Identity provisioning could not be completed safely.")
+    if identity is not None and identity.user_id != user_id:
+        raise AuthError("Identity provisioning could not be completed safely.")
 
 
 def normalize(value: str) -> str:
