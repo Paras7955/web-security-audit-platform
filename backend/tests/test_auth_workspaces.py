@@ -370,6 +370,49 @@ class AuthWorkspaceTests(unittest.TestCase):
                     db.execute(delete(PlatformUser).where(PlatformUser.id == user_id))
                     db.commit()
 
+    def test_concurrent_dev_identity_provisioning_is_idempotent(self) -> None:
+        user_id = str(uuid4())
+        workspace_id = str(uuid4())
+        subject = f"dev-race-{uuid4()}"
+
+        def provision() -> None:
+            with SessionLocal() as db:
+                ensure_user_workspace_identity(
+                    db,
+                    user_id=user_id,
+                    workspace_id=workspace_id,
+                    provider="dev",
+                    provider_subject=subject,
+                    display_name="Race Dev User",
+                    workspace_name="Race Dev Workspace",
+                )
+
+        try:
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                list(executor.map(lambda _item: provision(), range(4)))
+
+            with SessionLocal() as db:
+                identities = list(
+                    db.scalars(
+                        select(AuthIdentity).where(
+                            AuthIdentity.provider == "dev",
+                            AuthIdentity.provider_subject == subject,
+                        )
+                    ).all()
+                )
+                self.assertEqual(len(identities), 1)
+                self.assertEqual(identities[0].user_id, user_id)
+                workspace = db.get(Workspace, workspace_id)
+                self.assertIsNotNone(workspace)
+                if workspace is not None:
+                    self.assertEqual(workspace.owner_user_id, user_id)
+        finally:
+            with SessionLocal() as db:
+                db.execute(delete(AuthIdentity).where(AuthIdentity.user_id == user_id))
+                db.execute(delete(Workspace).where(Workspace.id == workspace_id))
+                db.execute(delete(PlatformUser).where(PlatformUser.id == user_id))
+                db.commit()
+
     def test_oidc_provisioning_race_fails_closed_when_winner_is_incomplete(self) -> None:
         duplicate = IntegrityError("insert identity", {}, Exception("duplicate"))
 
