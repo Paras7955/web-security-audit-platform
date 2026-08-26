@@ -413,6 +413,72 @@ class AuthWorkspaceTests(unittest.TestCase):
                 db.execute(delete(PlatformUser).where(PlatformUser.id == user_id))
                 db.commit()
 
+class IdentityProvisioningUnitTests(unittest.TestCase):
+    def test_dev_identity_provisioning_rejects_conflicting_workspace_owner(self) -> None:
+        db = MagicMock()
+        db.get.side_effect = [SimpleNamespace(id="expected-user"), SimpleNamespace(owner_user_id="other-user")]
+        db.scalar.return_value = None
+
+        with self.assertRaisesRegex(AuthError, "could not be completed safely"):
+            ensure_user_workspace_identity(
+                db,
+                user_id="expected-user",
+                workspace_id="expected-workspace",
+                provider="dev",
+                provider_subject="expected-subject",
+                display_name="Expected User",
+                workspace_name="Expected Workspace",
+            )
+
+        db.add.assert_not_called()
+        db.commit.assert_not_called()
+
+    def test_dev_identity_provisioning_rejects_conflicting_identity_owner(self) -> None:
+        db = MagicMock()
+        db.get.side_effect = [
+            SimpleNamespace(id="expected-user"),
+            SimpleNamespace(owner_user_id="expected-user"),
+        ]
+        db.scalar.return_value = SimpleNamespace(user_id="other-user")
+
+        with self.assertRaisesRegex(AuthError, "could not be completed safely"):
+            ensure_user_workspace_identity(
+                db,
+                user_id="expected-user",
+                workspace_id="expected-workspace",
+                provider="dev",
+                provider_subject="expected-subject",
+                display_name="Expected User",
+                workspace_name="Expected Workspace",
+            )
+
+        db.add.assert_not_called()
+        db.commit.assert_not_called()
+
+    def test_dev_identity_race_recovery_rejects_conflicting_winner(self) -> None:
+        db = MagicMock()
+        db.get.side_effect = [
+            None,
+            None,
+            SimpleNamespace(id="expected-user"),
+            SimpleNamespace(owner_user_id="expected-user"),
+        ]
+        db.scalar.side_effect = [None, SimpleNamespace(user_id="other-user")]
+        db.commit.side_effect = IntegrityError("insert identity", {}, Exception("duplicate"))
+
+        with self.assertRaisesRegex(AuthError, "could not be completed safely"):
+            ensure_user_workspace_identity(
+                db,
+                user_id="expected-user",
+                workspace_id="expected-workspace",
+                provider="dev",
+                provider_subject="expected-subject",
+                display_name="Expected User",
+                workspace_name="Expected Workspace",
+            )
+
+        db.rollback.assert_called_once()
+
     def test_oidc_provisioning_race_fails_closed_when_winner_is_incomplete(self) -> None:
         duplicate = IntegrityError("insert identity", {}, Exception("duplicate"))
 
