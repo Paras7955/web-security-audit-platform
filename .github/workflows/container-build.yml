@@ -62,7 +62,7 @@ jobs:
           set -a
           source "$SCOPEHARBOR_CI_ENV_FILE"
           set +a
-          python3 scripts/check_compose_hardening.py
+          SCOPEHARBOR_ENV_FILE="$SCOPEHARBOR_CI_ENV_FILE" python3 scripts/check_compose_hardening.py
 
       - name: Build API image
         run: docker build --file backend/Dockerfile --target api --tag scopeharbor-api:ci .
