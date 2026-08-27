@@ -2,7 +2,7 @@
 
 # Keep pip-tools off the yanked 1.5.1 release.
 build==1.5.0
-coverage==7.15.1
+coverage==7.15.4
 pip==26.2
 pip-audit==2.10.1
 pip-tools==7.5.3
