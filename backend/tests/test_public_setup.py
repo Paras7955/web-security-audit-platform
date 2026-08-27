@@ -28,6 +28,7 @@ class PublicSetupTests(unittest.TestCase):
             self.assertIn("osv-db-update", script)
             self.assertIn("/workspace:ro", script)
             self.assertIn("/output", script)
+            self.assertIn("--project-name", script)
 
         self.assertNotIn('$REPO_ROOT:/workspace"', bash)
         self.assertNotIn('${RepoRoot}:/workspace"', powershell)
@@ -40,6 +41,16 @@ class PublicSetupTests(unittest.TestCase):
         self.assertIn("GetFileName($EnvFile)", powershell)
         self.assertIn("EnvironmentPath.StartsWith($RootPrefix", powershell)
         self.assertIn("OrdinalIgnoreCase", powershell)
+
+    def test_setup_wrappers_validate_isolated_compose_project_names(self) -> None:
+        bash = (ROOT / "scripts" / "setup.sh").read_text(encoding="utf-8")
+        powershell = (ROOT / "scripts" / "setup.ps1").read_text(encoding="utf-8")
+
+        expected_pattern = "^[a-z0-9][a-z0-9_-]*$"
+        self.assertIn(expected_pattern, bash)
+        self.assertIn(expected_pattern, powershell)
+        self.assertIn('PROJECT_NAME="scopeharbor"', bash)
+        self.assertIn('[string]$ProjectName = "scopeharbor"', powershell)
 
     def test_compose_errors_use_platform_neutral_setup_guidance(self) -> None:
         compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")

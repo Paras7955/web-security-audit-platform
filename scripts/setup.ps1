@@ -3,7 +3,9 @@ param(
     [switch]$BootstrapOnly,
     [switch]$SkipOsvUpdate,
     [ValidateNotNullOrEmpty()]
-    [string]$EnvFile = ".env"
+    [string]$EnvFile = ".env",
+    [ValidatePattern('^[a-z0-9][a-z0-9_-]*$')]
+    [string]$ProjectName = "scopeharbor"
 )
 
 $ErrorActionPreference = "Stop"
@@ -83,7 +85,8 @@ try {
     if (-not $SkipOsvUpdate) {
         Write-Host "Updating the isolated offline OSV advisory database..."
         Invoke-CheckedCommand -FilePath "docker" -Arguments @(
-            "compose", "--env-file", $EnvFile, "--profile", "maintenance",
+            "compose", "--project-name", $ProjectName, "--env-file", $EnvFile,
+            "--profile", "maintenance",
             "run", "--rm", "osv-db-update"
         )
     }
@@ -93,7 +96,8 @@ try {
 
     Write-Host "Building and starting ScopeHarbor..."
     Invoke-CheckedCommand -FilePath "docker" -Arguments @(
-        "compose", "--env-file", $EnvFile, "up", "--build", "--detach", "--wait"
+        "compose", "--project-name", $ProjectName, "--env-file", $EnvFile,
+        "up", "--build", "--detach", "--wait"
     )
 
     Write-Host ""
@@ -104,7 +108,7 @@ try {
     Write-Host "  Demo target:  http://localhost:3000"
     Write-Host ""
     Write-Host "Stop without deleting data:"
-    Write-Host "  docker compose down"
+    Write-Host "  docker compose --project-name $ProjectName --env-file $EnvFile down"
 }
 finally {
     Pop-Location

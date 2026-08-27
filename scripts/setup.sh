@@ -5,13 +5,14 @@ BOOTSTRAP_IMAGE="python:3.12.13-slim-bookworm@sha256:8a7e7cc04fd3e2bd787f7f24e22
 BOOTSTRAP_ONLY=false
 SKIP_OSV_UPDATE=false
 ENV_FILE=".env"
+PROJECT_NAME="scopeharbor"
 
 usage() {
   printf '%s\n' \
-    "Usage: ./scripts/setup.sh [--bootstrap-only] [--skip-osv-update] [--env-file PATH]" \
+    "Usage: ./scripts/setup.sh [--bootstrap-only] [--skip-osv-update] [--env-file FILE] [--project-name NAME]" \
     "" \
     "Creates an idempotent local environment using Docker, updates the offline" \
-    "OSV database, and starts ScopeHarbor. PATH must stay inside the repository."
+    "OSV database, and starts ScopeHarbor. FILE must stay inside the repository."
 }
 
 while (($# > 0)); do
@@ -30,6 +31,15 @@ while (($# > 0)); do
         exit 2
       fi
       ENV_FILE="$1"
+      ;;
+    --project-name)
+      shift
+      if (($# == 0)); then
+        printf 'Missing value for --project-name.\n' >&2
+        usage >&2
+        exit 2
+      fi
+      PROJECT_NAME="$1"
       ;;
     --help|-h)
       usage
@@ -54,6 +64,11 @@ case "$ENV_FILE" in
     exit 2
     ;;
 esac
+
+if [[ ! "$PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+  printf 'The Compose project name must start with a lowercase letter or digit and contain only lowercase letters, digits, hyphens, or underscores.\n' >&2
+  exit 2
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
   printf 'Docker is required. Install Docker Desktop or Docker Engine before continuing.\n' >&2
@@ -99,15 +114,17 @@ fi
 
 if [[ "$SKIP_OSV_UPDATE" == false ]]; then
   printf 'Updating the isolated offline OSV advisory database...\n'
-  docker compose --env-file "$ENV_FILE" --profile maintenance run --rm osv-db-update
+  docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" \
+    --profile maintenance run --rm osv-db-update
 else
   printf 'Skipping the offline OSV update by explicit request.\n'
 fi
 
 printf 'Building and starting ScopeHarbor...\n'
-docker compose --env-file "$ENV_FILE" up --build --detach --wait
+docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" \
+  up --build --detach --wait
 
-cat <<'EOF'
+cat <<EOF
 
 ScopeHarbor is ready.
   UI:           http://localhost:3001
@@ -116,5 +133,5 @@ ScopeHarbor is ready.
   Demo target:  http://localhost:3000
 
 Stop without deleting data:
-  docker compose down
+  docker compose --project-name $PROJECT_NAME --env-file $ENV_FILE down
 EOF

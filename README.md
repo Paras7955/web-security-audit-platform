@@ -101,6 +101,10 @@ Stop without deleting local data:
 docker compose down
 ```
 
+Maintainers can isolate a verification stack and its volumes with
+`./scripts/setup.sh --project-name scopeharbor-check`; PowerShell uses
+`-ProjectName scopeharbor-check`. The default remains `scopeharbor`.
+
 ### Five-minute local demo
 
 The explicit demo seed is fixed, idempotent, workspace-scoped, and performs no
