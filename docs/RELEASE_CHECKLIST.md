@@ -11,6 +11,8 @@ planned or mocked result.
   workspace/policy enforcement.
 - [ ] Version is `1.1.0` in backend, shared contracts, and the frontend package.
 - [ ] MIT license has `Copyright (c) 2026 Paras Atwal`.
+- [ ] Third-party notices match the direct dependency locks, pinned tools, base
+  images, Compose services, and current asset provenance.
 - [ ] README, SECURITY, architecture, threat model, API, operator, upgrade,
   development history, changelog, and handoff agree.
 - [ ] Public/private-LAN scanning remains denied; only exact local policies are
@@ -97,7 +99,8 @@ planned or mocked result.
   with mutable Trivy action tags; review the
   [2026 supply-chain advisory](https://github.com/aquasecurity/trivy/security/advisories/GHSA-69fq-xp46-6x23)
   before updating the pin.
-- [ ] CycloneDX SBOMs are generated and reviewed for all four project images.
+- [ ] CycloneDX SBOMs are generated for all four project images, uploaded as a
+  14-day CI artifact, and reviewed before release.
 - [ ] All GitHub Actions checks pass on the release commit.
 
 ## Repository owner actions
