@@ -9,6 +9,7 @@ versioning for the public source contract.
 
 - Development dependency auditing now pins pip 26.2, resolving
   `PYSEC-2026-3721` while retaining a Python 3.12 hash-locked environment.
+- The development lock pins `build` 1.5.0 instead of the yanked 1.5.1 release.
 - Source-built scanner tools now use digest-pinned Go 1.26.6; OSV-Scanner also
   pins go-git 5.19.2 and x/mod 0.40.0 to clear the current HIGH Trivy findings.
 - Scanner readiness is now probed by the isolated worker and projected through

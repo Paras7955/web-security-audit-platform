@@ -45,6 +45,7 @@ planned or mocked result.
   ```
 
 - [ ] Confirm no `httpx2`, `httpcore2`, or orphan `truststore` entry remains.
+- [ ] Confirm the development lock uses non-yanked `build==1.5.0`.
 - [ ] Install both locks with `--require-hashes` on Python 3.12.13.
 - [ ] Confirm the development lock installs pip 26.2 or later and that the lock
   compiler itself remains a documented, reproducible version.
