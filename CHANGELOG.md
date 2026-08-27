@@ -20,6 +20,10 @@ versioning for the public source contract.
 
 ### Added
 
+- Docker-only Bash and PowerShell onboarding with isolated secret bootstrap,
+  offline advisory refresh, image builds, and readiness waiting.
+- Recruiter-facing product tour, synthetic screenshots, social preview, and
+  fresh-clone setup guidance for macOS, Windows, and Linux.
 - Allowlist schema v2 with exact origin/base-path scope, Compose/host-gateway
   connection policies, verified HTTP/HTTPS trust, explicit engines, redirect
   limits, policy fingerprints, catalog/JSON validation, and reauthorization.

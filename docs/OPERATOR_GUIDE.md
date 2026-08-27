@@ -2,19 +2,30 @@
 
 ## First start
 
-Requirements: Docker with Compose v2, Python 3, and local capacity for
-PostgreSQL, ZAP, and the worker tmpfs.
+Requirements: Docker with Compose v2 and local capacity for PostgreSQL, ZAP,
+image builds, and the worker tmpfs. Git is needed only to obtain the repository;
+no host Python, Node.js, database, or scanner installation is required.
+
+macOS or Linux:
 
 ```bash
-python3 scripts/bootstrap_env.py
-docker compose --profile maintenance run --rm osv-db-update
-docker compose up --build
+./scripts/setup.sh
 ```
 
-Bootstrap creates or merges `.env`, adds newly introduced settings, generates
-missing local secrets, and writes mode `0600`. It never replaces a non-empty
-`AUTH_PROFILE_SECRET_KEY`. It also derives the Compose `DATABASE_URL` from the
-generated PostgreSQL credentials unless you supplied an external database URL.
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
+```
+
+Setup validates Docker, runs bootstrap in a digest-pinned, network-isolated,
+capability-free container with a read-only repository mount, refreshes the
+offline OSV database through the updater-only network, builds the images, and
+waits for service health. Bootstrap creates or merges `.env`, adds newly
+introduced settings, generates missing local secrets, and writes mode `0600`
+where the host filesystem supports POSIX modes. It never replaces a non-empty
+`AUTH_PROFILE_SECRET_KEY`. It derives the Compose `DATABASE_URL` from generated
+PostgreSQL credentials unless you supplied an external database URL.
 
 Check:
 

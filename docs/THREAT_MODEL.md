@@ -28,6 +28,7 @@ compromised operator account is outside the application boundary.
 7. Worker to ZAP and untrusted repository/tool processes.
 8. Normalized findings to reports, API, audit, cache, logs, and optional AI.
 9. One-shot OSV updater and CI dependency/vulnerability tooling to the network.
+10. Docker-isolated local bootstrap to the operator-owned environment file.
 
 ## Threats and controls
 
@@ -54,6 +55,7 @@ compromised operator account is outside the application boundary.
 | Unsafe legacy data | migration cleanup/invalidation tasks; no old-migration rewrite | backups retain pre-upgrade data |
 | Log leakage | access log disabled, queryless structured paths, safe request IDs/codes | host/container engine diagnostics |
 | Supply-chain compromise | hashes/digests, pinned actions, pinned Gitleaks/OSV, digest-pinned Trivy, SBOM, audits | upstream compromise before pin review |
+| Bootstrap image/script compromise | digest-pinned Python image, no network, read-only root/repository, dropped capabilities, no-new-privileges, temporary output-only write mount, no secret-value output | trusted operator checkout and Docker daemon remain authoritative |
 
 ## Abuse cases that remain denied
 

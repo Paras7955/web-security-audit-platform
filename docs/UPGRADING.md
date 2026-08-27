@@ -15,13 +15,19 @@ Never run a destructive downgrade against the only data copy.
 ## Upgrade to 1.1.0
 
 ```bash
-python3 scripts/bootstrap_env.py
+./scripts/setup.sh --bootstrap-only
 docker compose build migrate backend worker relay frontend
 docker compose run --rm migrate
 docker compose --profile maintenance run --rm osv-db-update
 docker compose up -d
 docker compose run --rm backend python -m app.maintenance verify --apply
 docker compose run --rm backend python -m app.maintenance scheduled-artifacts
+```
+
+On Windows, replace the first command with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -BootstrapOnly
 ```
 
 Review the scheduled-artifact dry run, then repeat it with `--apply` if the

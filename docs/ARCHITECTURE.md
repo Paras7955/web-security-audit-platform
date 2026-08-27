@@ -43,6 +43,17 @@ supports the build-provided local development token and an in-memory OIDC bearer
 session supplied by the operator. It does not implement provider redirects,
 persist bearer tokens, or make authorization decisions.
 
+### Local bootstrap
+
+The public Bash and PowerShell setup wrappers require only Docker with Compose
+v2. They run the repository-owned environment bootstrap inside a digest-pinned
+Python container with no network, a read-only root filesystem, no Linux
+capabilities, `no-new-privileges`, and a read-only repository mount. The
+container can write only to a fresh temporary output directory. The wrapper
+then moves the completed environment file into the repository and never prints
+secret values. OSV refresh remains a separate one-shot Compose service attached
+only to the updater network.
+
 ### API
 
 FastAPI owns platform authentication, workspace authorization, target/repository
