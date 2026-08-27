@@ -42,6 +42,9 @@ versioning for the public source contract.
   Compose hardening assertions, secret scanning, image vulnerability gates, and
   CycloneDX SBOM generation.
 - MIT license and public release/operator documentation.
+- Direct third-party notices, synthetic product screenshots, a social-preview
+  asset, sanitized issue forms, and a discretionary pull-request template.
+- Four image CycloneDX SBOMs uploaded as short-retention CI artifacts.
 
 ### Changed
 

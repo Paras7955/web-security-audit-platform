@@ -15,6 +15,8 @@ planned or mocked result.
   images, Compose services, and current asset provenance.
 - [ ] README, SECURITY, architecture, threat model, API, operator, upgrade,
   development history, changelog, and handoff agree.
+- [ ] Issue forms sanitize public reports, blank issues are disabled, security
+  reports route to private disclosure, and the PR template promises no SLA.
 - [ ] Public/private-LAN scanning remains denied; only exact local policies are
   documented and tested.
 
