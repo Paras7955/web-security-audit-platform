@@ -17,7 +17,7 @@ source revisions and copies them into the final image.
 | Component | ScopeHarbor pin | License | Upstream source and license |
 | --- | --- | --- | --- |
 | Gitleaks | 8.30.1 (`83d9cd6`) | MIT | [gitleaks/gitleaks](https://github.com/gitleaks/gitleaks) |
-| OSV-Scanner | 2.5.0 (`a36e41b`) | Apache-2.0 | [google/osv-scanner](https://github.com/google/osv-scanner) |
+| OSV-Scanner | 2.5.0 (`a55e6f8`) | Apache-2.0 | [google/osv-scanner](https://github.com/google/osv-scanner) |
 
 ScopeHarbor uses the open-source Gitleaks scanner executable, not the separately
 licensed `gitleaks-action` GitHub Action.
