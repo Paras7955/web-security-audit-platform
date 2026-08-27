@@ -15,6 +15,9 @@ $EnvironmentFilePattern = '^\.env(?:\.[A-Za-z0-9][A-Za-z0-9._-]*)?$'
 if ($EnvFile -notmatch $EnvironmentFilePattern) {
     throw "The environment file must be .env or a .env.* filename in the ScopeHarbor repository root."
 }
+if ($EnvFile -ieq ".env.example") {
+    throw ".env.example is the tracked public template and cannot be used as an output environment file."
+}
 $EnvironmentFileName = [System.IO.Path]::GetFileName($EnvFile)
 if ($EnvironmentFileName -ne $EnvFile) {
     throw "The environment file must be a filename in the ScopeHarbor repository root."

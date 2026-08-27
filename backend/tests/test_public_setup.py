@@ -46,7 +46,7 @@ class PublicSetupTests(unittest.TestCase):
         self.assertIn("EnvironmentPath.StartsWith($RootPrefix", powershell)
         self.assertIn("OrdinalIgnoreCase", powershell)
 
-        for invalid_name in (".", "..", "settings", "nested/.env"):
+        for invalid_name in (".", "..", "settings", "nested/.env", ".env.example", ".env.Example"):
             result = subprocess.run(  # noqa: S603 - fixed test script and arguments
                 ["/bin/bash", str(ROOT / "scripts" / "setup.sh"), "--bootstrap-only", "--env-file", invalid_name],
                 cwd=ROOT,

@@ -63,6 +63,12 @@ if [[ ! "$ENV_FILE" =~ ^\.env(\.[A-Za-z0-9][A-Za-z0-9._-]*)?$ ]]; then
   printf 'The environment file must be .env or a .env.* filename in the ScopeHarbor repository root.\n' >&2
   exit 2
 fi
+case "$ENV_FILE" in
+  .env.[eE][xX][aA][mM][pP][lL][eE])
+    printf '.env.example is the tracked public template and cannot be used as an output environment file.\n' >&2
+    exit 2
+    ;;
+esac
 if [[ -e "$ENV_FILE" && ( ! -f "$ENV_FILE" || -L "$ENV_FILE" ) ]]; then
   printf 'The environment file path must be a regular file, not a directory or symbolic link.\n' >&2
   exit 2
