@@ -11,6 +11,10 @@ param(
 $ErrorActionPreference = "Stop"
 $BootstrapImage = "python:3.12.13-slim-bookworm@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b"
 $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$EnvironmentFilePattern = '^\.env(?:\.[A-Za-z0-9][A-Za-z0-9._-]*)?$'
+if ($EnvFile -notmatch $EnvironmentFilePattern) {
+    throw "The environment file must be .env or a .env.* filename in the ScopeHarbor repository root."
+}
 $EnvironmentFileName = [System.IO.Path]::GetFileName($EnvFile)
 if ($EnvironmentFileName -ne $EnvFile) {
     throw "The environment file must be a filename in the ScopeHarbor repository root."
@@ -20,6 +24,13 @@ $RootPrefix = $RepoRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [Sys
 
 if (-not $EnvironmentPath.StartsWith($RootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "The environment file must be a filename in the ScopeHarbor repository root."
+}
+if (Test-Path -LiteralPath $EnvironmentPath) {
+    $EnvironmentItem = Get-Item -LiteralPath $EnvironmentPath -Force
+    if (-not (Test-Path -LiteralPath $EnvironmentPath -PathType Leaf) -or
+        ($EnvironmentItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+        throw "The environment file path must be a regular file, not a directory or symbolic link."
+    }
 }
 
 function Invoke-CheckedCommand {
@@ -52,7 +63,9 @@ if ($LASTEXITCODE -ne 0) {
 
 Push-Location $RepoRoot
 $BootstrapTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("scopeharbor-bootstrap-" + [System.Guid]::NewGuid().ToString("N"))
+$PreviousScopeHarborEnvFile = [System.Environment]::GetEnvironmentVariable("SCOPEHARBOR_ENV_FILE", "Process")
 try {
+    [System.Environment]::SetEnvironmentVariable("SCOPEHARBOR_ENV_FILE", $EnvFile, "Process")
     Write-Host "Preparing ScopeHarbor environment with an isolated bootstrap container..."
     New-Item -ItemType Directory -Path $BootstrapTemp | Out-Null
     $BootstrapOutput = Join-Path $BootstrapTemp "environment"
@@ -100,17 +113,31 @@ try {
         "up", "--build", "--detach", "--wait"
     )
 
+    $FrontendAddress = (Invoke-CheckedCommand -FilePath "docker" -Arguments @(
+        "compose", "--project-name", $ProjectName, "--env-file", $EnvFile,
+        "port", "frontend", "3000"
+    ) | Select-Object -Last 1).Trim()
+    $BackendAddress = (Invoke-CheckedCommand -FilePath "docker" -Arguments @(
+        "compose", "--project-name", $ProjectName, "--env-file", $EnvFile,
+        "port", "backend", "8000"
+    ) | Select-Object -Last 1).Trim()
+    $DemoAddress = (Invoke-CheckedCommand -FilePath "docker" -Arguments @(
+        "compose", "--project-name", $ProjectName, "--env-file", $EnvFile,
+        "port", "juice-shop", "3000"
+    ) | Select-Object -Last 1).Trim()
+
     Write-Host ""
     Write-Host "ScopeHarbor is ready."
-    Write-Host "  UI:           http://localhost:3001"
-    Write-Host "  API docs:     http://localhost:8000/docs"
-    Write-Host "  Readiness:    http://localhost:8000/ready"
-    Write-Host "  Demo target:  http://localhost:3000"
+    Write-Host "  UI:           http://$FrontendAddress"
+    Write-Host "  API docs:     http://$BackendAddress/docs"
+    Write-Host "  Readiness:    http://$BackendAddress/ready"
+    Write-Host "  Demo target:  http://$DemoAddress"
     Write-Host ""
     Write-Host "Stop without deleting data:"
-    Write-Host "  docker compose --project-name $ProjectName --env-file $EnvFile down"
+    Write-Host "  `$env:SCOPEHARBOR_ENV_FILE='$EnvFile'; docker compose --project-name $ProjectName --env-file $EnvFile down"
 }
 finally {
+    [System.Environment]::SetEnvironmentVariable("SCOPEHARBOR_ENV_FILE", $PreviousScopeHarborEnvFile, "Process")
     Pop-Location
     if (Test-Path -LiteralPath $BootstrapTemp) {
         Remove-Item -LiteralPath $BootstrapTemp -Recurse -Force

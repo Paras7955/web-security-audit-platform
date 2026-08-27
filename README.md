@@ -232,7 +232,11 @@ removal is destructive and cannot be undone by ScopeHarbor.
   confirm `docker info` succeeds.
 - **Compose is too old:** confirm `docker compose version` reports Compose v2.
 - **A port is occupied:** change `BACKEND_PORT`, `FRONTEND_PORT`,
-  `JUICE_SHOP_PORT`, or `POSTGRES_PORT` in `.env`, then rerun setup.
+  `JUICE_SHOP_PORT`, or `POSTGRES_PORT` in `.env`, then rerun setup. When
+  changing `FRONTEND_PORT`, also set `CORS_ORIGINS` to the matching localhost
+  origin (for example, `FRONTEND_PORT=3101` pairs with
+  `CORS_ORIGINS=["http://localhost:3101"]`). The setup summary prints the
+  effective published URLs.
 - **The stack is not ready:** run `docker compose ps` and inspect only the
   affected service's bounded logs. `/health` is liveness; `/ready` is the
   release-readiness check.

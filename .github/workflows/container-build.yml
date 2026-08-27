@@ -42,14 +42,14 @@ jobs:
 
       - name: Prepare Compose CI environment through public bootstrap
         run: |
-          ci_env_file="${GITHUB_WORKSPACE}/.scopeharbor-ci.env"
-          ./scripts/setup.sh --bootstrap-only --env-file .scopeharbor-ci.env
-          printf 'SCOPEHARBOR_ENV_FILE=%s\n' "$ci_env_file" >> "$GITHUB_ENV"
+          ci_env_file="${GITHUB_WORKSPACE}/.env.scopeharbor-ci"
+          ./scripts/setup.sh --bootstrap-only --env-file .env.scopeharbor-ci
+          printf 'SCOPEHARBOR_CI_ENV_FILE=%s\n' "$ci_env_file" >> "$GITHUB_ENV"
 
       - name: Validate Compose configuration and runtime environment
         run: |
-          docker compose --env-file "$SCOPEHARBOR_ENV_FILE" config --quiet
-          docker compose --env-file "$SCOPEHARBOR_ENV_FILE" config --format json | python3 -c '
+          SCOPEHARBOR_ENV_FILE="$SCOPEHARBOR_CI_ENV_FILE" docker compose --env-file "$SCOPEHARBOR_CI_ENV_FILE" config --quiet
+          SCOPEHARBOR_ENV_FILE="$SCOPEHARBOR_CI_ENV_FILE" docker compose --env-file "$SCOPEHARBOR_CI_ENV_FILE" config --format json | python3 -c '
           import json, sys
           environment = json.load(sys.stdin)["services"]["backend"]["environment"]
           required = ("AUTH_PROFILE_SECRET_KEY", "DEV_AUTH_TOKEN", "SCAN_RELAY_SECRET", "SCAN_RELAY_URL", "ZAP_API_KEY")
@@ -60,7 +60,7 @@ jobs:
       - name: Enforce Compose network and privilege boundaries
         run: |
           set -a
-          source "$SCOPEHARBOR_ENV_FILE"
+          source "$SCOPEHARBOR_CI_ENV_FILE"
           set +a
           python3 scripts/check_compose_hardening.py
 
@@ -115,10 +115,10 @@ jobs:
       - name: Compose readiness smoke test
         run: |
           cleanup() {
-            docker compose --env-file "$SCOPEHARBOR_ENV_FILE" down --volumes --remove-orphans
+            SCOPEHARBOR_ENV_FILE="$SCOPEHARBOR_CI_ENV_FILE" docker compose --env-file "$SCOPEHARBOR_CI_ENV_FILE" down --volumes --remove-orphans
           }
           trap cleanup EXIT
-          ./scripts/setup.sh --skip-osv-update --env-file .scopeharbor-ci.env
+          ./scripts/setup.sh --skip-osv-update --env-file .env.scopeharbor-ci
           curl --fail --silent --show-error http://127.0.0.1:8000/health
           curl --fail --silent --show-error http://127.0.0.1:8000/ready
           curl --fail --silent --show-error http://127.0.0.1:8000/docs >/dev/null

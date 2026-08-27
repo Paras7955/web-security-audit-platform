@@ -12,7 +12,8 @@ usage() {
     "Usage: ./scripts/setup.sh [--bootstrap-only] [--skip-osv-update] [--env-file FILE] [--project-name NAME]" \
     "" \
     "Creates an idempotent local environment using Docker, updates the offline" \
-    "OSV database, and starts ScopeHarbor. FILE must stay inside the repository."
+    "OSV database, and starts ScopeHarbor. FILE must be .env or a .env.* file" \
+    "in the repository root so Docker always excludes it from build contexts."
 }
 
 while (($# > 0)); do
@@ -58,12 +59,14 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-case "$ENV_FILE" in
-  ""|*/*)
-    printf 'The environment file must be a filename in the ScopeHarbor repository root.\n' >&2
-    exit 2
-    ;;
-esac
+if [[ ! "$ENV_FILE" =~ ^\.env(\.[A-Za-z0-9][A-Za-z0-9._-]*)?$ ]]; then
+  printf 'The environment file must be .env or a .env.* filename in the ScopeHarbor repository root.\n' >&2
+  exit 2
+fi
+if [[ -e "$ENV_FILE" && ( ! -f "$ENV_FILE" || -L "$ENV_FILE" ) ]]; then
+  printf 'The environment file path must be a regular file, not a directory or symbolic link.\n' >&2
+  exit 2
+fi
 
 if [[ ! "$PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
   printf 'The Compose project name must start with a lowercase letter or digit and contain only lowercase letters, digits, hyphens, or underscores.\n' >&2
@@ -114,24 +117,28 @@ fi
 
 if [[ "$SKIP_OSV_UPDATE" == false ]]; then
   printf 'Updating the isolated offline OSV advisory database...\n'
-  docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" \
+  SCOPEHARBOR_ENV_FILE="$ENV_FILE" docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" \
     --profile maintenance run --rm osv-db-update
 else
   printf 'Skipping the offline OSV update by explicit request.\n'
 fi
 
 printf 'Building and starting ScopeHarbor...\n'
-docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" \
+SCOPEHARBOR_ENV_FILE="$ENV_FILE" docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" \
   up --build --detach --wait
+
+FRONTEND_ADDRESS="$(SCOPEHARBOR_ENV_FILE="$ENV_FILE" docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" port frontend 3000)"
+BACKEND_ADDRESS="$(SCOPEHARBOR_ENV_FILE="$ENV_FILE" docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" port backend 8000)"
+DEMO_ADDRESS="$(SCOPEHARBOR_ENV_FILE="$ENV_FILE" docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" port juice-shop 3000)"
 
 cat <<EOF
 
 ScopeHarbor is ready.
-  UI:           http://localhost:3001
-  API docs:     http://localhost:8000/docs
-  Readiness:    http://localhost:8000/ready
-  Demo target:  http://localhost:3000
+  UI:           http://$FRONTEND_ADDRESS
+  API docs:     http://$BACKEND_ADDRESS/docs
+  Readiness:    http://$BACKEND_ADDRESS/ready
+  Demo target:  http://$DEMO_ADDRESS
 
 Stop without deleting data:
-  docker compose --project-name $PROJECT_NAME --env-file $ENV_FILE down
+  SCOPEHARBOR_ENV_FILE=$ENV_FILE docker compose --project-name $PROJECT_NAME --env-file $ENV_FILE down
 EOF
