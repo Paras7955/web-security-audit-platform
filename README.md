@@ -263,7 +263,9 @@ use the private reporting process in [SECURITY.md](SECURITY.md).
 ## License and limitations
 
 ScopeHarbor is available under the [MIT License](LICENSE). Redistributed tools,
-images, and libraries retain their own licenses.
+images, and libraries retain their own licenses; see
+[Third-Party Notices](THIRD_PARTY_NOTICES.md) for the direct-component and SBOM
+inventory policy.
 
 - Findings require qualified human validation and may contain false positives
   or false negatives. No findings is not proof of security.
