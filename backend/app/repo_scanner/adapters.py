@@ -161,7 +161,7 @@ def run_osv_scanner(
             "scan",
             "source",
             "--recursive",
-            "--offline-vulnerabilities",
+            "--offline",
             "--no-resolve",
             "--format=json",
             "--output-file",
@@ -438,7 +438,7 @@ def _safe_positive_int(value: object) -> int | None:
 
 
 def _validate_osv_database(config: Settings) -> None:
-    root = Path(config.osv_database_path) / "osv-scanner"
+    root = Path(config.osv_database_path) / "osv-scalibr"
     try:
         databases = [path for path in root.glob("*/all.zip") if path.is_file() and not path.is_symlink()]
     except OSError as exc:

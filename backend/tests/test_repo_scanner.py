@@ -438,8 +438,12 @@ class RepoScannerTests(unittest.TestCase):
 
     def test_osv_adapter_handles_bounded_exit_codes_and_output(self) -> None:
         payload = {"results": []}
+        captured_command: list[str] = []
+        captured_environment: dict[str, str] = {}
 
-        def fake_run(command, **_kwargs):
+        def fake_run(command, **kwargs):
+            captured_command.extend(command)
+            captured_environment.update(kwargs["extra_environment"])
             Path(command[command.index("--output-file") + 1]).write_text(json.dumps(payload), encoding="utf-8")
             return 1
 
@@ -450,6 +454,10 @@ class RepoScannerTests(unittest.TestCase):
         ):
             result = run_osv_scanner(Path(staged_dir), Settings(_env_file=None))
         self.assertEqual(result.receipt.status, "completed")
+        self.assertIn("--offline", captured_command)
+        self.assertNotIn("--offline-vulnerabilities", captured_command)
+        self.assertIn("--no-resolve", captured_command)
+        self.assertEqual(captured_environment, {"OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY": "/var/lib/osv-scanner"})
 
         with tempfile.TemporaryDirectory() as staged_dir, patch(
             "app.repo_scanner.adapters._verify_version", return_value="2.5.0"
@@ -523,7 +531,7 @@ class RepoScannerTests(unittest.TestCase):
             with self.assertRaisesRegex(RepoToolUnavailableError, "unavailable") as missing:
                 _validate_osv_database(config)
             self.assertEqual(missing.exception.code, "osv_database_missing")
-            archive = Path(database_dir) / "osv-scanner" / "npm" / "all.zip"
+            archive = Path(database_dir) / "osv-scalibr" / "npm" / "all.zip"
             archive.parent.mkdir(parents=True)
             archive.touch()
             old = (datetime.now(UTC) - timedelta(days=2)).timestamp()

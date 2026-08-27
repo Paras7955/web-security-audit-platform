@@ -7,6 +7,9 @@ versioning for the public source contract.
 
 ### Fixed
 
+- OSV-Scanner is pinned to the reviewed upstream cache-path correction and
+  repository scans use its fail-loud offline mode, preventing a 2.5.0 cache
+  regression from silently returning an empty vulnerability result.
 - Development dependency auditing now pins pip 26.2, resolving
   `PYSEC-2026-3721` while retaining a Python 3.12 hash-locked environment.
 - The development lock pins `build` 1.5.0 instead of the yanked 1.5.1 release.
