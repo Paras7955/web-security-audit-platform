@@ -7,8 +7,12 @@ versioning for the public source contract.
 
 ### Fixed
 
+- OSV-Scanner is pinned to the reviewed upstream cache-path correction and
+  repository scans use its fail-loud offline mode, preventing a 2.5.0 cache
+  regression from silently returning an empty vulnerability result.
 - Development dependency auditing now pins pip 26.2, resolving
   `PYSEC-2026-3721` while retaining a Python 3.12 hash-locked environment.
+- The development lock pins `build` 1.5.0 instead of the yanked 1.5.1 release.
 - Source-built scanner tools now use digest-pinned Go 1.26.6; OSV-Scanner also
   pins go-git 5.19.2 and x/mod 0.40.0 to clear the current HIGH Trivy findings.
 - Scanner readiness is now probed by the isolated worker and projected through
@@ -20,6 +24,10 @@ versioning for the public source contract.
 
 ### Added
 
+- Docker-only Bash and PowerShell onboarding with isolated secret bootstrap,
+  offline advisory refresh, image builds, and readiness waiting.
+- Recruiter-facing product tour, synthetic screenshots, social preview, and
+  fresh-clone setup guidance for macOS, Windows, and Linux.
 - Allowlist schema v2 with exact origin/base-path scope, Compose/host-gateway
   connection policies, verified HTTP/HTTPS trust, explicit engines, redirect
   limits, policy fingerprints, catalog/JSON validation, and reauthorization.
@@ -38,6 +46,9 @@ versioning for the public source contract.
   Compose hardening assertions, secret scanning, image vulnerability gates, and
   CycloneDX SBOM generation.
 - MIT license and public release/operator documentation.
+- Direct third-party notices, synthetic product screenshots, a social-preview
+  asset, sanitized issue forms, and a discretionary pull-request template.
+- Four image CycloneDX SBOMs uploaded as short-retention CI artifacts.
 
 ### Changed
 

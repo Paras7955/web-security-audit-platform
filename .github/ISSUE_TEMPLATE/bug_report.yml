@@ -1,0 +1,72 @@
+name: Sanitized bug report
+description: Report a reproducible ScopeHarbor defect without sensitive target data.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve ScopeHarbor. Public issues must use synthetic data and targets you own or are explicitly authorized to assess. Do not include credentials, cookies, raw traffic, personal data, proprietary code, scan artifacts, or exploit details. Report security vulnerabilities privately through the repository Security tab.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I reproduced this only with synthetic data and an owned or explicitly authorized local target.
+          required: true
+        - label: This report contains no secrets, personal data, raw production traffic, proprietary target data, or unredacted artifacts.
+          required: true
+        - label: This is not a vulnerability report or request to broaden scanning authority.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: ScopeHarbor version or commit
+      placeholder: v1.1.0 or a commit hash
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Host platform
+      options:
+        - Linux
+        - macOS with Docker Desktop
+        - Windows with Docker Desktop and WSL 2
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: docker
+    attributes:
+      label: Docker and Compose versions
+      description: Paste only the version lines from `docker version` and `docker compose version`.
+      placeholder: Docker 28.x; Docker Compose v2.x
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: Describe the expected result and the sanitized result you observed.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal sanitized reproduction
+      description: Use the bundled Juice Shop or another synthetic local fixture. Replace tokens, paths, hostnames, and identifiers with obvious placeholders.
+      placeholder: |
+        1. Run ./scripts/setup.sh
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized diagnostics
+      description: Optional. Include only the smallest relevant excerpt after removing secrets, absolute paths, target data, URLs with queries, request/response bodies, and raw scanner output.
+      render: shell
+

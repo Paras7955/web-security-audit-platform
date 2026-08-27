@@ -1,0 +1,48 @@
+name: Safety-reviewed feature request
+description: Propose a bounded defensive improvement to ScopeHarbor.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ScopeHarbor is a defensive, local-first platform. Requests for arbitrary public scanning, authorization bypasses, credential capture, repository code execution, insecure TLS, or other boundary weakening will not be accepted. Feature review and implementation are at the maintainer's discretion, with no response-time commitment.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope confirmation
+      options:
+        - label: This request is for defensive use on owned or explicitly authorized targets.
+          required: true
+        - label: This request does not require weakening allowlist, SSRF, TLS, redaction, workspace-isolation, or execution boundaries.
+          required: true
+        - label: I have not included real credentials, target data, personal data, or proprietary artifacts.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What defensive workflow is difficult today? Describe the need without sensitive target details.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed bounded behavior
+      description: Explain the user-visible outcome and the limits that should apply.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Security and trust-boundary impact
+      description: Identify affected inputs, network access, stored data, authentication, workspaces, scanner execution, reports, or AI projections. Write "none" only after considering each area.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What safe existing workflow or smaller change did you consider?
+

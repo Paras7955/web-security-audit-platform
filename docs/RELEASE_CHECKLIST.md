@@ -5,21 +5,25 @@ planned or mocked result.
 
 ## Source and scope
 
-- [ ] Release branch worktree is clean and based on merged Phase 25.
+- [ ] Release branch worktree is clean and based on merged Phase 26.
 - [ ] UI product changes remain contract-only: they do not broaden scanner
   authority, retain bearer tokens, expose raw scanner data, or bypass backend
   workspace/policy enforcement.
 - [ ] Version is `1.1.0` in backend, shared contracts, and the frontend package.
 - [ ] MIT license has `Copyright (c) 2026 Paras Atwal`.
+- [ ] Third-party notices match the direct dependency locks, pinned tools, base
+  images, Compose services, and current asset provenance.
 - [ ] README, SECURITY, architecture, threat model, API, operator, upgrade,
   development history, changelog, and handoff agree.
+- [ ] Issue forms sanitize public reports, blank issues are disabled, security
+  reports route to private disclosure, and the PR template promises no SLA.
 - [ ] Public/private-LAN scanning remains denied; only exact local policies are
   documented and tested.
 
 ## Local secrets and policies
 
 - [ ] Back up `.env` and `AUTH_PROFILE_SECRET_KEY`.
-- [ ] Run `python3 scripts/bootstrap_env.py`.
+- [ ] Run `./scripts/setup.sh --bootstrap-only` or the PowerShell equivalent.
 - [ ] Confirm bootstrap added `SCAN_RELAY_SECRET` and did not replace the Fernet
   key.
 - [ ] Review every custom allowlist entry, expected host-gateway IP, base path,
@@ -41,6 +45,7 @@ planned or mocked result.
   ```
 
 - [ ] Confirm no `httpx2`, `httpcore2`, or orphan `truststore` entry remains.
+- [ ] Confirm the development lock uses non-yanked `build==1.5.0`.
 - [ ] Install both locks with `--require-hashes` on Python 3.12.13.
 - [ ] Confirm the development lock installs pip 26.2 or later and that the lock
   compiler itself remains a documented, reproducible version.
@@ -79,6 +84,9 @@ planned or mocked result.
 
 - [ ] Frontend `npm ci`, audit, state/contract tests, lint, and production build
   pass.
+- [ ] Bash and PowerShell public setup wrappers parse successfully.
+- [ ] A fresh clone reaches healthy UI, API, worker, relay, ZAP, PostgreSQL, and
+  bundled demo services using only its documented Docker setup command.
 - [ ] Responsive keyboard and reduced-motion checks cover the target-policy,
   repository, subject-aware scan, governance, AI, and OIDC-facing workflows.
 - [ ] API, worker, relay, and frontend images build.
@@ -94,13 +102,17 @@ planned or mocked result.
   with mutable Trivy action tags; review the
   [2026 supply-chain advisory](https://github.com/aquasecurity/trivy/security/advisories/GHSA-69fq-xp46-6x23)
   before updating the pin.
-- [ ] CycloneDX SBOMs are generated and reviewed for all four project images.
+- [ ] CycloneDX SBOMs are generated for all four project images, uploaded as a
+  14-day CI artifact, and reviewed before release.
 - [ ] All GitHub Actions checks pass on the release commit.
 
 ## Repository owner actions
 
-- [ ] Review and merge the post-Phase-25 readiness fix, requiring all release
-  checks to pass before tagging.
+- [ ] Review and merge Phase 26, requiring all release checks to pass before
+  tagging.
+- [ ] Rename the still-private repository to `scopeharbor`, validate public
+  links/assets, then complete the final file/history secret review before
+  changing visibility.
 - [ ] Enable GitHub Private Vulnerability Reporting.
 - [ ] Enable branch protection and require the release CI checks.
 - [ ] Enable GitHub Code Security as desired; for a private repository set

@@ -95,6 +95,22 @@ comparisons, current posture, explicit AI generation, finding-governance
 controls, and an in-memory OIDC bearer session. It did not broaden scanner
 authority or add an identity-provider redirect flow.
 
+## Phase 26: public release readiness
+
+Phase 26 prepared the existing `1.1.0` behavior for a résumé-facing public
+release without adding scanner capabilities or broadening trust boundaries. It
+introduced Docker-only Bash and PowerShell onboarding, an isolated
+network-disabled environment bootstrap, clean-clone Compose verification,
+recruiter-oriented documentation, synthetic product screenshots, and a social
+preview asset.
+
+The phase also documented direct third-party licensing and asset provenance,
+retained lockfile/SBOM inventories for transitive packages, added sanitized
+issue forms and a discretionary contribution template, and made the four image
+SBOMs available as short-retention CI artifacts. Final removal of local agent
+tooling from the public-facing tree remains a separately approved cleanup; the
+project history and existing commit attribution are intentionally preserved.
+
 ## Scope decisions retained through 1.1
 
 - The product remains defensive and local-first.

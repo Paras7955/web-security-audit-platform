@@ -165,8 +165,8 @@ workflow and treat it as a security defect.
 
 ## Operational expectations
 
-- Run bootstrap after every upgrade; it merges new settings and preserves a
-  non-empty user-managed Fernet key.
+- Run the platform setup script after every upgrade; its isolated bootstrap
+  merges new settings and preserves a non-empty user-managed Fernet key.
 - Review every allowlist/CA change and reauthorize affected targets.
 - Keep container digests and hash locks reviewed and current.
 - Update OSV deliberately before repository dependency scans.

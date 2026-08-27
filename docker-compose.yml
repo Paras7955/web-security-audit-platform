@@ -11,7 +11,7 @@ x-backend-runtime: &backend-runtime
   env_file:
     - ${SCOPEHARBOR_ENV_FILE:-.env}
   environment:
-    DATABASE_URL: postgresql+psycopg://security_audit:${POSTGRES_PASSWORD:?Run python3 scripts/bootstrap_env.py}@postgres:5432/security_audit
+    DATABASE_URL: postgresql+psycopg://security_audit:${POSTGRES_PASSWORD:?Run the platform setup script documented in README.md}@postgres:5432/security_audit
     ALLOWLIST_PATH: /app/config/scan-allowlist.yml
     ARTIFACT_ROOT: /app/artifacts
     REPO_SCAN_ROOT: /app/repositories
@@ -36,7 +36,7 @@ services:
     environment:
       POSTGRES_DB: security_audit
       POSTGRES_USER: security_audit
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run python3 scripts/bootstrap_env.py}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run the platform setup script documented in README.md}
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -57,7 +57,7 @@ services:
     read_only: true
     shm_size: 256m
     environment:
-      ZAP_API_KEY: ${ZAP_API_KEY:?Run python3 scripts/bootstrap_env.py}
+      ZAP_API_KEY: ${ZAP_API_KEY:?Run the platform setup script documented in README.md}
     command:
       - zap.sh
       - -daemon
@@ -66,7 +66,7 @@ services:
       - -port
       - "8080"
       - -config
-      - api.key=${ZAP_API_KEY:?Run python3 scripts/bootstrap_env.py}
+      - api.key=${ZAP_API_KEY:?Run the platform setup script documented in README.md}
       - -config
       - api.addrs.addr.name=.*
       - -config
@@ -113,7 +113,7 @@ services:
     user: "10001:10001"
     read_only: true
     environment:
-      DATABASE_URL: postgresql+psycopg://security_audit:${POSTGRES_PASSWORD:?Run python3 scripts/bootstrap_env.py}@postgres:5432/security_audit
+      DATABASE_URL: postgresql+psycopg://security_audit:${POSTGRES_PASSWORD:?Run the platform setup script documented in README.md}@postgres:5432/security_audit
     command: ["alembic", "upgrade", "head"]
     networks:
       - data
@@ -167,7 +167,7 @@ services:
     tmpfs:
       - /tmp:size=640m,mode=0700,uid=10001,gid=10001
     environment:
-      DATABASE_URL: postgresql+psycopg://security_audit:${POSTGRES_PASSWORD:?Run python3 scripts/bootstrap_env.py}@postgres:5432/security_audit
+      DATABASE_URL: postgresql+psycopg://security_audit:${POSTGRES_PASSWORD:?Run the platform setup script documented in README.md}@postgres:5432/security_audit
       ALLOWLIST_PATH: /app/config/scan-allowlist.yml
       ARTIFACT_ROOT: /app/artifacts
       REPO_SCAN_ROOT: /app/repositories
@@ -177,7 +177,7 @@ services:
       OSV_DATABASE_PATH: /var/lib/osv-scanner
       ZAP_BASE_URL: http://zap:8080
       SCAN_RELAY_URL: http://relay:8090
-      SCAN_RELAY_SECRET: ${SCAN_RELAY_SECRET:?Run python3 scripts/bootstrap_env.py}
+      SCAN_RELAY_SECRET: ${SCAN_RELAY_SECRET:?Run the platform setup script documented in README.md}
     networks:
       - data
       - scanner-control
@@ -201,7 +201,7 @@ services:
     read_only: true
     environment:
       ALLOWLIST_PATH: /app/config/scan-allowlist.yml
-      SCAN_RELAY_SECRET: ${SCAN_RELAY_SECRET:?Run python3 scripts/bootstrap_env.py}
+      SCAN_RELAY_SECRET: ${SCAN_RELAY_SECRET:?Run the platform setup script documented in README.md}
       SCAN_RELAY_REQUEST_TIMEOUT_SECONDS: ${SCAN_RELAY_REQUEST_TIMEOUT_SECONDS:-10}
       SCAN_RELAY_BODY_BYTES: ${SCAN_RELAY_BODY_BYTES:-65536}
     volumes:
@@ -235,7 +235,7 @@ services:
       - osv-scanner
       - scan
       - source
-      - --offline-vulnerabilities
+      - --offline
       - --download-offline-databases
       - --no-resolve
       - --allow-no-lockfiles
@@ -265,7 +265,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         NEXT_PUBLIC_API_BASE_URL: http://localhost:${BACKEND_PORT:-8000}
-        NEXT_PUBLIC_DEV_AUTH_TOKEN: ${DEV_AUTH_TOKEN:?Run python3 scripts/bootstrap_env.py}
+        NEXT_PUBLIC_DEV_AUTH_TOKEN: ${DEV_AUTH_TOKEN:?Run the platform setup script documented in README.md}
     user: "10001:10001"
     read_only: true
     environment:

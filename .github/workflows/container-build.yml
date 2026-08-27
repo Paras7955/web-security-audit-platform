@@ -23,16 +23,33 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Prepare Compose CI environment
+      - name: Validate public setup scripts
         run: |
-          ci_env_file="${RUNNER_TEMP}/scopeharbor-ci.env"
-          python3 scripts/bootstrap_env.py --output "$ci_env_file"
-          printf 'SCOPEHARBOR_ENV_FILE=%s\n' "$ci_env_file" >> "$GITHUB_ENV"
+          bash -n scripts/setup.sh
+          pwsh -NoProfile -Command '
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "scripts/setup.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) > $null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+          '
+
+      - name: Prepare Compose CI environment through public bootstrap
+        run: |
+          ci_env_file="${GITHUB_WORKSPACE}/.env.scopeharbor-ci"
+          ./scripts/setup.sh --bootstrap-only --env-file .env.scopeharbor-ci
+          printf 'SCOPEHARBOR_CI_ENV_FILE=%s\n' "$ci_env_file" >> "$GITHUB_ENV"
 
       - name: Validate Compose configuration and runtime environment
         run: |
-          docker compose --env-file "$SCOPEHARBOR_ENV_FILE" config --quiet
-          docker compose --env-file "$SCOPEHARBOR_ENV_FILE" config --format json | python3 -c '
+          SCOPEHARBOR_ENV_FILE="$SCOPEHARBOR_CI_ENV_FILE" docker compose --env-file "$SCOPEHARBOR_CI_ENV_FILE" config --quiet
+          SCOPEHARBOR_ENV_FILE="$SCOPEHARBOR_CI_ENV_FILE" docker compose --env-file "$SCOPEHARBOR_CI_ENV_FILE" config --format json | python3 -c '
           import json, sys
           environment = json.load(sys.stdin)["services"]["backend"]["environment"]
           required = ("AUTH_PROFILE_SECRET_KEY", "DEV_AUTH_TOKEN", "SCAN_RELAY_SECRET", "SCAN_RELAY_URL", "ZAP_API_KEY")
@@ -43,9 +60,9 @@ jobs:
       - name: Enforce Compose network and privilege boundaries
         run: |
           set -a
-          source "$SCOPEHARBOR_ENV_FILE"
+          source "$SCOPEHARBOR_CI_ENV_FILE"
           set +a
-          python3 scripts/check_compose_hardening.py
+          SCOPEHARBOR_ENV_FILE="$SCOPEHARBOR_CI_ENV_FILE" python3 scripts/check_compose_hardening.py
 
       - name: Build API image
         run: docker build --file backend/Dockerfile --target api --tag scopeharbor-api:ci .
@@ -87,11 +104,23 @@ jobs:
             test -s "${{ runner.temp }}/scopeharbor-sbom/$image.cdx.json"
           done
 
+      - name: Upload CycloneDX SBOMs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scopeharbor-image-sboms
+          path: ${{ runner.temp }}/scopeharbor-sbom/*.cdx.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Compose readiness smoke test
         run: |
           cleanup() {
-            docker compose --env-file "$SCOPEHARBOR_ENV_FILE" down --volumes --remove-orphans
+            SCOPEHARBOR_ENV_FILE="$SCOPEHARBOR_CI_ENV_FILE" docker compose --env-file "$SCOPEHARBOR_CI_ENV_FILE" down --volumes --remove-orphans
           }
           trap cleanup EXIT
-          docker compose --env-file "$SCOPEHARBOR_ENV_FILE" up --build --detach --wait
+          ./scripts/setup.sh --skip-osv-update --env-file .env.scopeharbor-ci
+          curl --fail --silent --show-error http://127.0.0.1:8000/health
           curl --fail --silent --show-error http://127.0.0.1:8000/ready
+          curl --fail --silent --show-error http://127.0.0.1:8000/docs >/dev/null
+          curl --fail --silent --show-error http://127.0.0.1:3001 >/dev/null
+          curl --fail --silent --show-error http://127.0.0.1:3000 >/dev/null
