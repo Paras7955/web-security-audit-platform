@@ -34,6 +34,8 @@ class PublicSetupTests(unittest.TestCase):
 
         self.assertNotIn('$REPO_ROOT:/workspace"', bash)
         self.assertNotIn('${RepoRoot}:/workspace"', powershell)
+        self.assertIn("${LASTEXITCODE}: $FilePath", powershell)
+        self.assertNotIn("$LASTEXITCODE: $FilePath", powershell)
 
     def test_setup_wrappers_keep_environment_path_inside_repository(self) -> None:
         bash = (ROOT / "scripts" / "setup.sh").read_text(encoding="utf-8")

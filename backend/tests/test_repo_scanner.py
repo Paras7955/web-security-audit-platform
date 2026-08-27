@@ -440,6 +440,7 @@ class RepoScannerTests(unittest.TestCase):
         payload = {"results": []}
         captured_command: list[str] = []
         captured_environment: dict[str, str] = {}
+        config = Settings(_env_file=None)
 
         def fake_run(command, **kwargs):
             captured_command.extend(command)
@@ -452,12 +453,12 @@ class RepoScannerTests(unittest.TestCase):
         ), patch("app.repo_scanner.adapters._validate_osv_database"), patch(
             "app.repo_scanner.adapters._run_tool", side_effect=fake_run
         ):
-            result = run_osv_scanner(Path(staged_dir), Settings(_env_file=None))
+            result = run_osv_scanner(Path(staged_dir), config)
         self.assertEqual(result.receipt.status, "completed")
         self.assertIn("--offline", captured_command)
         self.assertNotIn("--offline-vulnerabilities", captured_command)
         self.assertIn("--no-resolve", captured_command)
-        self.assertEqual(captured_environment, {"OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY": "/var/lib/osv-scanner"})
+        self.assertEqual(captured_environment, {"OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY": config.osv_database_path})
 
         with tempfile.TemporaryDirectory() as staged_dir, patch(
             "app.repo_scanner.adapters._verify_version", return_value="2.5.0"
