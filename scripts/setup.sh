@@ -69,6 +69,14 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 printf 'Preparing ScopeHarbor environment with an isolated bootstrap container...\n'
+BOOTSTRAP_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/scopeharbor-bootstrap.XXXXXX")"
+cleanup_bootstrap() {
+  rm -rf -- "$BOOTSTRAP_TEMP_DIR"
+}
+trap cleanup_bootstrap EXIT
+if [[ -f "$ENV_FILE" ]]; then
+  cp -- "$ENV_FILE" "$BOOTSTRAP_TEMP_DIR/environment"
+fi
 docker run --rm \
   --network none \
   --read-only \
@@ -76,10 +84,13 @@ docker run --rm \
   --security-opt no-new-privileges:true \
   --tmpfs /tmp:size=16m,mode=0700 \
   --user "$(id -u):$(id -g)" \
-  --volume "$REPO_ROOT:/workspace" \
+  --volume "$REPO_ROOT:/workspace:ro" \
+  --volume "$BOOTSTRAP_TEMP_DIR:/output" \
   --workdir /workspace \
   "$BOOTSTRAP_IMAGE" \
-  python scripts/bootstrap_env.py --output "$ENV_FILE" --template .env.example
+  python scripts/bootstrap_env.py --output /output/environment --template .env.example
+mv -f -- "$BOOTSTRAP_TEMP_DIR/environment" "$ENV_FILE"
+chmod 0600 "$ENV_FILE"
 
 if [[ "$BOOTSTRAP_ONLY" == true ]]; then
   printf 'Environment bootstrap complete.\n'

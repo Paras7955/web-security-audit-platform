@@ -49,8 +49,14 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Push-Location $RepoRoot
+$BootstrapTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("scopeharbor-bootstrap-" + [System.Guid]::NewGuid().ToString("N"))
 try {
     Write-Host "Preparing ScopeHarbor environment with an isolated bootstrap container..."
+    New-Item -ItemType Directory -Path $BootstrapTemp | Out-Null
+    $BootstrapOutput = Join-Path $BootstrapTemp "environment"
+    if (Test-Path -LiteralPath $EnvironmentPath -PathType Leaf) {
+        Copy-Item -LiteralPath $EnvironmentPath -Destination $BootstrapOutput
+    }
     $BootstrapArguments = @(
         "run", "--rm",
         "--network", "none",
@@ -58,14 +64,16 @@ try {
         "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true",
         "--tmpfs", "/tmp:size=16m,mode=0700",
-        "--volume", "${RepoRoot}:/workspace",
+        "--volume", "${RepoRoot}:/workspace:ro",
+        "--volume", "${BootstrapTemp}:/output",
         "--workdir", "/workspace",
         $BootstrapImage,
         "python", "scripts/bootstrap_env.py",
-        "--output", $EnvFile,
+        "--output", "/output/environment",
         "--template", ".env.example"
     )
     Invoke-CheckedCommand -FilePath "docker" -Arguments $BootstrapArguments
+    Move-Item -LiteralPath $BootstrapOutput -Destination $EnvironmentPath -Force
 
     if ($BootstrapOnly) {
         Write-Host "Environment bootstrap complete."
@@ -100,4 +108,7 @@ try {
 }
 finally {
     Pop-Location
+    if (Test-Path -LiteralPath $BootstrapTemp) {
+        Remove-Item -LiteralPath $BootstrapTemp -Recurse -Force
+    }
 }

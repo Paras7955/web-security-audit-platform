@@ -26,6 +26,11 @@ class PublicSetupTests(unittest.TestCase):
             self.assertIn("--detach", script)
             self.assertIn("--wait", script)
             self.assertIn("osv-db-update", script)
+            self.assertIn("/workspace:ro", script)
+            self.assertIn("/output", script)
+
+        self.assertNotIn('$REPO_ROOT:/workspace"', bash)
+        self.assertNotIn('${RepoRoot}:/workspace"', powershell)
 
     def test_setup_wrappers_keep_environment_path_inside_repository(self) -> None:
         bash = (ROOT / "scripts" / "setup.sh").read_text(encoding="utf-8")
