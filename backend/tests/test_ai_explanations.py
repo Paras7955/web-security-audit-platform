@@ -336,7 +336,7 @@ class AiExplanationTests(unittest.TestCase):
         response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("passive and Active Demo scans", response.json()["detail"])
+        self.assertIn("Finding guidance is available only for Passive Web and Active Demo scans", response.json()["detail"])
 
     def test_repo_scan_is_not_eligible_for_ai_explanations(self) -> None:
         with SessionLocal() as db:
@@ -350,7 +350,7 @@ class AiExplanationTests(unittest.TestCase):
         response = self.client.get(f"/api/v1/scans/{self.scan_id}/ai-explanations", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("passive and Active Demo scans", response.json()["detail"])
+        self.assertIn("Finding guidance is available only for Passive Web and Active Demo scans", response.json()["detail"])
 
     def test_openai_without_configuration_falls_back_to_template(self) -> None:
         with SessionLocal() as db:
