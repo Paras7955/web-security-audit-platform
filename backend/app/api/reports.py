@@ -12,7 +12,6 @@ from app.ops.audit import record_audit_event
 from app.ops.rate_limits import enforce_api_rate_limit
 from app.reports.service import (
     ReportGenerationError,
-    ReportGenerationRateLimitError,
     generate_report_artifacts,
     read_report_artifact,
     validate_report_artifact_read_eligibility,
@@ -41,11 +40,7 @@ def generate_reports(
             db,
             scan_id=scan_id,
             workspace_id=principal.workspace_id,
-            user_id=principal.user_id,
             artifact_root=settings.artifact_root,
-            ai_provider=settings.ai_provider,
-            openai_api_key=settings.openai_api_key,
-            openai_model=settings.openai_model,
         )
     except ReportGenerationError as exc:
         raise report_error(exc) from exc
@@ -84,9 +79,7 @@ def list_reports(
                 and_(ReportArtifact.created_at == page.cursor_created_at, ReportArtifact.id < page.cursor_id),
             )
         )
-    artifacts = list(
-        db.scalars(statement.order_by(ReportArtifact.created_at.desc(), ReportArtifact.id.desc()).limit(page.limit + 1)).all()
-    )
+    artifacts = list(db.scalars(statement.order_by(ReportArtifact.created_at.desc(), ReportArtifact.id.desc()).limit(page.limit + 1)).all())
     visible, next_cursor = page_items(artifacts, page.limit)
     return CursorPage(items=[to_report_read(artifact) for artifact in visible], next_cursor=next_cursor)
 
@@ -97,7 +90,9 @@ def view_report(
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> Response:
-    artifact = db.scalar(select(ReportArtifact).where(ReportArtifact.id == report_id, ReportArtifact.workspace_id == principal.workspace_id))
+    artifact = db.scalar(
+        select(ReportArtifact).where(ReportArtifact.id == report_id, ReportArtifact.workspace_id == principal.workspace_id)
+    )
     if artifact is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found.")
     try:
@@ -107,7 +102,9 @@ def view_report(
     media_type = "text/html; charset=utf-8" if artifact.report_type == "html" else "text/markdown; charset=utf-8"
     headers = {}
     if artifact.report_type == "html":
-        headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        headers["Content-Security-Policy"] = (
+            "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        )
     return Response(content=content, media_type=media_type, headers=headers)
 
 
@@ -117,7 +114,9 @@ def download_report(
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> PlainTextResponse:
-    artifact = db.scalar(select(ReportArtifact).where(ReportArtifact.id == report_id, ReportArtifact.workspace_id == principal.workspace_id))
+    artifact = db.scalar(
+        select(ReportArtifact).where(ReportArtifact.id == report_id, ReportArtifact.workspace_id == principal.workspace_id)
+    )
     if artifact is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found.")
     try:
@@ -145,8 +144,6 @@ def to_report_read(artifact: ReportArtifact) -> ReportArtifactRead:
 
 def report_error(error: ReportGenerationError) -> HTTPException:
     detail = str(error)
-    if isinstance(error, ReportGenerationRateLimitError):
-        return HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=detail)
     if detail.endswith("not found.") or detail == "Scan not found.":
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)

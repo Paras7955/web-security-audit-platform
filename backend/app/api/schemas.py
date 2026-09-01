@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -194,6 +194,7 @@ class FindingExplanationRead(BaseModel):
 class AiExplanationRead(BaseModel):
     scan_id: str
     provider: str
+    configured_provider: Literal["template", "openai"]
     fallback_used: bool
     provider_error_code: str | None
     summary: str

@@ -11,10 +11,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.ai.service import (
-    AiExplanationError,
     AiExplanationResult,
-    AiRateLimitExceeded,
-    generate_ai_explanations,
+    read_ai_explanations,
 )
 from app.core.contracts import ScanMode, ScanStatus, scan_profile_for_values
 from app.models import Finding, ReportArtifact, RepositoryAsset, Scan, ScannerToolRun, Target
@@ -40,10 +38,6 @@ SEVERITY_ORDER = {
 
 
 class ReportGenerationError(ValueError):
-    pass
-
-
-class ReportGenerationRateLimitError(ReportGenerationError):
     pass
 
 
@@ -73,8 +67,8 @@ class ReportData:
     target: Target | RepositoryAsset
     findings: tuple[ReportFinding, ...]
     tool_runs: tuple["ReportToolRun", ...]
-    generated_at: datetime
-    ai_explanations: AiExplanationResult
+    completed_at: datetime
+    guidance: AiExplanationResult
 
 
 @dataclass(frozen=True)
@@ -92,11 +86,7 @@ def build_report_data(
     db: Session,
     *,
     scan_id: str,
-    ai_provider: str,
     workspace_id: str,
-    user_id: str | None = None,
-    openai_api_key: str | None = None,
-    openai_model: str | None = None,
 ) -> ReportData:
     scan = db.scalar(select(Scan).where(Scan.id == scan_id, Scan.workspace_id == workspace_id))
     if scan is None:
@@ -152,33 +142,30 @@ def build_report_data(
             .order_by(ScannerToolRun.created_at.asc(), ScannerToolRun.id.asc())
         ).all()
     )
-    try:
-        ai_explanations = (
-            generate_ai_explanations(
-                db,
-                scan_id=scan.id,
-                workspace_id=workspace_id,
-                user_id=user_id,
-                action="report_ai_generation",
-                provider_name=ai_provider,
-                openai_api_key=openai_api_key,
-                openai_model=openai_model,
-                cache_context_version="report-v1",
-            )
-            if profile.ai_enabled
-            else disabled_ai_explanations(scan.id)
+    # Reports are intentionally local and deterministic. Even when the operator
+    # configures an external provider for the interactive endpoint, generating
+    # an artifact must not create network work, rate-limit reservations, cache
+    # rows, or provider request logs.
+    guidance = (
+        read_ai_explanations(
+            db,
+            scan_id=scan.id,
+            workspace_id=workspace_id,
+            provider_name="template",
+            openai_model=None,
+            cache_enabled=False,
+            cache_context_version="report-v2",
         )
-    except AiRateLimitExceeded as exc:
-        raise ReportGenerationRateLimitError(str(exc)) from exc
-    except AiExplanationError as exc:
-        raise ReportGenerationError(str(exc)) from exc
+        if profile.ai_enabled
+        else disabled_local_guidance(scan.id)
+    )
     return ReportData(
         scan=scan,
         target=target,
         findings=sorted_findings,
         tool_runs=tool_runs,
-        generated_at=report_timestamp(scan),
-        ai_explanations=ai_explanations,
+        completed_at=report_timestamp(scan),
+        guidance=guidance,
     )
 
 
@@ -187,20 +174,12 @@ def generate_report_artifacts(
     *,
     scan_id: str,
     workspace_id: str,
-    user_id: str | None = None,
     artifact_root: str | Path,
-    ai_provider: str,
-    openai_api_key: str | None = None,
-    openai_model: str | None = None,
 ) -> list[ReportArtifact]:
     data = build_report_data(
         db,
         scan_id=scan_id,
         workspace_id=workspace_id,
-        user_id=user_id,
-        ai_provider=ai_provider,
-        openai_api_key=openai_api_key,
-        openai_model=openai_model,
     )
     ensure_scan_artifact_dir(artifact_root, scan_id)
     reports_dir = safe_report_dir(artifact_root, scan_id)
@@ -389,15 +368,15 @@ def scan_reports_enabled(scan: Scan) -> bool:
     return bool(profile and profile.reports_enabled)
 
 
-def disabled_ai_explanations(scan_id: str) -> AiExplanationResult:
+def disabled_local_guidance(scan_id: str) -> AiExplanationResult:
     return AiExplanationResult(
         scan_id=scan_id,
         provider="not_generated",
         fallback_used=False,
         provider_error=None,
-        summary="AI explanations are not generated for repository scans.",
-        executive_summary="AI explanations are not generated for this scan profile.",
-        risk_score_explanation="No AI risk explanation was generated.",
+        summary="Finding guidance is not generated for repository scans.",
+        executive_summary="Finding guidance is not generated for this scan profile.",
+        risk_score_explanation="No local risk guidance was generated.",
         scoring_model_version="risk-v1",
         input_fingerprint=None,
         cache_hit=False,
@@ -438,59 +417,97 @@ def report_subject_policy(data: ReportData) -> str:
 def report_subject_scope(data: ReportData) -> str:
     if isinstance(data.target, Target):
         return sanitize_text(data.target.base_url, maximum=2048) or "redacted"
-    return (
-        sanitize_relative_path(data.scan.repo_path_snapshot or data.target.relative_path)
-        or "redacted-relative-path"
-    )
+    return sanitize_relative_path(data.scan.repo_path_snapshot or data.target.relative_path) or "redacted-relative-path"
+
+
+def report_authorization_context(data: ReportData) -> str:
+    authorized_at = sanitize_text(data.scan.authorization_snapshot.get("authorized_at"), maximum=100)
+    if authorized_at:
+        return f"Confirmed in the immutable launch snapshot at {authorized_at}"
+    if data.scan.authorization_snapshot or data.target.permission_confirmed:
+        return "Confirmed before launch and retained in the audit record"
+    return "Historical audit record; authorization time was not recorded"
+
+
+def severity_counts(findings: tuple[ReportFinding, ...]) -> dict[str, int]:
+    counts = {severity: 0 for severity in SEVERITY_ORDER}
+    for finding in findings:
+        severity = finding.severity.lower()
+        if severity in counts:
+            counts[severity] += 1
+    return counts
+
+
+def severity_summary(findings: tuple[ReportFinding, ...]) -> str:
+    counts = severity_counts(findings)
+    material = [f"{counts[severity]} {severity}" for severity in ("critical", "high", "medium", "low", "info") if counts[severity]]
+    return ", ".join(material) if material else "No normalized findings were recorded."
 
 
 def render_markdown_report(data: ReportData) -> str:
+    counts = severity_counts(data.findings)
     lines = [
         "# ScopeHarbor Security Audit Report",
         "",
-        "## Summary",
+        "> Local-first defensive assessment for an explicitly authorized subject.",
         "",
-        f"- Generated at: {format_timestamp(data.generated_at)}",
-        f"- Subject type: {markdown_inline(report_subject_type(data))}",
-        f"- Subject: {markdown_inline(data.target.name)}",
-        f"- Subject policy: {markdown_inline(report_subject_policy(data))}",
-        f"- Subject scope: {markdown_inline(report_subject_scope(data))}",
-        f"- Scan ID: {markdown_inline(data.scan.id)}",
-        f"- Scan profile: {markdown_inline(data.scan.scan_profile_id)}",
-        f"- Scan status: {markdown_inline(data.scan.status)}",
-        f"- Findings: {len(data.findings)}",
+        "## Audit Overview",
         "",
-        "## Scope And Tooling",
+        "| Field | Value |",
+        "| --- | --- |",
+        f"| Audit completed at | {markdown_inline(format_timestamp(data.completed_at))} |",
+        f"| Subject | {markdown_inline(data.target.name)} |",
+        f"| Subject type | {markdown_inline(report_subject_type(data))} |",
+        f"| Authorized scope | {markdown_inline(report_subject_scope(data))} |",
+        f"| Subject policy | {markdown_inline(report_subject_policy(data))} |",
+        f"| Scan profile | {markdown_inline(data.scan.scan_profile_id)} |",
+        f"| Scan status | {markdown_inline(data.scan.status)} |",
+        f"| Scan ID | {markdown_inline(data.scan.id)} |",
+        "",
+        "## Executive Summary",
+        "",
+        markdown_inline(data.guidance.executive_summary),
+        "",
+        f"Severity distribution: {markdown_inline(severity_summary(data.findings))}",
+        "",
+        "## Severity Distribution",
+        "",
+        "| Critical | High | Medium | Low | Info | Total |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: |",
+        f"| {counts['critical']} | {counts['high']} | {counts['medium']} | {counts['low']} | {counts['info']} | {len(data.findings)} |",
+        "",
+        "## Scope And Coverage",
         "",
         f"- Custom passive scanner: {tooling_used_unless_repo(data.scan.mode)}.",
         f"- ZAP passive analysis: {zap_passive_tooling(data.scan.mode)}.",
         f"- ZAP active scan: {tooling_used(data.scan.mode, ScanMode.ACTIVE_DEMO.value)}.",
         f"- Modern web crawl: {tooling_used(data.scan.mode, ScanMode.MODERN_WEB_CRAWL.value)}.",
-        f"- AI explanations: {ai_tooling(data.ai_explanations)}.",
+        f"- Finding guidance: {guidance_tooling(data.guidance)}.",
         f"- Repo scanning: {tooling_used(data.scan.mode, ScanMode.REPO.value)}.",
         "- Authenticated workflows: not tested.",
         "- Business logic checks: not tested.",
         "- Arbitrary public scanning: unsupported.",
         "",
+        "## Authorization And Data Handling",
+        "",
+        f"- Authorization context: {markdown_inline(report_authorization_context(data))}.",
+        "- Evidence is normalized, independently redacted, and bounded before reporting.",
+        "- Full HTTP response bodies, credentials, cookies, queries, and raw scanner output are excluded.",
+        "- Finding guidance is deterministic and generated locally from normalized findings.",
+        "",
         "## Responsible Use And Limitations",
         "",
-        "This report is for local defensive learning and explicitly authorized testing only.",
-        "It is not a professional penetration test, compliance audit, or guarantee that the target is secure.",
-        "Findings are based on bounded checks against allowlisted targets.",
+        "This report supports local defensive learning and explicitly authorized testing only. It is not a professional penetration test, compliance audit, or guarantee that the subject is secure. Findings are bounded signals for qualified human review and may include false positives or false negatives.",
         "",
-        "## Redaction Notice",
-        "",
-        "Evidence is normalized and redacted before persistence and reporting. Full HTTP response bodies are not stored by default.",
-        "",
-        "## Scanner Tool Runs",
+        "## Scanner Receipts",
         "",
         render_markdown_tool_runs(data.tool_runs),
         "",
-        "## AI Explanations",
+        "## Prioritized Finding Guidance",
         "",
-        render_markdown_ai_explanations(data.ai_explanations),
+        render_markdown_guidance(data.guidance),
         "",
-        "## Findings",
+        "## Detailed Findings",
         "",
     ]
 
@@ -501,16 +518,18 @@ def render_markdown_report(data: ReportData) -> str:
     for index, finding in enumerate(data.findings, start=1):
         lines.extend(
             [
-                f"### {index}. {markdown_inline(finding.title)}",
+                f"### {index}. [{markdown_inline(finding.severity.upper())}] {markdown_inline(finding.title)}",
                 "",
-                f"- Severity: {markdown_inline(finding.severity)}",
-                f"- Confidence: {markdown_inline(finding.confidence)}",
-                f"- Source tool: {markdown_inline(finding.source_tool)}",
-                f"- Scanner rule ID: {markdown_inline(finding.scanner_rule_id or 'not provided')}",
-                f"- CWE: {markdown_inline(finding.cwe or 'not mapped')}",
-                f"- OWASP category: {markdown_inline(finding.owasp_category or 'not mapped')}",
-                f"- Location: {markdown_inline(finding.affected_url or finding.affected_file or 'global')}",
-                f"- Redaction applied: {'yes' if finding.redaction_applied else 'no'}",
+                "| Attribute | Value |",
+                "| --- | --- |",
+                f"| Severity | {markdown_inline(finding.severity)} |",
+                f"| Confidence | {markdown_inline(finding.confidence)} |",
+                f"| Source tool | {markdown_inline(finding.source_tool)} |",
+                f"| Scanner rule ID | {markdown_inline(finding.scanner_rule_id or 'not provided')} |",
+                f"| CWE | {markdown_inline(finding.cwe or 'not mapped')} |",
+                f"| OWASP category | {markdown_inline(finding.owasp_category or 'not mapped')} |",
+                f"| Location | {markdown_inline(finding.affected_url or finding.affected_file or 'global')} |",
+                f"| Redaction applied | {'yes' if finding.redaction_applied else 'no'} |",
                 "",
                 "**Evidence**",
                 "",
@@ -533,26 +552,22 @@ def render_markdown_report(data: ReportData) -> str:
     return "\n".join(lines)
 
 
-def render_markdown_ai_explanations(explanations: AiExplanationResult) -> str:
+def render_markdown_guidance(guidance: AiExplanationResult) -> str:
     lines = [
-        f"- Provider used: {markdown_inline(explanations.provider)}",
-        f"- Fallback used: {'yes' if explanations.fallback_used else 'no'}",
-        f"- Executive summary: {markdown_inline(explanations.executive_summary)}",
-        f"- Risk score explanation: {markdown_inline(explanations.risk_score_explanation)}",
-        f"- Summary: {markdown_inline(explanations.summary)}",
-        "- Limitation: AI explanations are based only on normalized, redacted findings and do not add new vulnerability claims.",
+        f"- Method: {markdown_inline(guidance_tooling(guidance))}",
+        f"- Executive summary: {markdown_inline(guidance.executive_summary)}",
+        f"- Risk score context: {markdown_inline(guidance.risk_score_explanation)}",
+        f"- Finding summary: {markdown_inline(guidance.summary)}",
+        "- Limitation: Guidance uses only normalized, redacted findings and does not add vulnerability claims.",
     ]
-    if explanations.provider_error:
-        lines.append(f"- Provider error: {markdown_inline(explanations.provider_error)}")
-
-    if explanations.groups:
-        lines.extend(["", "### AI Finding Groups", ""])
-        for group in explanations.groups:
+    if guidance.groups:
+        lines.extend(["", "### Finding Groups", ""])
+        for group in guidance.groups:
             lines.append(f"- {markdown_inline(group.label)}: {group.count}")
 
-    if explanations.explanations:
-        lines.extend(["", "### AI Finding Notes", ""])
-        for explanation in explanations.explanations:
+    if guidance.explanations:
+        lines.extend(["", "### Prioritized Actions", ""])
+        for explanation in guidance.explanations:
             lines.extend(
                 [
                     f"#### Finding {markdown_inline(explanation.finding_id)}",
@@ -591,10 +606,11 @@ def render_markdown_tool_runs(tool_runs: tuple[ReportToolRun, ...]) -> str:
 
 
 def render_html_report(data: ReportData) -> str:
+    counts = severity_counts(data.findings)
     finding_sections = "\n".join(render_html_finding(index, finding) for index, finding in enumerate(data.findings, start=1))
     if not finding_sections:
-        finding_sections = "<p>No normalized findings were recorded for this scan.</p>"
-    ai_section = render_html_ai_explanations(data.ai_explanations)
+        finding_sections = '<p class="empty">No normalized findings were recorded for this scan.</p>'
+    guidance_section = render_html_guidance(data.guidance)
     tool_run_section = render_html_tool_runs(data.tool_runs)
 
     return f"""<!doctype html>
@@ -604,59 +620,112 @@ def render_html_report(data: ReportData) -> str:
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
   <title>ScopeHarbor Security Audit Report</title>
   <style>
-    body {{ color: #17202a; font-family: Arial, sans-serif; line-height: 1.5; margin: 32px; }}
-    h1, h2, h3 {{ line-height: 1.2; }}
-    code, pre {{ background: #f1f3f6; border-radius: 6px; }}
-    pre {{ overflow-x: auto; padding: 12px; }}
-    table {{ border-collapse: collapse; margin: 12px 0; width: 100%; }}
-    td, th {{ border: 1px solid #d8dde5; padding: 8px; text-align: left; vertical-align: top; }}
-    .finding {{ border-top: 1px solid #d8dde5; margin-top: 24px; padding-top: 16px; }}
+    :root {{ color-scheme: light; --ink: #172033; --muted: #526078; --line: #d7dde7; --soft: #f4f6f9; --navy: #13233f; --accent: #b94716; --critical: #8a1c1c; --high: #b83b19; --medium: #8a5a00; --low: #1e5f82; --info: #4d596b; }}
+    * {{ box-sizing: border-box; }}
+    html {{ background: #eef1f5; }}
+    body {{ background: #fff; color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 15px; line-height: 1.58; margin: 0 auto; max-width: 1120px; min-height: 100vh; padding: 48px 56px 64px; }}
+    h1, h2, h3, h4 {{ color: var(--navy); line-height: 1.22; margin-top: 0; overflow-wrap: anywhere; }}
+    h1 {{ font-size: 2rem; letter-spacing: -.025em; margin-bottom: 8px; }}
+    h2 {{ border-bottom: 1px solid var(--line); font-size: 1.25rem; margin: 40px 0 18px; padding-bottom: 9px; }}
+    h3 {{ font-size: 1.05rem; margin-bottom: 12px; }}
+    h4 {{ font-size: .92rem; margin: 20px 0 7px; }}
+    p {{ max-width: 76ch; }}
+    code, pre {{ background: var(--soft); border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }}
+    code {{ overflow-wrap: anywhere; padding: 2px 4px; }}
+    pre {{ border: 1px solid var(--line); margin: 8px 0 16px; overflow-x: auto; padding: 13px 14px; white-space: pre-wrap; word-break: break-word; }}
+    table {{ border-collapse: collapse; width: 100%; }}
+    td, th {{ border-bottom: 1px solid var(--line); overflow-wrap: anywhere; padding: 10px 12px; text-align: left; vertical-align: top; }}
+    th {{ color: #35435b; font-size: .78rem; font-weight: 700; letter-spacing: .02em; }}
+    .masthead {{ align-items: flex-start; border-bottom: 3px solid var(--accent); display: flex; gap: 20px; justify-content: space-between; padding-bottom: 22px; }}
+    .brand {{ align-items: center; display: flex; gap: 13px; }}
+    .brandMark {{ align-items: center; background: var(--navy); border-radius: 10px; color: #fff; display: inline-flex; font-size: .82rem; font-weight: 800; height: 42px; justify-content: center; letter-spacing: .03em; width: 42px; }}
+    .kicker {{ color: var(--accent); font-size: .76rem; font-weight: 750; margin: 0 0 4px; }}
+    .subtitle {{ color: var(--muted); margin: 0; }}
+    .status {{ background: #eef7f0; border-radius: 999px; color: #24633a; font-size: .78rem; font-weight: 700; padding: 6px 10px; }}
+    .overview {{ display: grid; gap: 28px; grid-template-columns: minmax(0, 1.15fr) minmax(260px, .85fr); margin-top: 30px; }}
+    .overview table th {{ width: 34%; }}
+    .executive {{ background: var(--soft); border-radius: 10px; padding: 20px 22px; }}
+    .executive h2 {{ border: 0; margin: 0 0 10px; padding: 0; }}
+    .severityGrid {{ display: grid; gap: 8px; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 18px 0; }}
+    .severityItem {{ background: var(--soft); border-radius: 8px; padding: 12px; }}
+    .severityItem strong {{ display: block; font-size: 1.35rem; }}
+    .severityItem span {{ color: var(--muted); font-size: .76rem; }}
+    .severity-critical strong {{ color: var(--critical); }} .severity-high strong {{ color: var(--high); }} .severity-medium strong {{ color: var(--medium); }} .severity-low strong {{ color: var(--low); }} .severity-info strong {{ color: var(--info); }}
+    .scopeGrid {{ display: grid; gap: 20px; grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+    .scopeBlock {{ border-top: 2px solid var(--navy); padding-top: 12px; }}
+    .scopeBlock ul {{ margin: 0; padding-left: 20px; }}
+    .tableWrap {{ overflow-x: auto; }}
+    .finding {{ break-inside: avoid; border-top: 2px solid var(--navy); margin-top: 30px; padding-top: 18px; }}
+    .findingHeader {{ align-items: flex-start; display: flex; gap: 12px; justify-content: space-between; }}
+    .severity {{ border-radius: 999px; color: #fff; flex: none; font-size: .7rem; font-weight: 800; padding: 5px 8px; text-transform: uppercase; }}
+    .severity-critical {{ background: var(--critical); }} .severity-high {{ background: var(--high); }} .severity-medium {{ background: var(--medium); }} .severity-low {{ background: var(--low); }} .severity-info {{ background: var(--info); }}
+    .findingMeta th {{ width: 18%; }}
+    .guidanceItem {{ background: var(--soft); border-radius: 8px; break-inside: avoid; margin-top: 12px; padding: 16px 18px; }}
+    .guidanceItem h3 {{ margin-bottom: 8px; }}
+    .guidanceItem dl {{ display: grid; gap: 7px 14px; grid-template-columns: 150px minmax(0, 1fr); margin: 0; }}
+    .guidanceItem dt {{ color: var(--muted); font-weight: 700; }} .guidanceItem dd {{ margin: 0; overflow-wrap: anywhere; }}
+    .notice {{ background: #fff7ed; border-radius: 8px; color: #623314; padding: 14px 16px; }}
+    .empty {{ color: var(--muted); font-style: italic; }}
+    footer {{ border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; margin-top: 48px; padding-top: 16px; }}
+    @media (max-width: 760px) {{ body {{ padding: 28px 20px 44px; }} .masthead, .findingHeader {{ display: block; }} .status {{ display: inline-block; margin-top: 14px; }} .overview, .scopeGrid {{ grid-template-columns: 1fr; }} .severityGrid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} .guidanceItem dl {{ grid-template-columns: 1fr; }} .guidanceItem dd {{ margin-bottom: 8px; }} }}
+    @media print {{ @page {{ margin: 14mm; }} html {{ background: #fff; }} body {{ max-width: none; padding: 0; }} .masthead {{ break-after: avoid; }} h2, h3 {{ break-after: avoid; }} .finding, .guidanceItem, table {{ break-inside: avoid; }} a {{ color: inherit; text-decoration: none; }} }}
   </style>
 </head>
 <body>
-  <h1>ScopeHarbor Security Audit Report</h1>
-  <h2>Summary</h2>
-  <table>
-    <tr><th>Generated at</th><td>{escape(format_timestamp(data.generated_at))}</td></tr>
-    <tr><th>Subject type</th><td>{escape(report_subject_type(data))}</td></tr>
-    <tr><th>Subject</th><td>{escape(data.target.name)}</td></tr>
-    <tr><th>Subject policy</th><td>{escape(report_subject_policy(data))}</td></tr>
-    <tr><th>Subject scope</th><td>{escape(report_subject_scope(data))}</td></tr>
-    <tr><th>Scan ID</th><td>{escape(data.scan.id)}</td></tr>
-    <tr><th>Scan profile</th><td>{escape(data.scan.scan_profile_id)}</td></tr>
-    <tr><th>Scan status</th><td>{escape(data.scan.status)}</td></tr>
-    <tr><th>Findings</th><td>{len(data.findings)}</td></tr>
-  </table>
+  <header class="masthead">
+    <div class="brand"><span class="brandMark" aria-hidden="true">SH</span><div><p class="kicker">ScopeHarbor</p><h1>Security Audit Report</h1><p class="subtitle">Authorized, local-first application security review</p></div></div>
+    <span class="status">{escape(data.scan.status.replace("_", " "))}</span>
+  </header>
 
-  <h2>Scope And Tooling</h2>
-  <ul>
-    <li>Custom passive scanner: {escape(tooling_used_unless_repo(data.scan.mode))}.</li>
-    <li>ZAP passive analysis: {escape(zap_passive_tooling(data.scan.mode))}.</li>
-    <li>ZAP active scan: {escape(tooling_used(data.scan.mode, ScanMode.ACTIVE_DEMO.value))}.</li>
-    <li>Modern web crawl: {escape(tooling_used(data.scan.mode, ScanMode.MODERN_WEB_CRAWL.value))}.</li>
-    <li>AI explanations: {escape(ai_tooling(data.ai_explanations))}.</li>
-    <li>Repo scanning: {escape(tooling_used(data.scan.mode, ScanMode.REPO.value))}.</li>
-    <li>Authenticated workflows: not tested.</li>
-    <li>Business logic checks: not tested.</li>
-    <li>Arbitrary public scanning: unsupported.</li>
-  </ul>
+  <section class="overview" aria-label="Audit overview">
+    <div class="tableWrap"><table>
+      <tr><th>Audit completed at</th><td>{escape(format_timestamp(data.completed_at))}</td></tr>
+      <tr><th>Subject</th><td>{escape(data.target.name)}</td></tr>
+      <tr><th>Subject type</th><td>{escape(report_subject_type(data))}</td></tr>
+      <tr><th>Authorized scope</th><td>{escape(report_subject_scope(data))}</td></tr>
+      <tr><th>Subject policy</th><td>{escape(report_subject_policy(data))}</td></tr>
+      <tr><th>Scan profile</th><td>{escape(data.scan.scan_profile_id)}</td></tr>
+      <tr><th>Scan ID</th><td><code>{escape(data.scan.id)}</code></td></tr>
+    </table></div>
+    <div class="executive"><h2>Executive summary</h2><p>{escape(data.guidance.executive_summary)}</p><p><strong>Severity distribution:</strong> {escape(severity_summary(data.findings))}</p></div>
+  </section>
 
-  <h2>Responsible Use And Limitations</h2>
-  <p>This report is for local defensive learning and explicitly authorized testing only.</p>
-  <p>It is not a professional penetration test, compliance audit, or guarantee that the target is secure.</p>
-  <p>Findings are based on bounded checks against allowlisted targets.</p>
+  <h2>Severity distribution</h2>
+  <div class="severityGrid" aria-label="Finding counts by severity">
+    <div class="severityItem severity-critical"><strong>{counts["critical"]}</strong><span>Critical</span></div>
+    <div class="severityItem severity-high"><strong>{counts["high"]}</strong><span>High</span></div>
+    <div class="severityItem severity-medium"><strong>{counts["medium"]}</strong><span>Medium</span></div>
+    <div class="severityItem severity-low"><strong>{counts["low"]}</strong><span>Low</span></div>
+    <div class="severityItem severity-info"><strong>{counts["info"]}</strong><span>Informational</span></div>
+  </div>
 
-  <h2>Redaction Notice</h2>
-  <p>Evidence is normalized and redacted before persistence and reporting. Full HTTP response bodies are not stored by default.</p>
+  <h2>Scope, authorization, and handling</h2>
+  <div class="scopeGrid">
+    <section class="scopeBlock"><h3>Coverage</h3><ul>
+      <li>Custom passive scanner: {escape(tooling_used_unless_repo(data.scan.mode))}.</li>
+      <li>ZAP passive analysis: {escape(zap_passive_tooling(data.scan.mode))}.</li>
+      <li>ZAP active scan: {escape(tooling_used(data.scan.mode, ScanMode.ACTIVE_DEMO.value))}.</li>
+      <li>Modern web crawl: {escape(tooling_used(data.scan.mode, ScanMode.MODERN_WEB_CRAWL.value))}.</li>
+      <li>Repository scanning: {escape(tooling_used(data.scan.mode, ScanMode.REPO.value))}.</li>
+    </ul></section>
+    <section class="scopeBlock"><h3>Authorization and data handling</h3><ul>
+      <li>{escape(report_authorization_context(data))}.</li>
+      <li>Evidence is normalized, independently redacted, and bounded.</li>
+      <li>Full bodies, credentials, cookies, queries, and raw tool output are excluded.</li>
+      <li>Finding guidance is deterministic and generated locally.</li>
+    </ul></section>
+  </div>
+  <p class="notice"><strong>Limitations:</strong> Authenticated workflows and business-logic checks were not tested. Arbitrary public scanning is unsupported. This report is not a penetration-test certification or guarantee of security.</p>
 
-  <h2>AI Explanations</h2>
-  {ai_section}
-
-  <h2>Scanner Tool Runs</h2>
+  <h2>Scanner receipts</h2>
   {tool_run_section}
 
-  <h2>Findings</h2>
+  <h2>Prioritized finding guidance</h2>
+  {guidance_section}
+
+  <h2>Detailed findings</h2>
   {finding_sections}
+  <footer>ScopeHarbor 1.1.0 · Defensive use only · Findings require qualified human review.</footer>
 </body>
 </html>
 """
@@ -684,49 +753,36 @@ def render_html_tool_runs(tool_runs: tuple[ReportToolRun, ...]) -> str:
     )
 
 
-def render_html_ai_explanations(explanations: AiExplanationResult) -> str:
-    group_items = "".join(
-        f"<li>{escape(group.label)}: {group.count}</li>"
-        for group in explanations.groups
-    )
-    groups = f"<h3>AI Finding Groups</h3><ul>{group_items}</ul>" if group_items else ""
+def render_html_guidance(guidance: AiExplanationResult) -> str:
+    group_items = "".join(f"<li>{escape(group.label)}: {group.count}</li>" for group in guidance.groups)
+    groups = f"<h3>Finding groups</h3><ul>{group_items}</ul>" if group_items else ""
     finding_items = "".join(
-        f"""<section class="finding">
-  <h3>Finding {escape(explanation.finding_id)}</h3>
-  <table>
-    <tr><th>Priority</th><td>{explanation.priority}</td></tr>
-    <tr><th>Summary</th><td>{escape(explanation.summary)}</td></tr>
-    <tr><th>Why it matters</th><td>{escape(explanation.why_it_matters)}</td></tr>
-    <tr><th>Recommended action</th><td>{escape(explanation.recommended_action)}</td></tr>
-    <tr><th>OWASP mapping</th><td>{escape(explanation.owasp_mapping)}</td></tr>
-    <tr><th>Limitations</th><td>{escape(explanation.limitations)}</td></tr>
-  </table>
+        f"""<section class="guidanceItem">
+  <h3>Priority {explanation.priority}: {escape(explanation.summary)}</h3>
+  <dl>
+    <dt>Why it matters</dt><dd>{escape(explanation.why_it_matters)}</dd>
+    <dt>Recommended action</dt><dd>{escape(explanation.recommended_action)}</dd>
+    <dt>OWASP mapping</dt><dd>{escape(explanation.owasp_mapping)}</dd>
+    <dt>Limitations</dt><dd>{escape(explanation.limitations)}</dd>
+  </dl>
 </section>"""
-        for explanation in explanations.explanations
+        for explanation in guidance.explanations
     )
-    finding_notes = f"<h3>AI Finding Notes</h3>{finding_items}" if finding_items else ""
-    provider_error = ""
-    if explanations.provider_error:
-        provider_error = f"<p><strong>Provider error:</strong> {escape(explanations.provider_error)}</p>"
+    finding_notes = f"<h3>Prioritized actions</h3>{finding_items}" if finding_items else ""
     return f"""
-  <table>
-    <tr><th>Provider used</th><td>{escape(explanations.provider)}</td></tr>
-    <tr><th>Fallback used</th><td>{"yes" if explanations.fallback_used else "no"}</td></tr>
-    <tr><th>Executive summary</th><td>{escape(explanations.executive_summary)}</td></tr>
-    <tr><th>Risk score explanation</th><td>{escape(explanations.risk_score_explanation)}</td></tr>
-    <tr><th>Summary</th><td>{escape(explanations.summary)}</td></tr>
-  </table>
-  <p>AI explanations are based only on normalized, redacted findings and do not add new vulnerability claims.</p>
-  {provider_error}
+  <p>{escape(guidance.summary)}</p>
+  <p>{escape(guidance.risk_score_explanation)}</p>
+  <p><strong>Method:</strong> {escape(guidance_tooling(guidance))}. Guidance uses only normalized, redacted findings and does not add vulnerability claims.</p>
   {groups}
   {finding_notes}
 """
 
 
 def render_html_finding(index: int, finding: ReportFinding) -> str:
-    return f"""<section class="finding">
-  <h3>{index}. {escape(finding.title)}</h3>
-  <table>
+    severity = finding.severity.lower() if finding.severity.lower() in SEVERITY_ORDER else "info"
+    return f"""<article class="finding">
+  <div class="findingHeader"><h3>{index}. {escape(finding.title)}</h3><span class="severity severity-{severity}">{escape(finding.severity)}</span></div>
+  <div class="tableWrap"><table class="findingMeta">
     <tr><th>Severity</th><td>{escape(finding.severity)}</td></tr>
     <tr><th>Confidence</th><td>{escape(finding.confidence)}</td></tr>
     <tr><th>Source tool</th><td>{escape(finding.source_tool)}</td></tr>
@@ -735,7 +791,7 @@ def render_html_finding(index: int, finding: ReportFinding) -> str:
     <tr><th>OWASP category</th><td>{escape(finding.owasp_category or "not mapped")}</td></tr>
     <tr><th>Location</th><td>{escape(finding.affected_url or finding.affected_file or "global")}</td></tr>
     <tr><th>Redaction applied</th><td>{"yes" if finding.redaction_applied else "no"}</td></tr>
-  </table>
+  </table></div>
   <h4>Evidence</h4>
   <pre>{escape(finding.evidence or "No evidence snippet recorded.")}</pre>
   <h4>Reproduction Steps</h4>
@@ -744,7 +800,7 @@ def render_html_finding(index: int, finding: ReportFinding) -> str:
   <p>{escape(finding.remediation or "No remediation guidance recorded.")}</p>
   <h4>False Positive Notes</h4>
   <p>{escape(finding.false_positive_notes or "No false-positive notes recorded.")}</p>
-</section>"""
+</article>"""
 
 
 def format_scan_mode(mode: str) -> str:
@@ -769,10 +825,10 @@ def zap_passive_tooling(scan_mode: str) -> str:
     return "not used" if scan_mode == ScanMode.REPO.value else "used for allowlisted URLs"
 
 
-def ai_tooling(explanations: AiExplanationResult) -> str:
-    if explanations.provider == "not_generated":
-        return "not generated for repo scans"
-    return f"generated with {explanations.provider} provider"
+def guidance_tooling(guidance: AiExplanationResult) -> str:
+    if guidance.provider == "not_generated":
+        return "not generated for repository scans"
+    return "generated locally with deterministic template logic"
 
 
 def format_timestamp(value: datetime) -> str:

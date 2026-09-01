@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import AiRequestLog, Finding, ReportArtifact, Scan, ScannerToolRun, Target, Workspace
+from app.models import AiExplanationCache, AiRequestLog, Finding, ReportArtifact, Scan, ScannerToolRun, Target, Workspace
 from app.reports.service import (
     ReportGenerationError,
     fenced_block,
@@ -80,6 +80,7 @@ class ReportsTests(unittest.TestCase):
     def tearDown(self) -> None:
         with SessionLocal() as db:
             db.execute(delete(AiRequestLog).where(AiRequestLog.workspace_id == DEV_WORKSPACE_ID))
+            db.execute(delete(AiExplanationCache).where(AiExplanationCache.workspace_id == DEV_WORKSPACE_ID))
             db.execute(delete(ReportArtifact).where(ReportArtifact.scan_id == self.scan_id))
             db.execute(delete(Finding).where(Finding.scan_id == self.scan_id))
             db.execute(delete(Scan).where(Scan.id == self.scan_id))
@@ -94,7 +95,6 @@ class ReportsTests(unittest.TestCase):
                     scan_id=self.scan_id,
                     workspace_id=DEV_WORKSPACE_ID,
                     artifact_root=temp_dir,
-                    ai_provider="template",
                 )
 
                 self.assertEqual({artifact.report_type for artifact in artifacts}, {"markdown", "html"})
@@ -103,23 +103,30 @@ class ReportsTests(unittest.TestCase):
                 markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
                 html_content = read_report_artifact_file(html, artifact_root=temp_dir)
 
-            self.assertIn("Subject policy: juice-shop", markdown_content)
+            self.assertIn("| Subject policy | juice-shop |", markdown_content)
             self.assertNotIn("+00:00Z", markdown_content)
             self.assertIn("ZAP passive analysis: used for allowlisted URLs.", markdown_content)
             self.assertIn("ZAP active scan: not used.", markdown_content)
-            self.assertIn("AI explanations: generated with template provider.", markdown_content)
-            self.assertIn("## AI Explanations", markdown_content)
-            self.assertIn("Provider used: template", markdown_content)
+            self.assertIn("Finding guidance: generated locally with deterministic template logic.", markdown_content)
+            self.assertIn("## Prioritized Finding Guidance", markdown_content)
+            self.assertIn("## Severity Distribution", markdown_content)
+            self.assertIn("| 0 | 1 | 0 | 0 | 0 | 1 |", markdown_content)
             self.assertIn(f"Finding {self.finding_id}", markdown_content)
-            self.assertIn("Redaction applied: yes", markdown_content)
+            self.assertIn("| Redaction applied | yes |", markdown_content)
+            self.assertIn("Audit completed at", markdown_content)
+            self.assertNotIn("Generated at", markdown_content)
             self.assertIn("&lt;script&gt;", markdown_content)
             self.assertNotIn("<script>alert('xss')</script>", markdown_content)
             self.assertNotIn("+00:00Z", html_content)
-            self.assertIn("<h2>AI Explanations</h2>", html_content)
+            self.assertIn("<h2>Prioritized finding guidance</h2>", html_content)
+            self.assertIn("<h2>Severity distribution</h2>", html_content)
+            self.assertIn("Audit completed at", html_content)
             self.assertIn("ZAP passive analysis: used for allowlisted URLs.", html_content)
-            self.assertIn("generated with template provider", html_content)
+            self.assertIn("generated locally with deterministic template logic", html_content)
             self.assertIn("&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;", html_content)
             self.assertNotIn("<script>alert('xss')</script>", html_content)
+            self.assertNotIn("<script", html_content.lower())
+            self.assertNotIn("http://", html_content.split("<style>", 1)[1].split("</style>", 1)[0])
 
     def test_markdown_dynamic_values_cannot_inject_structure(self) -> None:
         rendered = markdown_inline("safe\n## injected *emphasis* <script>")
@@ -161,12 +168,11 @@ class ReportsTests(unittest.TestCase):
                 scan_id=self.scan_id,
                 workspace_id=DEV_WORKSPACE_ID,
                 artifact_root=temp_dir,
-                ai_provider="template",
             )
             markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
             content = read_report_artifact_file(markdown, artifact_root=temp_dir)
 
-        self.assertIn("## Scanner Tool Runs", content)
+        self.assertIn("## Scanner Receipts", content)
         self.assertIn("### gitleaks", content)
         self.assertIn("Version: 8.30.1", content)
         self.assertIn("Findings: 2", content)
@@ -193,22 +199,33 @@ class ReportsTests(unittest.TestCase):
                 self.assertEqual(download_response.status_code, 200)
                 self.assertIn("attachment;", download_response.headers["content-disposition"])
 
-    def test_report_generation_reuses_ai_cache_for_unchanged_inputs(self) -> None:
+                html = next(report for report in generated if report["report_type"] == "html")
+                html_response = self.client.get(html["view_url"], headers=DEV_AUTH_HEADERS)
+                self.assertEqual(
+                    html_response.headers["content-security-policy"],
+                    "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; "
+                    "form-action 'none'; frame-ancestors 'none'",
+                )
+                self.assertNotIn("<script", html_response.text.lower())
+                self.assertNotIn("<link", html_response.text.lower())
+                self.assertNotIn(" src=", html_response.text.lower())
+
+    def test_report_generation_never_calls_or_persists_external_ai(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch("app.api.reports.settings.artifact_root", temp_dir):
+            with (
+                patch("app.api.reports.settings.artifact_root", temp_dir),
+                patch("app.api.reports.settings.ai_provider", "openai"),
+                patch("app.ai.service.OpenAiProvider.explain") as external_provider,
+            ):
                 first = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
                 second = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(first.status_code, 201)
         self.assertEqual(second.status_code, 201)
+        external_provider.assert_not_called()
         with SessionLocal() as db:
-            logs = (
-                db.query(AiRequestLog)
-                .filter(AiRequestLog.action == "report_ai_generation", AiRequestLog.workspace_id == DEV_WORKSPACE_ID)
-                .order_by(AiRequestLog.created_at.asc(), AiRequestLog.id.asc())
-                .all()
-            )
-        self.assertEqual([log.cache_hit for log in logs], [False, True])
+            self.assertEqual(db.query(AiRequestLog).filter(AiRequestLog.workspace_id == DEV_WORKSPACE_ID).count(), 0)
+            self.assertEqual(db.query(AiExplanationCache).filter(AiExplanationCache.scan_id == self.scan_id).count(), 0)
 
     def test_reports_require_completed_scan(self) -> None:
         with SessionLocal() as db:
@@ -224,13 +241,12 @@ class ReportsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("completed scans", response.json()["detail"])
 
-    def test_report_ai_rate_limit_returns_429(self) -> None:
+    def test_report_generation_is_independent_of_ai_rate_limit(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("app.api.reports.settings.artifact_root", temp_dir), patch("app.ai.service.settings.ai_rate_limit_max_requests", 0):
                 response = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
-        self.assertEqual(response.status_code, 429)
-        self.assertIn("rate limit", response.json()["detail"].lower())
+        self.assertEqual(response.status_code, 201)
 
     def test_report_generation_rejects_scan_target_workspace_mismatch(self) -> None:
         mismatch_workspace_id = f"report-mismatch-{uuid4()}"
@@ -252,7 +268,6 @@ class ReportsTests(unittest.TestCase):
                             scan_id=self.scan_id,
                             workspace_id=DEV_WORKSPACE_ID,
                             artifact_root=temp_dir,
-                            ai_provider="template",
                         )
             finally:
                 with SessionLocal() as db:
@@ -291,14 +306,13 @@ class ReportsTests(unittest.TestCase):
                     scan_id=self.scan_id,
                     workspace_id=DEV_WORKSPACE_ID,
                     artifact_root=temp_dir,
-                    ai_provider="template",
                 )
                 markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
                 markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
 
-        self.assertIn("Scan profile: active-demo", markdown_content)
+        self.assertIn("| Scan profile | active-demo |", markdown_content)
         self.assertIn("ZAP active scan: used.", markdown_content)
-        self.assertIn("Source tool: zap-active", markdown_content)
+        self.assertIn("| Source tool | zap-active |", markdown_content)
 
     def test_reports_reject_ajax_short_scan(self) -> None:
         with SessionLocal() as db:
@@ -346,24 +360,22 @@ class ReportsTests(unittest.TestCase):
             db.add(finding)
             db.commit()
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with patch("app.reports.service.generate_ai_explanations") as ai_provider:
-                with SessionLocal() as db:
-                    artifacts = generate_report_artifacts(
-                        db,
-                        scan_id=self.scan_id,
-                        workspace_id=DEV_WORKSPACE_ID,
-                        artifact_root=temp_dir,
-                        ai_provider="template",
-                    )
-                    markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
-                    markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
+        with tempfile.TemporaryDirectory() as temp_dir, patch("app.ai.service.OpenAiProvider.explain") as ai_provider:
+            with SessionLocal() as db:
+                artifacts = generate_report_artifacts(
+                    db,
+                    scan_id=self.scan_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    artifact_root=temp_dir,
+                )
+                markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
+                markdown_content = read_report_artifact_file(markdown, artifact_root=temp_dir)
 
         ai_provider.assert_not_called()
-        self.assertIn("Scan profile: repository", markdown_content)
+        self.assertIn("| Scan profile | repository |", markdown_content)
         self.assertIn("Repo scanning: used.", markdown_content)
-        self.assertIn("AI explanations: not generated for repo scans.", markdown_content)
-        self.assertIn("Source tool: gitleaks", markdown_content)
+        self.assertIn("Finding guidance: not generated for repository scans.", markdown_content)
+        self.assertIn("| Source tool | gitleaks |", markdown_content)
 
     def test_reports_omit_unredacted_finding_text(self) -> None:
         unsafe_secret = "raw-secret-token"
@@ -386,7 +398,6 @@ class ReportsTests(unittest.TestCase):
                     scan_id=self.scan_id,
                     workspace_id=DEV_WORKSPACE_ID,
                     artifact_root=temp_dir,
-                    ai_provider="template",
                 )
                 markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
                 html = next(artifact for artifact in artifacts if artifact.report_type == "html")
@@ -423,7 +434,6 @@ class ReportsTests(unittest.TestCase):
                     scan_id=self.scan_id,
                     workspace_id=DEV_WORKSPACE_ID,
                     artifact_root=temp_dir,
-                    ai_provider="template",
                 )
                 markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
                 artifact_id = markdown.id
@@ -450,7 +460,6 @@ class ReportsTests(unittest.TestCase):
                     scan_id=self.scan_id,
                     workspace_id=DEV_WORKSPACE_ID,
                     artifact_root=temp_dir,
-                    ai_provider="template",
                 )
                 markdown = next(artifact for artifact in artifacts if artifact.report_type == "markdown")
                 artifact_id = markdown.id
@@ -496,7 +505,6 @@ class ReportsTests(unittest.TestCase):
                     scan_id=self.scan_id,
                     workspace_id=DEV_WORKSPACE_ID,
                     artifact_root=temp_dir,
-                    ai_provider="template",
                 )
 
             self.assertFalse((Path(outside_dir) / "report.md").exists())
@@ -532,7 +540,6 @@ class ReportsTests(unittest.TestCase):
                     scan_id=self.scan_id,
                     workspace_id=DEV_WORKSPACE_ID,
                     artifact_root=temp_dir,
-                    ai_provider="template",
                 )
 
             self.assertEqual(outside_report.read_text(encoding="utf-8"), "outside")
@@ -586,7 +593,6 @@ class ReportsTests(unittest.TestCase):
                     scan_id=self.scan_id,
                     workspace_id=DEV_WORKSPACE_ID,
                     artifact_root=temp_dir,
-                    ai_provider="template",
                 )
 
             self.assertFalse((sibling_scan_dir / "reports" / "report.md").exists())
@@ -618,7 +624,6 @@ class ReportsTests(unittest.TestCase):
                     scan_id=self.scan_id,
                     workspace_id=DEV_WORKSPACE_ID,
                     artifact_root=temp_dir,
-                    ai_provider="template",
                 )
                 first_markdown = next(artifact for artifact in first_artifacts if artifact.report_type == "markdown")
                 first_content = read_report_artifact_file(first_markdown, artifact_root=temp_dir)
@@ -628,7 +633,6 @@ class ReportsTests(unittest.TestCase):
                     scan_id=self.scan_id,
                     workspace_id=DEV_WORKSPACE_ID,
                     artifact_root=temp_dir,
-                    ai_provider="template",
                 )
                 second_markdown = next(artifact for artifact in second_artifacts if artifact.report_type == "markdown")
                 second_content = read_report_artifact_file(second_markdown, artifact_root=temp_dir)
@@ -636,7 +640,7 @@ class ReportsTests(unittest.TestCase):
 
             self.assertEqual(len(artifacts), 2)
             self.assertEqual(first_content, second_content)
-            self.assertIn("Generated at: 2026-06-17T18:00:00Z", first_content)
+            self.assertIn("Audit completed at | 2026-06-17T18:00:00Z", first_content)
 
 
 if __name__ == "__main__":

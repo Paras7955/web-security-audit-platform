@@ -38,7 +38,7 @@ def get_ai_explanations(
         )
     except AiExplanationError as exc:
         raise ai_error(exc) from exc
-    return to_ai_read(result)
+    return to_ai_read(result, configured_provider=settings.ai_provider)
 
 
 @router.post("/scans/{scan_id}/ai-explanations", response_model=AiExplanationRead)
@@ -71,13 +71,14 @@ def generate_scan_ai_explanations(
         metadata={"provider": result.provider, "cache_hit": result.cache_hit, "fallback_used": result.fallback_used},
     )
     db.commit()
-    return to_ai_read(result)
+    return to_ai_read(result, configured_provider=settings.ai_provider)
 
 
-def to_ai_read(result: AiExplanationResult) -> AiExplanationRead:
+def to_ai_read(result: AiExplanationResult, *, configured_provider: str) -> AiExplanationRead:
     return AiExplanationRead(
         scan_id=result.scan_id,
         provider=result.provider,
+        configured_provider="openai" if configured_provider.strip().lower() == "openai" else "template",
         fallback_used=result.fallback_used,
         provider_error_code=result.provider_error,
         summary=result.summary,
@@ -87,8 +88,7 @@ def to_ai_read(result: AiExplanationResult) -> AiExplanationRead:
         input_fingerprint=result.input_fingerprint,
         cache_hit=result.cache_hit,
         groups=[
-            AiExplanationGroupRead(label=group.label, count=group.count, finding_ids=list(group.finding_ids))
-            for group in result.groups
+            AiExplanationGroupRead(label=group.label, count=group.count, finding_ids=list(group.finding_ids)) for group in result.groups
         ],
         explanations=[
             FindingExplanationRead(

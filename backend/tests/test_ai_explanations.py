@@ -120,6 +120,7 @@ class AiExplanationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["provider"], "template")
+        self.assertEqual(body["configured_provider"], "template")
         self.assertEqual(body["scan_id"], self.scan_id)
         self.assertEqual(body["explanations"][0]["finding_id"], self.finding_id)
         self.assertFalse(body["cache_hit"])
@@ -136,6 +137,7 @@ class AiExplanationTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["provider"], "template")
+        self.assertEqual(response.json()["configured_provider"], "openai")
         explain.assert_not_called()
         with SessionLocal() as db:
             self.assertEqual(db.query(AiExplanationCache).filter(AiExplanationCache.scan_id == self.scan_id).count(), 0)

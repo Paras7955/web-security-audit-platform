@@ -136,9 +136,7 @@ class CanaryBoundaryTests(unittest.TestCase):
                     db,
                     scan_id=self.scan_id,
                     workspace_id=DEV_WORKSPACE_ID,
-                    user_id=DEV_USER_ID,
                     artifact_root=temp_dir,
-                    ai_provider="template",
                 )
                 persisted = db.get(Finding, finding_id)
                 caches = db.query(AiExplanationCache).filter(AiExplanationCache.scan_id == self.scan_id).all()
