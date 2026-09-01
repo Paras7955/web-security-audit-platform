@@ -106,6 +106,7 @@ class RelayFetchResponse(BaseModel):
     body_base64: str
     redirect_chain: list[str]
     cookie_security: list[RelayCookieSecurity]
+    connection_ip: str = Field(min_length=2, max_length=45)
 
 
 app = FastAPI(
@@ -172,6 +173,12 @@ def fetch(payload: RelayFetchRequest) -> RelayFetchResponse:
             detail="Relay request failed.",
         ) from None
 
+    if response.connection_ip is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Relay request failed.",
+        )
+
     return RelayFetchResponse(
         url=response.url.normalized_url,
         status_code=response.status_code,
@@ -189,6 +196,7 @@ def fetch(payload: RelayFetchRequest) -> RelayFetchResponse:
             )
             for cookie in response.cookie_security[:MAX_RELAY_COOKIE_PROJECTIONS]
         ],
+        connection_ip=response.connection_ip,
     )
 
 

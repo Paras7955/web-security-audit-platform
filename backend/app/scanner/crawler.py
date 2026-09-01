@@ -22,6 +22,7 @@ class CrawledPage:
     inputs: tuple[str, ...]
     redirect_chain: tuple[str, ...]
     cookie_security: tuple[CookieSecurityAttributes, ...] = ()
+    connection_ip: str | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,7 @@ def crawl_site(
             inputs=tuple(metadata.inputs),
             redirect_chain=response.redirect_chain,
             cookie_security=response.cookie_security,
+            connection_ip=response.connection_ip,
         )
         pages.append(page)
 

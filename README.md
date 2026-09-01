@@ -161,7 +161,8 @@ origin, base path, connection identity, TLS trust, redirect cap, eligible
 engines, and disposable-demo status. The relay independently revalidates each
 request and redirect before dialing the validated destination IP while
 preserving the configured HTTP `Host` and TLS SNI. There is no insecure TLS
-mode.
+mode. Eligible ZAP work reuses only that relay-validated IP projection, so the
+worker never needs target-network DNS or a direct target route.
 
 Repository authority comes from a workspace-scoped `RepositoryAsset`. Launch
 persists an immutable relative-path and authorization snapshot; the worker

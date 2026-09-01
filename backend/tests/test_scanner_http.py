@@ -307,6 +307,7 @@ class ScannerHttpTests(unittest.TestCase):
                         source_bytes_limit=source_limit,
                     ),
                     "redirect_chain": [],
+                    "connection_ip": "172.20.0.10",
                     "cookie_security": [
                         {"http_only": True, "secure": True, "same_site": "Lax"}
                     ],
@@ -327,8 +328,45 @@ class ScannerHttpTests(unittest.TestCase):
             httpx.Client = original_client
 
         self.assertEqual(response.body, body)
+        self.assertEqual(response.connection_ip, "172.20.0.10")
         self.assertEqual(len(response.cookie_security), 1)
         self.assertEqual(response.cookie_security[0].same_site, "Lax")
+
+    def test_relay_response_rejects_an_unvalidated_destination_ip(self) -> None:
+        client = GuardedHttpClient(
+            allowlist_target=ALLOWLIST_TARGET,
+            timeout_seconds=1,
+            relay_base_url="http://relay:8001",
+            relay_secret=RELAY_SECRET,
+        )
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "url": "http://juice-shop:3000/",
+                    "status_code": 200,
+                    "headers": {},
+                    "body_base64": encode_relay_body("ok", source_bytes_limit=65_536),
+                    "redirect_chain": [],
+                    "cookie_security": [],
+                    "connection_ip": "93.184.216.34",
+                },
+            )
+
+        original_client = httpx.Client
+
+        class MockClient(httpx.Client):
+            def __init__(self, *args, **kwargs):
+                kwargs["transport"] = httpx.MockTransport(handler)
+                super().__init__(*args, **kwargs)
+
+        try:
+            httpx.Client = MockClient
+            with self.assertRaisesRegex(ScannerHttpError, "relay response was invalid"):
+                client.get("http://juice-shop:3000/")
+        finally:
+            httpx.Client = original_client
 
     def test_multiple_set_cookie_headers_are_reduced_to_security_attributes(self) -> None:
         client = GuardedHttpClient(

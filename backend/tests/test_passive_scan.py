@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from app.scanner.http_client import ScannerHttpResponse
-from app.scanner.passive import run_passive_scan
+from app.scanner.passive import run_passive_scan, validated_page_resolver
 from app.security.allowlist import AllowlistTarget
 from app.security.target_url import normalize_target_url
 
@@ -38,6 +38,7 @@ class FakeClient:
             headers=headers,
             body=body,
             redirect_chain=(),
+            connection_ip="172.20.0.10",
         )
 
 
@@ -56,6 +57,11 @@ class PassiveScanTests(unittest.TestCase):
             self.assertTrue(any(finding.scanner_rule_id == "form:password-get" for finding in result.findings))
             self.assertTrue(any(finding.scanner_rule_id == "probe:/.env" for finding in result.findings))
             self.assertFalse((Path(temp_dir) / "scans" / "scan-1" / "passive_scan_summary.txt").exists())
+
+            resolver = validated_page_resolver(result.pages, ALLOWLIST_TARGET)
+            self.assertEqual(resolver("juice-shop", 3000), ["172.20.0.10"])
+            self.assertEqual(resolver("other-service", 3000), [])
+            self.assertEqual(resolver("juice-shop", 8080), [])
 
 
 if __name__ == "__main__":

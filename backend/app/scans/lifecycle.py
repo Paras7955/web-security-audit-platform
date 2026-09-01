@@ -18,7 +18,7 @@ from app.repo_scanner.adapters import ToolReceipt, run_repository_scan
 from app.repo_scanner.paths import resolve_stored_repo_path
 from app.repo_scanner.staging import StagedRepository, StagingLimits
 from app.risk import persist_scan_risk_score
-from app.scanner.passive import run_passive_scan
+from app.scanner.passive import run_passive_scan, validated_page_resolver
 from app.scans.artifacts import ensure_scan_artifact_dir
 from app.security.allowlist import AllowlistTarget, ScanAllowlist, ScanEngine
 from app.zap.active import run_zap_active_demo_scan
@@ -224,6 +224,7 @@ def run_passive_scan_job(
             auth_headers=auth_headers,
             execution_checkpoint=checkpoint,
         )
+        zap_resolver = validated_page_resolver(result.pages, allowlist_target)
         tool_receipts.append(
             completed_tool_receipt(
                 tool_name="scopeharbor-passive",
@@ -272,6 +273,7 @@ def run_passive_scan_job(
                     allowlist_target=allowlist_target,
                     zap_base_url=zap_base_url,
                     observed_urls=tuple(page.url for page in result.pages),
+                    resolver=zap_resolver,
                     checkpoint=checkpoint,
                 )
             zap_findings = zap_result.findings
@@ -305,6 +307,7 @@ def run_passive_scan_job(
                         target_url=target_url,
                         allowlist_target=allowlist_target,
                         zap_base_url=zap_base_url,
+                        resolver=zap_resolver,
                         checkpoint=checkpoint,
                     )
                 active_findings = active_result.findings
@@ -338,6 +341,7 @@ def run_passive_scan_job(
                         target_url=target_url,
                         allowlist_target=allowlist_target,
                         zap_base_url=zap_base_url,
+                        resolver=zap_resolver,
                         checkpoint=checkpoint,
                     )
                 client_spider_findings = client_spider_result.findings

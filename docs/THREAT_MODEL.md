@@ -36,12 +36,12 @@ compromised operator account is outside the application boundary.
 | Threat | Primary controls | Residual concern |
 | --- | --- | --- |
 | Unauthorized/public scanning | exact static v2 policy, connection class/IP pin, authorization/acknowledgements, no worker route | trusted operator can deliberately edit config |
-| SSRF/DNS rebinding | prohibited address classes, all-answer validation, signed policy fingerprint, relay re-resolution/pinning, every-hop validation | Docker/host routing remains trusted |
+| SSRF/DNS rebinding | prohibited address classes, all-answer validation, signed policy fingerprint, relay re-resolution/pinning, every-hop validation, relay-validated IP projection for ZAP | Docker/host routing remains trusted |
 | Path/redirect escape | canonical path rules, segment-boundary prefix, ambiguous encoding rejection, same-origin/base-path redirect policy | target parsing defects |
 | TLS interception | verified SNI/hostname, system or confined CA trust, no insecure mode | operator-controlled CA can expand trust |
 | Capability theft/replay | HMAC, short expiry, request binding, in-memory single-use nonce cache | relay restart forgets consumed nonces; expiry remains limiting |
 | Relay privilege creep | non-root/read-only/capability-free, minimal env/mounts, no data/AI/ZAP/repo access | container-runtime compromise |
-| ZAP scope/key escape | internal daemon, exact context, API-key header, `trust_env=False`, no redirects, demo-only policy, serialized cleanup | third-party scanner defect |
+| ZAP scope/key escape | internal daemon, relay-validated destination IP, exact context, API-key header, `trust_env=False`, no redirects, demo-only policy, serialized cleanup | third-party scanner defect |
 | Cross-workspace IDOR | principal plus workspace predicates in API/services/worker | future routes must preserve pattern |
 | Credential disclosure | Fernet, write-only schemas, HTTPS submission rule, passive-relay-only injection, multi-boundary redaction | local host/env access can reveal secrets |
 | Credential race | profile→target→scan row locks, post-lock revalidation, immutable scan references | direct database administration |

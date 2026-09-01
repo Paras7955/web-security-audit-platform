@@ -25,6 +25,9 @@ versioning for the public source contract.
   or inflate public dashboard counts.
 - The explicit demo seed now uses the production structured report renderer and
   deterministic audit/report timestamps instead of its legacy basic HTML.
+- Eligible ZAP scans now reuse the guarded relay's validated destination IP
+  projection, so the network-isolated worker does not need target DNS access
+  and bundled demo scans no longer degrade with a resolution warning.
 
 ### Added
 

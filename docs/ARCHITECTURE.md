@@ -120,8 +120,8 @@ For each request it independently:
 7. verifies system trust or a confined CA bundle;
 8. disables automatic redirects, manually validates bounded hops, and caps the
    response body;
-9. returns body content in a bounded base64 envelope and only structured cookie
-   security attributes.
+9. returns body content in a bounded base64 envelope, the validated destination
+   IP, and only structured cookie security attributes.
 
 It never offers insecure TLS and never logs URLs, credentials, headers, or
 bodies.
@@ -137,7 +137,10 @@ independently revalidated. Credentials do not cross an origin/policy boundary.
 ZAP is internal and API-key protected. Its clients set `trust_env=False` and
 disable redirects so the API key cannot enter an inherited proxy. ZAP Passive,
 Active Demo, and Client Spider run only where the policy explicitly permits the
-engine and marks the HTTP target as a compatible disposable demo.
+engine and marks the HTTP target as a compatible disposable demo. The worker
+does not resolve or route to the target network: it gives ZAP only destination
+IPs that the relay already validated while fetching the same allowlisted
+origin, and ZAP keeps the exact pinned origin inside its scoped context.
 
 ### Repository scanners
 

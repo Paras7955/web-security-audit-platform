@@ -64,6 +64,8 @@ The relay:
 - caps request/response headers and response bodies;
 - disables automatic redirects and manually validates every hop;
 - dials the validated IP while preserving configured `Host` and TLS SNI;
+- returns that validated IP as a bounded internal projection so the isolated
+  worker can pin eligible ZAP work without independently resolving the target;
 - supports system trust or one confined operator CA bundle;
 - has no insecure TLS mode;
 - receives no database, artifact, ZAP, AI, repository, or platform-auth access;
@@ -77,6 +79,11 @@ forwarded across an origin or policy boundary.
 Compose separates data, scanner-control, scan-target, host-access,
 operator-access, and updater networks. Only the relay receives host-gateway
 access. Do not add a public/host route to the worker.
+
+The worker accepts the relay's destination projection only after parsing it as
+an IP address and reapplying the target's address-class or exact host-gateway
+policy. ZAP receives only those already validated addresses; it never receives
+target credentials.
 
 ## Repository isolation
 

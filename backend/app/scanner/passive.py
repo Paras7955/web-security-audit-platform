@@ -11,6 +11,7 @@ from app.scanner.crawler import CrawledPage, crawl_site
 from app.scanner.http_client import GuardedHttpClient
 from app.scans.artifacts import ensure_scan_artifact_dir
 from app.security.allowlist import AllowlistTarget
+from app.security.ssrf import Resolver
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,22 @@ class PassiveScanResult:
     findings: tuple[NormalizedFindingInput, ...]
     errors: tuple[str, ...]
     artifact_dir: Path
+
+
+def validated_page_resolver(
+    pages: tuple[CrawledPage, ...],
+    allowlist_target: AllowlistTarget,
+) -> Resolver:
+    """Reuse only destination IPs already validated by the guarded HTTP path."""
+    validated_ips = tuple(sorted({page.connection_ip for page in pages if page.connection_ip is not None}))
+    connection = allowlist_target.connection
+
+    def resolve(host: str, port: int) -> list[str]:
+        if host != connection.host or port != connection.port:
+            return []
+        return list(validated_ips)
+
+    return resolve
 
 
 def run_passive_scan(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import ssl
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -27,7 +28,13 @@ from app.scanner.relay_protocol import (
 )
 from app.security.allowlist import AllowlistTarget, ScanAllowlist
 from app.security.redirects import RedirectValidationError, validate_redirect_location
-from app.security.ssrf import DestinationValidation, Resolver, resolve_host, validate_destination
+from app.security.ssrf import (
+    DestinationValidation,
+    Resolver,
+    resolve_host,
+    validate_destination,
+    validate_ip_for_target,
+)
 from app.security.target_url import (
     NormalizedTargetUrl,
     TargetUrlError,
@@ -48,6 +55,7 @@ class ScannerHttpResponse:
     body: str
     redirect_chain: tuple[str, ...]
     cookie_security: tuple[CookieSecurityAttributes, ...] = ()
+    connection_ip: str | None = None
 
 
 class GuardedHttpClient:
@@ -110,6 +118,7 @@ class GuardedHttpClient:
                                     parse_set_cookie_security(value)
                                     for value in response.headers.get_list("set-cookie")[:MAX_RELAY_COOKIE_PROJECTIONS]
                                 ),
+                                connection_ip=current_destination.connection_ip,
                             )
 
                         location = response.headers.get("location")
@@ -191,6 +200,7 @@ class GuardedHttpClient:
             cookie_security = payload.get("cookie_security")
             body_base64 = payload.get("body_base64")
             status_code = payload.get("status_code")
+            connection_ip = payload.get("connection_ip")
             if (
                 not isinstance(headers, dict)
                 or not all(isinstance(key, str) and isinstance(value, str) for key, value in headers.items())
@@ -206,6 +216,8 @@ class GuardedHttpClient:
                 or not isinstance(body_base64, str)
                 or not isinstance(status_code, int)
                 or not 100 <= status_code <= 599
+                or not isinstance(connection_ip, str)
+                or len(connection_ip) > 45
             ):
                 raise ScannerHttpError("relay response was invalid")
             try:
@@ -214,6 +226,8 @@ class GuardedHttpClient:
                     body_base64,
                     source_bytes_limit=self.body_bytes_limit,
                 )
+                connection_address = ipaddress.ip_address(connection_ip)
+                validate_ip_for_target(connection_address, returned_url.host, self.allowlist_target)
             except ValueError as exc:
                 raise ScannerHttpError("relay response was invalid") from exc
             return ScannerHttpResponse(
@@ -223,6 +237,7 @@ class GuardedHttpClient:
                 body=body,
                 redirect_chain=tuple(redirect_chain),
                 cookie_security=cookies,
+                connection_ip=connection_address.compressed,
             )
         except (httpx.HTTPError, ValueError) as exc:
             if isinstance(exc, ScannerHttpError):
