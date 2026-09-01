@@ -6,8 +6,9 @@ ScopeHarbor is a defensive, local-first AppSec audit platform at version
 `1.1.0`. Phases 1–26 are merged into `main`; Phase 26 merged through pull
 request #72 at `887452ddf26492c47c2c840e6a2c1464055c1730`.
 
-Phase 27 is complete and verified on `phase-27-public-polish`, currently at
-`c5ba826`. The branch has not been pushed or merged.
+Phase 27 implementation and review fixes are complete and verified on
+`phase-27-public-polish` through `c5ba826`. Phase-boundary documentation follows
+those implementation commits. The branch has not been pushed or merged.
 
 Phase 27 commits:
 
@@ -220,9 +221,10 @@ maintainability, and simplification. It found no remaining actionable issue.
   reached health/readiness and completed the same bounded passive workflow.
   The review fixes subsequently passed the complete test gates and rebuilt live
   stack check.
-- Pinned Gitleaks reports no leaks across all 298 commits. The current tracked
-  tree has no unexpected secret findings; its five test/config sentinels are
-  explicitly fingerprint-audited.
+- Pinned Gitleaks reported no leaks through the 298-commit review-fix state.
+  The tracked tree had no unexpected secret findings; its five test/config
+  sentinels are explicitly fingerprint-audited. The scan is repeated after
+  phase-boundary documentation and again after the approval-gated cleanup.
 - Documentation links resolve, no tracked generated/private artifacts were
   found, no real local absolute paths or personal/production data are present,
   and the largest history blob is below 0.5 MB.
