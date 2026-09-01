@@ -2,96 +2,94 @@
 
 ## Current state
 
-ScopeHarbor — Local AppSec Audit Platform is at version `1.1.0`. V1 phases
-1–19 and post-V1 phases 20–25 are merged into `main`; Phase 25 merged at
-`9706b6e`. A post-merge launch-readiness correction is complete and reviewed on
-`codex/fix-profile-readiness`. It must pass pull-request CI and merge before any
-later phase begins.
+ScopeHarbor is a defensive, local-first AppSec audit platform at version
+`1.1.0`. Phases 1–26 are merged into `main`; Phase 26 merged through pull
+request #72 at `887452ddf26492c47c2c840e6a2c1464055c1730`.
 
-Phase 25 implementation and review commits:
+Phase 27 is complete and verified on `phase-27-public-polish`, currently at
+`c5ba826`. The branch has not been pushed or merged.
 
-- `2bdd078` — `feat(frontend): integrate subject-aware audit workflows`
-- `a6ffe16` — `docs(frontend): document integrated operator workflows`
-- `f81c3d8` — `fix(frontend): close protected workflow state gaps`
-- `8783ec4` — `fix(frontend): clear cross-session form state`
-- `d276519` — `fix(frontend): reset cross-session authorization`
-- `aac7d75` — `fix(frontend): clear cross-workspace filters`
-- `1c69176` — `fix(frontend): synchronize secure npm lockfile`
+Phase 27 commits:
 
-Post-Phase-25 readiness correction commits:
+- `2283448` — `feat(reports): deliver structured local audit guidance`
+- `33fccbc` — `refactor(frontend): simplify the public audit workspace`
+- `0b016dc` — `fix(frontend): restore cross-platform clean installs`
+- `7acd5da` — `fix(demo): align the seeded public experience`
+- `baef303` — `docs(release): present the final public experience`
+- `b6be4b0` — `test(ai): align guidance eligibility contract`
+- `34bb9e7` — `fix(scanners): reuse relay-validated ZAP destinations`
+- `c5ba826` — `fix(release): address independent review findings`
 
-- `0b8ba0d` — `fix(platform): mediate scanner readiness through worker`
-- `0165492` — `fix(frontend): gate scans by required dependencies`
-- `d3f6d41` — `docs(ops): document profile-specific readiness`
-- `35b7c43` — `fix(ops): normalize ZAP readiness URL`
-- `bf4ff3e` — `fix(ci): clear backend and worker security gates`
+The approval-gated tooling cleanup has **not** run. `.agents/`, `.opencode/`,
+`.codex/`, `.impeccable/`, `AGENTS.md`, and this file remain tracked. Do not
+remove them until the user explicitly approves the final cleanup step. Do not
+rewrite history; existing author emails and historical tooling copies remain
+unchanged by decision.
+
+## Release behavior
 
 The release provides:
 
-- A FastAPI API under `/api/v1`, a Next.js operator UI, PostgreSQL, a separate
-  scanner worker, and a minimal guarded relay.
+- Docker-only onboarding through `scripts/setup.sh` and `scripts/setup.ps1`.
+  Users need Git to obtain the source and Docker with Compose v2 to run it; no
+  host Python, Node.js, PostgreSQL, ZAP, Gitleaks, or OSV-Scanner installation
+  is required.
+- A FastAPI API under `/api/v1`, Next.js operator UI, PostgreSQL, separate
+  scanner worker, guarded scan relay, ZAP, and bundled Juice Shop demo.
 - Provider-neutral dev/OIDC authentication, backend-enforced workspace
-  isolation, cursor pagination, RFC 9457-style problems, bounded bodies, exact
-  CORS/trusted-host policy, rate limits, and query-free structured request logs.
-- Allowlist schema v2 with exact origin/base-path policy, immutable
+  isolation, bounded inputs, cursor pagination, rate limits, exact
+  CORS/trusted-host policy, and query-free structured request logs.
+- Allowlist schema v2 with exact origin/base-path policy, immutable policy
   fingerprints, explicit profile engines, Docker-service or same-machine
-  host-gateway routing, and verified HTTP/HTTPS transport. Legacy policies
-  remain readable for migration, but retired AJAX scans cannot launch.
-- General local HTTP/HTTPS passive scanning through single-use signed relay
-  capabilities. The relay independently validates policy and SSRF boundaries,
-  pins the destination IP while preserving `Host`/TLS SNI, accepts system trust
-  or a confined custom CA, and has no insecure TLS mode.
-- Local-demo-only ZAP Passive, Active Demo, and Client Spider execution for
-  explicitly compatible disposable HTTP containers. Historical AJAX records
-  remain readable without retaining an AJAX execution surface.
-- Workspace-scoped repository assets with immutable relative-path and
-  authorization snapshots. Repository scans use checksum/commit-pinned,
-  source-built Gitleaks 8.30.1-scopeharbor.1 and offline OSV-Scanner 2.5.0 with
-  bounded regular-file-only staging.
-- Lease-fenced workers with a separate-session heartbeat monitor, cancellation
-  and deadline checkpoints, process-group cleanup, ZAP stop/cleanup behavior,
-  and proxy-independent ZAP clients.
-- Subject-aware findings, lifecycle state, revocable suppressions, audited tag
-  assignment history, current-posture dashboards, immutable `risk-v1` scan
-  scores, dynamic `posture-v1`, comparisons, and idempotent Markdown/HTML
-  reports.
-- Deterministic template explanations plus an optional bounded external AI
-  provider with atomic capacity reservation, streamed/capped responses, safe
-  fingerprints, and explicit generation through `POST`.
-- Encrypted passive-relay-only target credentials, rotation/revocation locking,
-  dry-run-first maintenance, an idempotent collision-safe demo seed, hardened
-  Compose networks, digest-pinned security tooling, CI security gates, an MIT
-  license, and public-release documentation.
+  host-gateway connections, and verified HTTP/HTTPS transport.
+- ScopeHarbor passive scanning for general authorized local targets. Every ZAP
+  engine is restricted to an explicitly compatible disposable HTTP demo.
+- Workspace repository assets with bounded regular-file-only staging, pinned
+  Gitleaks, and operator-updated offline OSV data. Repository code and hooks are
+  never executed.
+- Subject-aware findings, lifecycle state, suppressions, tags, current posture,
+  comparisons, and structured standalone Markdown/HTML reports.
+- Deterministic local Finding Guidance. Optional OpenAI enrichment remains an
+  explicit operator-controlled interactive action for eligible redacted web
+  findings; report generation is always local and never calls OpenAI.
+- A simplified operator shell with Workspace as the initial destination and
+  five primary areas: Workspace, Audits, Findings, Intelligence, and Guide.
+  Credentials and Operations remain available contextually.
+- Public-release documentation, synthetic seeded screenshots, social preview,
+  MIT license, third-party notices, sanitized issue forms, a discretionary pull
+  request template, dependency audits, image scanning, and CycloneDX SBOMs.
 
 ## Safety invariants
 
-- Never scan arbitrary public URLs or private-LAN destinations. Launchable web
-  targets must exactly match `config/scan-allowlist.yml`, pass SSRF validation,
-  and have explicit authorization confirmation.
-- Supported destinations are exact Docker services and same-machine
-  applications reached through Docker's host gateway. Generalized targets are
+- Never scan arbitrary public URLs or unapproved private-network destinations.
+  Launchable web targets must exactly match `config/scan-allowlist.yml`, pass
+  SSRF validation, and have explicit authorization confirmation.
+- Supported destinations are exact configured Docker services or same-machine
+  applications reached through Docker's host gateway. General targets remain
   passive-only.
-- HTTPS always verifies the configured hostname and certificate using system
-  trust or one confined operator CA bundle. There is no insecure mode.
-- Automatic redirects stay disabled. Every hop is same-origin, stays within
-  the configured base-path boundary, and is independently allowlist/SSRF
-  revalidated before a destination-pinned connection.
-- ZAP Active and Client Spider scans remain disposable-demo-only, strictly
-  scoped, bounded, API-key protected, cancellable, and serialized through the
-  ZAP advisory lock.
+- HTTPS always verifies the configured hostname and certificate with system
+  trust or one confined operator CA bundle. There is no insecure TLS mode.
+- Automatic redirects remain disabled. Every hop is same-origin, remains in the
+  allowed base path, and is independently policy/SSRF checked before a
+  destination-pinned request.
+- The relay validates and dials the destination IP while preserving the
+  configured HTTP `Host` and TLS SNI. Eligible ZAP work receives only the
+  relay-validated IP combined with the policy's exact connection port.
+- Policy loading and worker execution independently reject ZAP Passive, Active,
+  and Client Spider unless the target is an explicitly compatible disposable
+  demo. ZAP work remains bounded, API-key protected, cancellable, and scoped.
 - Repository scans never clone, fetch, install, build, resolve dependencies,
-  run scripts/hooks, execute repository code, or trust repository-supplied
-  scanner configuration.
-- Persist and expose only independently sanitized projections. Raw bodies,
-  scanner/provider output, cookies, credentials, query strings, absolute
-  repository paths, provider errors, and unredacted evidence must not cross
-  database, product API, report, AI, cache, audit, artifact, status, or log
+  execute hooks/scripts/code, or honor repository scanner configuration.
+- Persist and expose only independently bounded, redacted projections. Raw
+  bodies, scanner/provider output, cookies, credentials, query strings,
+  absolute repository paths, provider errors, and unredacted evidence must not
+  cross persistence, API, report, AI, cache, audit, artifact, status, or log
   boundaries.
-- Direct IDs are not authorization. API, worker, finding-management, risk,
-  report, AI, and repository-asset operations remain workspace-scoped.
-- Auth-profile material may enter only ScopeHarbor passive requests through the
-  guarded relay. It never enters ZAP, browser, repository, report, AI, receipt,
-  status, artifact, audit, or log workflows.
+- Direct IDs are not authorization. API, worker, finding, risk, report, AI, and
+  repository operations remain workspace-scoped.
+- Auth-profile material may enter only guarded passive relay requests. It never
+  enters ZAP, browser, repository, report, AI, receipt, status, artifact, audit,
+  or log workflows.
 
 Read `SECURITY.md` and `docs/THREAT_MODEL.md` before changing a trust boundary.
 
@@ -99,239 +97,184 @@ Read `SECURITY.md` and `docs/THREAT_MODEL.md` before changing a trust boundary.
 
 | Component | Location | Responsibility |
 | --- | --- | --- |
-| API application | `backend/app/main.py`, `backend/app/api/` | Lifespan validation and workspace API |
-| Models and upgrades | `backend/app/models.py`, `backend/alembic/` | Subject-aware persistence, constraints, and cleanup ledger |
-| Worker lifecycle | `backend/worker/`, `backend/app/scans/` | Lease ownership, cancellation, execution, and safe receipts |
-| Guarded relay | `backend/relay/`, `backend/app/scanner/relay_capability.py` | Independent capability, policy, SSRF, and transport enforcement |
-| Web scanners | `backend/app/scanner/`, `backend/app/zap/` | Passive crawling/checks and demo-only ZAP profiles |
-| Repository scanners | `backend/app/repo_scanner/` | Bounded staging, redacted Gitleaks, and offline OSV |
-| Safety boundary | `backend/app/security/`, `backend/app/findings/redaction.py` | Allowlist, SSRF, URLs, auth, and sanitization |
-| Reports and AI | `backend/app/reports/`, `backend/app/ai/` | Safe subject-aware downstream projections |
-| Operations | `backend/app/ops/`, `backend/app/maintenance.py` | Audit, health, limits, and dry-run-first maintenance |
-| Public contract | `shared/contracts.json` | Profiles, acknowledgements, limits, and version |
-| Operator UI | `frontend/src/` | Policy, subject-aware audit, governance, posture, report, AI, and in-memory bearer workflows |
-| Runtime/CI | `docker-compose.yml`, `backend/Dockerfile`, `.github/workflows/` | Network isolation, images, quality, secret, SBOM, and vulnerability gates |
+| API | `backend/app/main.py`, `backend/app/api/` | Workspace-scoped product API and startup validation |
+| Models/upgrades | `backend/app/models.py`, `backend/alembic/` | Persistence, constraints, indexes, and migrations |
+| Worker | `backend/worker/`, `backend/app/scans/` | Lease ownership, cancellation, scanner execution, receipts |
+| Guarded relay | `backend/relay/`, `backend/app/scanner/relay_capability.py` | Capability, policy, SSRF, and transport enforcement |
+| Web scanners | `backend/app/scanner/`, `backend/app/zap/` | Passive checks and disposable-demo ZAP profiles |
+| Repository scanners | `backend/app/repo_scanner/` | Bounded staging, redacted Gitleaks, offline OSV |
+| Safety | `backend/app/security/`, `backend/app/findings/redaction.py` | Allowlist, URL/SSRF/auth, and sanitization controls |
+| Reports/guidance | `backend/app/reports/`, `backend/app/ai/` | Safe local reports and optional bounded enrichment |
+| Operations | `backend/app/ops/`, `backend/app/maintenance.py` | Health, audit, limits, and dry-run-first maintenance |
+| Shared contract | `shared/contracts.json` | Profiles, acknowledgements, limits, and version |
+| Operator UI | `frontend/src/` | Workspace, audits, triage, intelligence, and guide |
+| Runtime/CI | `docker-compose.yml`, Dockerfiles, `.github/workflows/` | Isolation, setup, builds, audits, scans, and SBOMs |
 
 Default host endpoints are frontend `127.0.0.1:3001`, API
 `127.0.0.1:8000`, Juice Shop `127.0.0.1:3000`, and PostgreSQL
-`127.0.0.1:5432`. ZAP, worker, and relay remain internal-only.
+`127.0.0.1:5432`. ZAP, relay, and worker remain internal-only.
 
-## Public API additions
+## Phase 27 decisions
 
-- Protected target-policy catalog, JSON target validation, and target
-  reauthorization.
-- Repository-asset create/list/read/archive plus repository dashboard and
-  latest-comparison routes.
-- Scan creation by either `target_id` or `repository_asset_id`. The current UI
-  uses first-class subjects; the target-repository adapter remains deprecated
-  for historical callers.
-- Subject type/ID and repository-asset identity in scan, finding, risk,
-  dashboard, comparison, report, and AI projections while retaining existing
-  target fields.
-- Current-posture basis and separately labelled historical dashboard metrics.
-- Explicit AI generation with `POST /api/v1/scans/{id}/ai-explanations`; GET is
-  retrieval-only for external providers.
-- Suppression revocation, tag unassignment, and safe tag archiving.
+### Reports and guidance
 
-See `docs/API.md` for request/response details.
+- Markdown and standalone HTML reports now include audit identity, authorization
+  context, severity distribution, scope, tool receipts, local prioritized
+  guidance, limitations, and structured finding details.
+- HTML reports have strict CSP, no script or external resource, safe escaping,
+  responsive long-value handling, and print styles.
+- “Audit completed at” replaces the misleading “Generated at” label.
+- Reports always use deterministic local guidance. `AI_PROVIDER=openai` does not
+  create provider calls, AI request logs, cache rows, or rate-limit usage during
+  report generation.
+- `AiExplanationRead.configured_provider` distinguishes local template guidance
+  from configured OpenAI enrichment without exposing provider secrets.
 
-## Phase 24 review decisions
+### UI and presentation
 
-The initial independent review identified five actionable findings. All were
-accepted and fixed on the review branch:
+- Workspace opens first; the unused WebGL hero and dead runtime/style code were
+  removed.
+- Audit Review contains a concise outcome and canonical handoffs rather than
+  duplicate Findings and Intelligence dashboards.
+- Audit Review loads its own unfiltered per-scan findings, so persistent triage
+  filters cannot misstate completed-audit totals.
+- Report actions match the two-artifact invariant: formatted HTML is primary,
+  with explicit HTML and Markdown downloads.
+- The shell has explicit action hierarchy, skip navigation, sticky offsets,
+  live readiness announcements, state-aware theme control, and keyboard/
+  overflow controls for audit phases.
+- The deterministic UI detector returned no encoded anti-pattern findings.
 
-- Target-based repository compatibility scans now persist only their
-  repository-asset subject. Migration `0013_scan_subject_integrity` repairs
-  existing rows and adds a database XOR constraint.
-- Relay requests are capped before JSON parsing, including streamed bodies
-  without `Content-Length`.
-- Cookie handling projects only structured `Secure`, `HttpOnly`, and validated
-  `SameSite` attributes; target-controlled names, values, paths, domains, and
-  extensions do not cross the relay boundary.
-- Relay bodies use a bounded base64 envelope with independently bounded and
-  validated URL, header, redirect, and cookie metadata.
-- Documentation now states that the relay disables automatic redirects and
-  manually revalidates each bounded hop.
+### Scanner and supply-chain corrections
 
-One preliminary documentation finding was rejected because commit `bde778a`
-had already reconciled the HTTPS wording before the review branch began. A
-second independent review of `main...phase-24-backend-review` found no
-actionable defects. Its residual gaps were hosted-CI observation, an
-independent upstream-archive re-fetch, multi-architecture binary
-reproducibility, and migration testing against deployed rather than synthetic
-data.
+- The guarded relay projects the already validated destination IP internally;
+  the worker parses and reapplies the address policy before giving eligible ZAP
+  jobs the IP. This preserves worker target-network isolation.
+- ZAP pinning uses the policy's validated `connection_port`, not the public
+  origin port, so legitimate host-gateway remaps reach the intended service.
+- Every ZAP engine requires `disposable_demo=true` at policy validation and is
+  independently rejected by the worker. Legacy non-demo passive policies
+  upgrade to ScopeHarbor Passive only.
+- The Gitleaks source build pins `golang.org/x/crypto v0.55.0`, clearing the
+  CRITICAL `CVE-2026-56854` finding detected by the current Trivy database.
 
-After merge, authenticated inspection of Container builds run `30943834633`
-confirmed that the API, worker, relay, and frontend builds, all four Trivy
-scans, and all four SBOMs passed. The final Compose readiness step then failed
-because `SCOPEHARBOR_ENV_FILE=/dev/null` left required backend settings absent;
-the backend correctly exited during startup. Commit `516ef53` generates one
-mode-0600 CI environment with the trusted bootstrap, validates the required
-rendered backend keys without printing their values, reuses that environment
-for hardening/readiness, and installs cleanup before startup. An independent
-review found no actionable issues. Its remaining runtime gap is hosted CI
-because Docker Desktop was stopped locally.
-
-Authenticated inspection of Backend quality run `30943832795` also showed an
-admission-time workflow error rather than a backend test failure: GitHub does
-not expose the `runner` context inside job-level `env`, so three
-`${{ runner.temp }}` expressions prevented the job from starting. Commit
-`ccad9cf` now derives the artifact, repository-staging, OSV-database, and
-container-smoke environment paths from `$RUNNER_TEMP` inside executable steps,
-exports them through `$GITHUB_ENV` for later steps, and creates the bounded
-directories before use. The same correction was applied to the unpushed
-container hotfix. Independent follow-up review found no actionable issues.
-
-## Phase 25 review decisions
-
-The independent frontend review found four high-priority state/truthfulness
-defects and one testing gap. All were accepted and fixed:
-
-- Authentication replacement, rejection, and logout now gate the UI behind a
-  loading state and clear all previously protected workspace data before any
-  new session is verified. Credential values, rotation values, form drafts,
-  scan acknowledgements, audit phase, workspace-derived filters/messages, and
-  pending management actions are cleared as well. A rejected OIDC token
-  restores the configured local development session only after reloading it.
-- Stale web-target policies are labelled as requiring reauthorization, show no
-  eligible profiles, and route the operator back to the Scope phase.
-- Finding lifecycle and suppression create/revoke actions refresh workspace
-  posture plus the selected subject dashboard and comparison.
-- Archived tags remain visible in governance history while any active
-  assignments can still be removed.
-- Six automated state/contract tests cover auth and credential-form clearing,
-  stale policy, posture invalidation for lifecycle/suppression mutations,
-  archived-tag assignments, mutually exclusive scan subjects, and explicit AI
-  POST behavior. The frontend quality workflow now runs them.
-
-The final follow-up review found no actionable issues and approved Phase 25.
-
-## Post-Phase-25 readiness review decision
+## Review decisions
 
 Review decision:
-- Finding: the API container cannot reach the scanner-control network, so its
-  direct ZAP probe always degraded overall platform status and the frontend
-  disabled every scan profile.
-- Decision: accepted and fixed.
-- Rationale: API isolation is intentional. The worker now performs the bounded,
-  proxy-independent ZAP probe and records only safe readiness state; target
-  policy responses identify the exact profiles that require ZAP, and the UI
-  gates only those profiles.
-- Follow-up: migration `0014_worker_scanner_readiness`, backend/frontend tests,
-  controlled ZAP failure/recovery, and a rebuilt Compose stack passed.
+- Finding: ZAP combined a relay-validated IP with the origin port rather than
+  the validated connection port.
+- Decision: accepted.
+- Rationale: a legitimate host-gateway port remap could otherwise reach the
+  wrong service.
+- Follow-up: ZAP now uses `destination.connection_port`; a remapped-port
+  regression verifies the exact pinned URL.
 
 Review decision:
-- Finding: a valid trailing slash in `ZAP_BASE_URL` could create a double-slash
-  readiness URL and a false degraded result.
-- Decision: accepted and fixed in `35b7c43`.
-- Rationale: runtime validation permits the trailing slash and the scanner
-  client already normalizes it.
-- Follow-up: a regression test was added; the focused follow-up review approved
-  the commit with no new actionable findings.
+- Finding: `zap-passive` could be configured for a non-disposable passive
+  target, and the worker lacked an independent all-ZAP recheck.
+- Decision: accepted.
+- Rationale: every ZAP engine is part of the disposable-demo-only boundary.
+- Follow-up: policy and worker checks reject all ZAP engines for non-demo
+  targets; legacy passive compatibility drops ZAP; regression tests cover both.
 
 Review decision:
-- Finding: the Phase 25 merge passed frontend quality and all code/test steps,
-  but Backend quality failed because pip 26.1.2 acquired `PYSEC-2026-3721` and
-  Container builds failed at Trivy because Go 1.26.5, go-git 5.19.1, and x/mod
-  0.37.0 acquired HIGH advisories.
-- Decision: accepted and fixed in `bf4ff3e`.
-- Rationale: these failures were independent supply-chain gates, not caused or
-  resolved by profile-readiness behavior. The development lock now pins pip
-  26.2; scanner tools build with digest-pinned Go 1.26.6; OSV-Scanner explicitly
-  pins go-git 5.19.2 and x/mod 0.40.0.
-- Follow-up: the Python 3.12 hash install and pip-audit, four image builds, the
-  exact four-image Trivy loop, and the real Gitleaks redaction fixture passed.
-  Independent review found no actionable issues.
+- Finding: Audit Review consumed the persistent triage-filtered finding list and
+  could present filtered counts as the complete audit.
+- Decision: accepted.
+- Rationale: a completed-audit summary must remain independent of triage view
+  state.
+- Follow-up: Review has independent unfiltered request state and an integration
+  regression that applies a severity filter before opening Review.
 
-## Final verification record
+The independent reviewer returned these three actionable findings but the
+available review runtime did not expose model selection or identity. Therefore
+the requested `gpt-5.6-sol`/medium pin cannot be certified. After the fixes were
+committed, the main implementation agent completed the documented separate
+self-review fallback over bugs, safety, regressions, missing tests,
+maintainability, and simplification. It found no remaining actionable issue.
 
-- A clean temporary PostgreSQL database migrated from zero through
-  `0014_worker_scanner_readiness`. Upgrade tests from `0008`, `0011`, and `0012`,
-  repair/constraint fixtures, cleanup-task creation, and Alembic model drift
-  all passed.
-- Backend: 334 tests passed; 2 environment-dependent real-binary tests were
-  skipped in the full run. The real Gitleaks redaction fixture passed
-  separately and executed no repository scripts.
-- Backend branch coverage: 85% overall. Focused coverage: authentication
-  100.00%, SSRF/redirects 95.07%, persistence redaction 100.00%, artifact paths
-  100.00%, and repository runner boundaries 96.42%.
-- Ruff and Pyright: clean.
-- Frontend: a clean npm 10.9.8 `npm ci`, eight Vitest/Testing Library
-  state/contract tests, `npm audit --audit-level=high`, lint, and the Next.js
-  16.3.0 production build passed. The audit reported zero vulnerabilities. The
-  Alpine-compatible lock includes the required optional emnapi packages and
-  Nano ID 3.3.18. PostCSS remains pinned to 8.5.25.
-- Both Python production/development locks install with hashes and pass
-  `pip-audit`; cryptography is pinned to 50.0.0 and development pip to 26.2.
-- Compose rendering and network/privilege hardening validation passed. API,
-  worker, relay, and frontend images built, and a clean isolated stack migrated
-  and reached healthy/ready state before its disposable volumes were removed.
-- Digest-pinned Trivy 0.70.0 reported no HIGH or CRITICAL findings for all four
-  project images after updating the scanner builders to Go 1.26.6 and the
-  affected OSV-Scanner modules. CycloneDX SBOMs generated and validated for
-  each image.
-- The worker reports Gitleaks 8.30.1-scopeharbor.1 and OSV-Scanner 2.5.0. The
-  current source-built OSV binary was not exercised against a freshly updated
-  offline database during this review; that remains an operator release check.
-- Phase 25 is merged. The readiness correction passes local backend/frontend
-  quality checks, image builds, migration/readiness smoke, and controlled ZAP
-  failure/recovery: core status remained healthy, non-ZAP profiles remained
-  available, and ZAP-dependent profiles were blocked. The full image/Trivy
-  workflow remains a required pull-request check.
+## Verification record
 
-## Operator actions
+- Backend: Ruff and Pyright pass; Alembic upgrades from zero through `0014`,
+  migration-path tests, and drift detection pass.
+- Backend tests: 353 passed with 2 environment-dependent skips. Overall branch
+  coverage is 86%; security slices are authentication 98.94%, SSRF/redirects
+  95.07%, persistence redaction 100%, artifact paths 100%, and repository
+  runner 96.42%.
+- Frontend: 13 Vitest/Testing Library tests, ESLint, and the Next.js 16.3.0
+  production build pass. The npm audit reports zero vulnerabilities.
+- Python runtime/development hash locks pass `pip-audit` with no known
+  vulnerabilities.
+- Bash setup syntax, isolated bootstrap, Compose rendering/hardening, image
+  builds, and readiness pass. PowerShell is parser-tested in CI; `pwsh` is not
+  installed on the local macOS host.
+- API, worker, relay, and frontend images build. Digest-pinned Trivy 0.70.0
+  reports 0 HIGH/CRITICAL vulnerabilities and 0 secrets for each image.
+- CycloneDX SBOMs validate with 142 API, 404 worker, 142 relay, and 43 frontend
+  components.
+- The explicit demo seed is idempotent at 2 subjects, 3 scans, 7 findings, and
+  4 reports. A rebuilt isolated stack completed a real Juice Shop passive audit
+  with 13 findings: ScopeHarbor Passive completed with 8 and ZAP Passive with
+  5, both without warnings.
+- A clean-clone Docker setup from the committed pre-review Phase 27 state
+  reached health/readiness and completed the same bounded passive workflow.
+  The review fixes subsequently passed the complete test gates and rebuilt live
+  stack check.
+- Pinned Gitleaks reports no leaks across all 298 commits. The current tracked
+  tree has no unexpected secret findings; its five test/config sentinels are
+  explicitly fingerprint-audited.
+- Documentation links resolve, no tracked generated/private artifacts were
+  found, no real local absolute paths or personal/production data are present,
+  and the largest history blob is below 0.5 MB.
+- Browser checks covered the seeded workspace and major flows in light/dark
+  desktop layouts. Exact 1024 px and 390 px viewport automation and direct blob
+  report/print inspection remain manual release checks because those controls
+  were unavailable in the local browser runtime; responsive CSS and automated
+  tests pass.
 
-1. Push `codex/fix-profile-readiness`, open a pull request, and require Backend
-   quality, Frontend quality, Container builds / build, and every remaining
-   required workflow to pass. Merge the branch into `main`, then confirm the
-   merge before any later phase begins.
-2. Run `python3 scripts/bootstrap_env.py`. It adds the relay secret and newly
-   introduced settings without replacing a non-empty user-managed
-   `AUTH_PROFILE_SECRET_KEY`; review the resulting `.env`.
-3. Review every custom v2 allowlist entry, exact host-gateway address, base
-   path, profile engine, and custom CA mount before authorizing targets.
-4. Refresh the offline advisory database before repository dependency scans,
-   then run the real OSV fixture:
+## Next required actions
 
-   ```bash
-   docker compose --profile maintenance run --rm osv-db-update
-   ```
+1. Pause and obtain explicit user approval before the tooling cleanup.
+2. After approval, remove `.agents/`, `.opencode/`, `.codex/`, `.impeccable/`,
+   `AGENTS.md`, and `HANDOFF.md` from the tracked public tree without rewriting
+   history. Add them to `.gitignore` and `.dockerignore`; keep ignored local
+   copies where practical. Commit cleanup separately, then repeat tracked-file,
+   Docker-context, documentation, current-tree/history-secret, and final review
+   checks.
+3. The user may then push `phase-27-public-polish`, open a pull request, and
+   require all backend, frontend, container, secret, CodeQL, and dependency
+   checks that are available while the repository remains private. Do not push
+   or merge from the agent unless explicitly requested.
+4. After merge and private-main verification, rename the repository to
+   `scopeharbor`, set its description/topics/social preview, enable Issues and
+   private vulnerability reporting, and perform the final secret/file review.
+5. Change visibility only after that review. Run public CodeQL and Dependency
+   Review, enable public secret scanning/push protection where available, and
+   add a `main` ruleset requiring the verified checks.
+6. Create annotated tag and GitHub Release `v1.1.0` only after public `main` is
+   green. Verify the README/release rendering before adding the repository URL
+   to the résumé.
 
-5. Review the committed Python and npm locks and the source-build pins, then
-   repeat the dependency audits on the release commit. Exact commands are in
-   `docs/RELEASE_CHECKLIST.md`.
-6. Enable GitHub Private Vulnerability Reporting and branch protection. While
-   the repository is private, enable GitHub Code Security and set
-   `SCOPEHARBOR_CODE_SECURITY_ENABLED=true` if CodeQL and Dependency Review
-   should run before public visibility.
-7. Create the annotated `v1.1.0` tag only after the release checklist and CI
-   are green.
+## Known limits
 
-## Known limits and future decisions
-
-- ScopeHarbor is portfolio-first, local, and single-operator software. It is
-  not designed as a hosted multi-tenant SaaS.
+- ScopeHarbor is portfolio-first, local, and single-operator software, not a
+  hosted multi-tenant SaaS.
 - Linux same-machine applications must listen on an interface reachable from
-  Docker's host gateway. Docker Desktop supplies the normal host-local route.
-- General local targets receive ScopeHarbor passive scans only. ZAP Passive,
-  Active Demo, and Client Spider remain explicitly compatible disposable-demo
-  features.
-- The UI supports local development auth and an operator-supplied OIDC bearer
-  token held only in memory for one browser tab. It does not implement provider
-  redirects, refresh-token storage, or session renewal.
-- The current UI uses first-class repository assets. Deprecated target-based
-  repository routes/columns remain only for historical callers and require a
-  separately approved backend phase before removal.
-- The offline OSV database is operator-managed. Missing or stale data produces
-  an explicit warning and skips dependency analysis instead of going online.
-- External AI is optional and adds an operator-controlled data processor;
-  deterministic template mode remains the safe default.
-- Arbitrary public/cloud scanning, SaaS/RBAC administration, authenticated
-  browser workflows, business-logic automation, Semgrep/full SAST, Nuclei, and
-  PDF export remain out of scope unless explicitly approved.
-- The source is released under MIT. The ScopeHarbor name has informal collision
+  Docker's host gateway. Docker Desktop supplies the normal macOS/Windows path.
+- General local targets receive ScopeHarbor Passive only. All ZAP profiles are
+  explicitly compatible disposable-demo features.
+- OIDC support accepts an operator-supplied bearer token held in one browser
+  tab; the UI does not implement provider redirects, refresh-token storage, or
+  renewal.
+- The offline OSV database is operator-managed. Missing/stale data produces an
+  explicit warning instead of online resolution.
+- Optional OpenAI enrichment adds an operator-controlled external processor;
+  deterministic local guidance remains the default and the only report source.
+- Arbitrary public/cloud scanning, hosted scanning, SaaS/RBAC administration,
+  authenticated browser workflows, business-logic automation, Semgrep/full
+  SAST, Nuclei, and PDF export remain out of scope unless explicitly approved.
+- The source is MIT licensed. The ScopeHarbor name has informal collision
   checking only, not legal trademark clearance.
 
-Do not infer prior decisions that are absent from `AGENTS.md`, this handoff,
-`README.md`, or `SECURITY.md`; ask when a missing decision would change scope or
-safety.
+Do not infer prior decisions absent from `AGENTS.md`, this handoff, `README.md`,
+or `SECURITY.md`; ask when a missing decision would change scope or safety.
