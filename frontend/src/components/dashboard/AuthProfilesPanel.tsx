@@ -64,7 +64,7 @@ export function AuthProfilesPanel({
 
       <div className="credentialSafetyNote">
         <AppIcon name="shield" size={18} />
-        <p><strong>Target credential, not an encryption key.</strong> Enter the token or API key expected by the target application. Never enter <code>AUTH_PROFILE_SECRET_KEY</code> here; that operator-managed key remains in the backend environment. Saved credentials are available to guarded passive requests only and never appear in findings, reports, AI explanations, logs, ZAP scans, or browser-driven scan sessions.</p>
+        <p><strong>Target credential, not an encryption key.</strong> Enter the token or API key expected by the target application. Never enter <code>AUTH_PROFILE_SECRET_KEY</code> here; that operator-managed key remains in the backend environment. Saved credentials are encrypted locally, never returned through the API, and available only to guarded passive requests. They never appear in findings, reports, finding guidance, logs, ZAP scans, or browser-driven scan sessions.</p>
       </div>
 
       <div className="authProfileGrid">

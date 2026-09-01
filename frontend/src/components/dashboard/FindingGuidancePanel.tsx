@@ -2,7 +2,7 @@ import type { AiExplanation, FindingExplanation } from "@/lib/securityAuditApi";
 
 const visibleExplanationCount = 5;
 
-export function AiExplanationsPanel({
+export function FindingGuidancePanel({
   explanation,
   message,
   canGenerate,
@@ -17,18 +17,29 @@ export function AiExplanationsPanel({
 }) {
   const visibleExplanations = explanation?.explanations.slice(0, visibleExplanationCount) ?? [];
   const remainingExplanations = explanation?.explanations.slice(visibleExplanationCount) ?? [];
+  const externalProviderConfigured = explanation?.configured_provider === "openai";
+  const providerLabel = externalProviderConfigured
+    ? explanation?.provider === "openai" ? "AI-assisted" : explanation?.fallback_used ? "Local fallback" : "External AI available"
+    : "Local guidance";
+  const generateLabel = externalProviderConfigured ? "Generate AI-assisted guidance" : "Refresh local guidance";
 
   return (
     <div className="aiPanel">
       <div className="panelHeader">
-        <div><h3>AI explanations</h3><p>Translate prioritized normalized findings into impact, recommended action, and stated limitations.</p></div>
+        <div><h3>Finding guidance</h3><p>Turn prioritized normalized findings into impact, recommended action, and stated limitations.</p></div>
         <div className="aiPanelActions">
-          <span className="contextBadge">{explanation?.provider ?? "Template default"}</span>
+          <span className="contextBadge">{providerLabel}</span>
           <button type="button" className="secondaryButton" onClick={onGenerate} disabled={!canGenerate || isGenerating}>
-            {isGenerating ? "Generating…" : explanation ? "Generate again" : "Generate explanations"}
+            {isGenerating ? "Generating…" : generateLabel}
           </button>
         </div>
       </div>
+
+      {externalProviderConfigured ? (
+        <p className="aiConsentNotice">
+          Generating AI-assisted guidance sends only bounded, normalized, independently redacted web-finding fields to the operator-configured provider. Raw artifacts, response bodies, credentials, cookies, queries, repository findings, and provider errors stay local.
+        </p>
+      ) : null}
 
       {explanation ? (
         <>
@@ -80,14 +91,14 @@ export function AiExplanationsPanel({
           {explanation.explanations.length > 0 ? (
             <section className="aiExplanationSection" aria-labelledby="prioritized-explanations-heading">
               <div className="aiExplanationHeading">
-                <h4 id="prioritized-explanations-heading">Prioritized explanations</h4>
+                <h4 id="prioritized-explanations-heading">Prioritized actions</h4>
                 <span>{explanation.explanations.length} total</span>
               </div>
               <div className="aiFindingGrid">
                 {visibleExplanations.map((item) => <FindingExplanationRow item={item} key={item.finding_id} />)}
                 {remainingExplanations.length > 0 ? (
                   <details className="aiOverflowDetails">
-                    <summary>Show {remainingExplanations.length} more explanations</summary>
+                    <summary>Show {remainingExplanations.length} more actions</summary>
                     <div className="aiOverflowList">
                       {remainingExplanations.map((item) => <FindingExplanationRow item={item} key={item.finding_id} />)}
                     </div>
@@ -99,7 +110,7 @@ export function AiExplanationsPanel({
         </>
       ) : (
         <div className="emptyState aiEmptyState" role="status" aria-live="polite">
-          <strong>{canGenerate ? "Explanations are ready to generate" : "Explanations unavailable for this audit"}</strong>
+          <strong>{canGenerate ? "Finding guidance is ready" : "Finding guidance is unavailable for this audit"}</strong>
           <span>{message}</span>
         </div>
       )}

@@ -60,7 +60,7 @@ export function WorkspaceOverview({
           )}
 
           <div className="quickActions">
-            <button type="button" onClick={() => onNavigate("scanning")}>
+            <button type="button" className="primaryButton" onClick={() => onNavigate("scanning")}>
               <AppIcon name={requiresReauthorization ? "shield" : "scan"} /> {requiresReauthorization ? "Reauthorize target" : "Configure a scan"} <AppIcon name="arrow" size={15} />
             </button>
             <button type="button" className="secondaryButton" onClick={() => onNavigate("findings")}>

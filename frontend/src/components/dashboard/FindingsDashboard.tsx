@@ -220,10 +220,10 @@ export function FindingsDashboard({
         </div>
 
         <details className="advancedFindingControls">
-          <summary><span>Filters &amp; tags</span>{secondaryFilterCount > 0 ? <span className="activeFilterCount">{secondaryFilterCount} active</span> : <span className="filterSummaryHint">Scope, status &amp; more</span>}</summary>
+          <summary><span>Filters</span>{secondaryFilterCount > 0 ? <span className="activeFilterCount">{secondaryFilterCount} active</span> : <span className="filterSummaryHint">Scope, status &amp; evidence</span>}</summary>
           <div className="findingFilterSection">
-            <h4>Scope and management</h4>
-            <div className="filterGrid filterGridPrimary" aria-label="Finding scope and management filters">
+            <h4>Scope and state</h4>
+            <div className="filterGrid filterGridPrimary" aria-label="Finding scope and state filters">
               <label>Scope<select value={findingScope} onChange={(event) => onFindingScope(event.target.value)}><option value="scan">Current scan</option><option value="workspace">Workspace</option></select></label>
               <label>Subject<select value={targetFilter} onChange={(event) => onTargetFilter(event.target.value)} disabled={findingScope !== "workspace"}><option value="">All subjects</option><optgroup label="Web targets">{targets.map((target) => <option value={`target:${target.id}`} key={target.id}>{target.name}</option>)}</optgroup><optgroup label="Repositories">{repositoryAssets.map((asset) => <option value={`repository:${asset.id}`} key={asset.id}>{asset.name}</option>)}</optgroup></select></label>
               <label>Profile<select value={profileFilter} onChange={(event) => onProfileFilter(event.target.value)} disabled={findingScope !== "workspace"}><option value="">All profiles</option>{scanProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.label}</option>)}</select></label>
@@ -237,25 +237,29 @@ export function FindingsDashboard({
             <h4>Evidence detail</h4>
             <div className="filterGrid" aria-label="Advanced finding filters">
               <label>Scanner<input value={scannerFilter} onChange={(event) => onScannerFilter(event.target.value)} /></label>
-              <label>OWASP<input value={owaspFilter} onChange={(event) => onOwaspFilter(event.target.value)} /></label>
-              <label>CWE<input value={cweFilter} onChange={(event) => onCweFilter(event.target.value)} /></label>
+              <label><abbr title="Open Worldwide Application Security Project">OWASP</abbr> category<input value={owaspFilter} onChange={(event) => onOwaspFilter(event.target.value)} /></label>
+              <label><abbr title="Common Weakness Enumeration">CWE</abbr><input value={cweFilter} onChange={(event) => onCweFilter(event.target.value)} /></label>
               <label>From<input type="datetime-local" value={dateAfterFilter} onChange={(event) => onDateAfterFilter(event.target.value)} /></label>
               <label>To<input type="datetime-local" value={dateBeforeFilter} onChange={(event) => onDateBeforeFilter(event.target.value)} /></label>
               <label>Risk min<input type="number" min="0" max="100" value={riskMinFilter} onChange={(event) => onRiskMinFilter(event.target.value)} /></label>
               <label>Risk max<input type="number" min="0" max="100" value={riskMaxFilter} onChange={(event) => onRiskMaxFilter(event.target.value)} /></label>
             </div>
-            <div className="tagManagement">
-              <label className="tagLabelInput"><span className="srOnly">New tag label</span><input value={tagLabel} onChange={(event) => onTagLabelChange(event.target.value)} placeholder="Tag label" disabled={isCreatingTag} /></label>
-              <button type="button" onClick={onCreateTag} disabled={!tagLabel.trim() || isCreatingTag}>{isCreatingTag ? "Creating…" : "Create tag"}</button>
-              <label className="tagAssignmentSelect"><span className="srOnly">Tag to assign</span><select value={assignmentTagId} onChange={(event) => onAssignmentTagChange(event.target.value)} disabled={isAssigningTag}><option value="">Choose tag to assign</option>{tags.map((tag) => <option value={tag.id} key={tag.id}>{tag.label}</option>)}</select></label>
-              <select value={tagResourceType} onChange={(event) => onTagResourceTypeChange(event.target.value)} aria-label="Tag resource type" disabled={isAssigningTag}>
-                {selectedFinding?.repository_asset_id ? <option value="repository_asset">Repository</option> : <option value="target">Web target</option>}
-                <option value="scan">Scan</option>
-              </select>
-              <button type="button" onClick={onAssignTag} disabled={!assignmentTagId || !selectedFinding || isAssigningTag}>{isAssigningTag ? "Assigning…" : "Assign tag"}</button>
-            </div>
           </div>
         </details>
+
+        <section className="findingTagManagement" aria-labelledby="finding-tag-management-title">
+          <div><h4 id="finding-tag-management-title">Manage tags</h4><p>Create workspace labels or assign one to the selected finding’s subject or scan.</p></div>
+          <div className="tagManagement">
+            <label className="tagLabelInput"><span className="srOnly">New tag label</span><input value={tagLabel} onChange={(event) => onTagLabelChange(event.target.value)} placeholder="New tag label" disabled={isCreatingTag} /></label>
+            <button type="button" onClick={onCreateTag} disabled={!tagLabel.trim() || isCreatingTag}>{isCreatingTag ? "Creating…" : "Create tag"}</button>
+            <label className="tagAssignmentSelect"><span className="srOnly">Tag to assign</span><select value={assignmentTagId} onChange={(event) => onAssignmentTagChange(event.target.value)} disabled={isAssigningTag}><option value="">Choose tag to assign</option>{tags.map((tag) => <option value={tag.id} key={tag.id}>{tag.label}</option>)}</select></label>
+            <select value={tagResourceType} onChange={(event) => onTagResourceTypeChange(event.target.value)} aria-label="Tag resource type" disabled={isAssigningTag}>
+              {selectedFinding?.repository_asset_id ? <option value="repository_asset">Repository</option> : <option value="target">Web target</option>}
+              <option value="scan">Scan</option>
+            </select>
+            <button type="button" onClick={onAssignTag} disabled={!assignmentTagId || !selectedFinding || isAssigningTag}>{isAssigningTag ? "Assigning…" : "Assign tag"}</button>
+          </div>
+        </section>
 
         {sortedFindings.length > 0 ? (
           <>
@@ -411,11 +415,11 @@ function FindingDetail({
           <dd>{finding.scanner_rule_id ?? "not provided"}</dd>
         </div>
         <div>
-          <dt>CWE</dt>
+          <dt><abbr title="Common Weakness Enumeration">CWE</abbr></dt>
           <dd>{finding.cwe ?? "not mapped"}</dd>
         </div>
         <div>
-          <dt>OWASP</dt>
+          <dt><abbr title="Open Worldwide Application Security Project">OWASP</abbr> category</dt>
           <dd>{finding.owasp_category ?? "not mapped"}</dd>
         </div>
         <div>

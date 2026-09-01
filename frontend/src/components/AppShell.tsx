@@ -1,21 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AppIcon } from "@/components/AppIcon";
 import { ScopeHarborMark } from "@/components/ScopeHarborMark";
 import { TargetSetup, workspaceViews, type WorkspaceView } from "@/components/TargetSetup";
-import { WebGLScopeField } from "@/components/WebGLScopeField";
-
-const safetyRules = [
-  { icon: "shield" as const, label: "Your scope stays explicit" },
-  { icon: "credential" as const, label: "Sensitive evidence stays local" },
-  { icon: "check" as const, label: "Findings lead to clear action" }
-];
 
 export function AppShell() {
-  const [activeView, setActiveView] = useState<WorkspaceView>("scanning");
-  const [heroState, setHeroState] = useState({ activeProfile: "passive-web", currentStep: null as string | null, status: "validating" });
+  const [activeView, setActiveView] = useState<WorkspaceView>("overview");
+  const [platformStatus, setPlatformStatus] = useState("validating");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const topbarRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      setTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    const topbar = topbarRef.current;
+    if (!topbar) return;
+    const updateOffset = () => document.documentElement.style.setProperty("--app-topbar-height", `${topbar.offsetHeight}px`);
+    updateOffset();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(updateOffset);
+    observer.observe(topbar);
+    return () => observer.disconnect();
+  }, []);
 
   function toggleTheme() {
     const root = document.documentElement;
@@ -23,6 +36,7 @@ export function AppShell() {
     root.dataset.theme = nextTheme;
     root.style.colorScheme = nextTheme;
     window.localStorage.setItem("scopeharbor-theme", nextTheme);
+    setTheme(nextTheme);
   }
 
   function navigateTo(view: WorkspaceView) {
@@ -35,7 +49,9 @@ export function AppShell() {
 
   return (
     <main className="appShell">
-      <header className="appTopbar">
+      <a className="skipLink" href="#workspace-console">Skip to workspace</a>
+      <h1 className="srOnly">ScopeHarbor local application security workspace</h1>
+      <header ref={topbarRef} className="appTopbar">
         <a className="brandLockup" href="#workspace-console" aria-label="ScopeHarbor workspace home" onClick={(event) => { event.preventDefault(); navigateTo("overview"); }}>
           <ScopeHarborMark />
           <strong>ScopeHarbor</strong>
@@ -57,32 +73,26 @@ export function AppShell() {
         </nav>
 
         <div className="topbarActions">
-          <div className="localOnlyBadge">
-            <span className={heroState.status === "ready" || heroState.status === "completed" ? "liveDot" : "liveDot liveDotChecking"} />
-            {heroState.status === "ready" || heroState.status === "completed" ? "Platform ready" : "Platform check"}
-          </div>
-          <button className="iconButton themeToggle" type="button" onClick={toggleTheme} aria-label="Toggle light and dark mode">
+          <button className="localOnlyBadge" type="button" onClick={() => navigateTo("operations")} aria-label="Open platform readiness">
+            <span className={platformStatus === "ready" || platformStatus === "completed" ? "liveDot" : "liveDot liveDotChecking"} />
+            <span aria-live="polite">{platformStatus === "ready" || platformStatus === "completed" ? "Platform ready" : "Check platform"}</span>
+          </button>
+          <button
+            className="iconButton themeToggle"
+            type="button"
+            onClick={toggleTheme}
+            aria-pressed={theme === "light"}
+            aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+            title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+          >
             <span className="themeIcon themeIconSun"><AppIcon name="sun" /></span>
             <span className="themeIcon themeIconMoon"><AppIcon name="moon" /></span>
           </button>
         </div>
       </header>
 
-      <section className="commandHero" aria-labelledby="workspace-title">
-        <div className="commandHeroCopy">
-          <h1 id="workspace-title">ScopeHarbor</h1>
-          <p className="heroSummary">Local-first application security audits</p>
-          <ul className="safetyStrip" aria-label="Product promises">
-            {safetyRules.map((rule) => (
-              <li key={rule.label}><AppIcon name={rule.icon} size={17} />{rule.label}</li>
-            ))}
-          </ul>
-        </div>
-        <WebGLScopeField {...heroState} />
-      </section>
-
       <section id="workspace-console" className="workspaceConsole">
-        <TargetSetup activeView={activeView} onActiveViewChange={navigateTo} onHeroStateChange={setHeroState} />
+        <TargetSetup activeView={activeView} onActiveViewChange={navigateTo} onPlatformStatusChange={setPlatformStatus} />
       </section>
     </main>
   );

@@ -6,7 +6,8 @@ import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, use
 
 import { AppIcon } from "@/components/AppIcon";
 import { ConfirmActionDialog } from "@/components/ConfirmActionDialog";
-import { AiExplanationsPanel } from "@/components/dashboard/AiExplanationsPanel";
+import { AuditReviewSummary } from "@/components/dashboard/AuditReviewSummary";
+import { FindingGuidancePanel } from "@/components/dashboard/FindingGuidancePanel";
 import { AuditLogPanel } from "@/components/dashboard/AuditLogPanel";
 import { AuthProfilesPanel } from "@/components/dashboard/AuthProfilesPanel";
 import { FindingsDashboard, severityRank } from "@/components/dashboard/FindingsDashboard";
@@ -69,13 +70,18 @@ export const workspaceViews = [
   { id: "overview", label: "Workspace", description: "Workspace signal", icon: "overview" },
   { id: "scanning", label: "Audits", description: "Configure and launch", icon: "scan" },
   { id: "findings", label: "Findings", description: "Triage evidence", icon: "finding" },
-  { id: "intelligence", label: "Intelligence", description: "Risk, reports & AI", icon: "intelligence" },
-  { id: "credentials", label: "Credentials", description: "Target auth profiles", icon: "credential" },
-  { id: "operations", label: "Operations", description: "Platform readiness", icon: "operations" },
+  { id: "intelligence", label: "Intelligence", description: "Risk, reports & guidance", icon: "intelligence" },
   { id: "guide", label: "Guide", description: "Project and workflow guide", icon: "guide" }
 ] as const;
 
-export type WorkspaceView = (typeof workspaceViews)[number]["id"];
+const contextualWorkspaceViews = [
+  { id: "credentials", label: "Credentials", description: "Target auth profiles", icon: "credential" },
+  { id: "operations", label: "Operations", description: "Platform readiness", icon: "operations" }
+] as const;
+
+const workspaceViewMetadata = [...workspaceViews, ...contextualWorkspaceViews];
+
+export type WorkspaceView = (typeof workspaceViewMetadata)[number]["id"];
 
 type AuditPhase = "ready" | "scope" | "profile" | "authorize" | "run" | "review";
 type ActionFeedback = { tone: "info" | "success" | "error"; text: string };
@@ -93,13 +99,13 @@ const auditPhases: Array<{ id: AuditPhase; label: string; icon: "operations" | "
 export function TargetSetup({
   activeView,
   onActiveViewChange,
-  onHeroStateChange
+  onPlatformStatusChange
 }: {
   activeView: WorkspaceView;
   onActiveViewChange: (view: WorkspaceView) => void;
-  onHeroStateChange: (state: { activeProfile: string; currentStep: string | null; status: string }) => void;
+  onPlatformStatusChange: (status: string) => void;
 }) {
-  const [auditPhase, setAuditPhase] = useState<AuditPhase>("profile");
+  const [auditPhase, setAuditPhase] = useState<AuditPhase>("ready");
   const [targetUrl, setTargetUrl] = useState("http://juice-shop:3000");
   const [permissionConfirmed, setPermissionConfirmed] = useState(false);
   const [repoPath, setRepoPath] = useState("/app/repositories/security-project");
@@ -165,7 +171,7 @@ export function TargetSetup({
   const [repositoryMessage, setRepositoryMessage] = useState("Authorize a confined local repository path to save it as a scan subject.");
   const [authProfileMessage, setAuthProfileMessage] = useState("Create an optional target-app auth profile for passive scans.");
   const [reportMessage, setReportMessage] = useState("Reports are available after a passive, Active Demo, or Repo scan completes.");
-  const [aiMessage, setAiMessage] = useState("AI explanations are available after a passive or Active Demo scan completes.");
+  const [aiMessage, setAiMessage] = useState("Finding guidance is available after a passive or Active Demo scan completes.");
   const [riskMessage, setRiskMessage] = useState("Risk scores are generated for completed scans using risk-v1.");
   const [opsMessage, setOpsMessage] = useState("Platform health has not been loaded.");
   const [auditLogMessage, setAuditLogMessage] = useState("Workspace activity has not been loaded.");
@@ -241,7 +247,7 @@ export function TargetSetup({
     platformReady && (!selectedProfileRequiresZap || platformHealth?.zap.status === "ok")
   );
   const scanReadinessMessage = selectedProfileRequiresZap && platformHealth?.zap.status !== "ok"
-    ? "This target policy requires ZAP for the selected profile. Restore worker-reported ZAP readiness, then run Preflight again."
+    ? "This target policy requires the ZAP web scanner for the selected profile. Restore worker-reported ZAP readiness, then run Preflight again."
     : "Confirm core platform readiness before launch. Run Preflight again after the worker and database are healthy.";
   const canCreate = useMemo(() => Boolean(validation && permissionConfirmed && !isBusy), [validation, permissionConfirmed, isBusy]);
   const profileReady = Boolean(
@@ -379,14 +385,12 @@ export function TargetSetup({
   }, [activeView, auditPhase, isBootstrapping]);
 
   useEffect(() => {
-    const scanDrivesHero = activeView === "scanning" && (auditPhase === "run" || auditPhase === "review");
-    const heroScan = currentAuditScan ?? selectedScan;
-    onHeroStateChange({
-      activeProfile: scanProfileId,
-      currentStep: scanDrivesHero ? heroScan?.current_step ?? null : null,
-      status: scanDrivesHero && heroScan ? heroScan.status : platformHealth?.status === "ok" ? "ready" : "validating"
-    });
-  }, [activeView, auditPhase, currentAuditScan?.current_step, currentAuditScan?.status, onHeroStateChange, platformHealth?.status, scanProfileId, selectedScan?.current_step, selectedScan?.status]);
+    const activeAudit = currentAuditScan ?? selectedScan;
+    const status = activeView === "scanning" && (auditPhase === "run" || auditPhase === "review") && activeAudit
+      ? activeAudit.status
+      : platformHealth?.status === "ok" ? "ready" : "validating";
+    onPlatformStatusChange(status);
+  }, [activeView, auditPhase, currentAuditScan, onPlatformStatusChange, platformHealth?.status, selectedScan]);
 
   useEffect(() => {
     setSuppressionReason("");
@@ -426,7 +430,7 @@ export function TargetSetup({
     }
     setIsLoadingScanEvidence(true);
     setReportMessage("Loading reports for the selected audit…");
-    setAiMessage("Loading explanations for the selected audit…");
+    setAiMessage("Loading finding guidance for the selected audit…");
     void loadToolRuns(selectedScanId, { onlyIfSelected: true });
     if (selectedScan && canUseReports(selectedScan)) {
       void loadReports(selectedScanId, { onlyIfSelected: true });
@@ -439,7 +443,7 @@ export function TargetSetup({
       return;
     }
     setAiExplanation(null);
-    setAiMessage("AI explanations remain available for passive and Active Demo scans.");
+    setAiMessage("Finding guidance remains available for passive and Active Demo scans.");
   }, [
     selectedScanId,
     selectedScan?.scan_profile_id
@@ -596,7 +600,7 @@ export function TargetSetup({
     setMessage("Enter an allowlisted local/demo target.");
     setRepositoryMessage("Authorize a confined local repository path to save it as a scan subject.");
     setReportMessage("Reports are available after a passive, Active Demo, or Repo scan completes.");
-    setAiMessage("AI explanations are available after a passive or Active Demo scan completes.");
+    setAiMessage("Finding guidance is available after a passive or Active Demo scan completes.");
     setRiskMessage("Risk scores are generated for completed scans using risk-v1.");
     setOpsMessage("Platform health has not been loaded.");
     setAuditLogMessage("Workspace activity has not been loaded.");
@@ -808,6 +812,13 @@ export function TargetSetup({
     tabs?.[nextIndex]?.focus();
   }
 
+  function moveAuditPhase(offset: -1 | 1) {
+    const currentIndex = auditPhases.findIndex((phase) => phase.id === auditPhase);
+    const nextIndex = (currentIndex + offset + auditPhases.length) % auditPhases.length;
+    setAuditPhase(auditPhases[nextIndex].id);
+    window.requestAnimationFrame(() => activeAuditPhaseRef.current?.focus());
+  }
+
   async function startScan() {
     if (!selectedAuditSubject) {
       return;
@@ -836,7 +847,7 @@ export function TargetSetup({
       setAiExplanation(null);
       setSelectedFindingId("");
       setReportMessage("Reports are available after this passive, Active Demo, or Repo scan completes.");
-      setAiMessage("AI explanations are available after this passive or Active Demo scan completes.");
+      setAiMessage("Finding guidance is available after this passive or Active Demo scan completes.");
       setActionFeedback({ tone: "success", text: "Audit queued. Worker status will update in the Run phase." });
       setAuditPhase("run");
       await loadScanHistory(scan.id);
@@ -969,7 +980,7 @@ export function TargetSetup({
           await loadAiExplanation(scan.id, { onlyIfSelected: true });
         } else if (selectedScanIdRef.current === scan.id) {
           setAiExplanation(null);
-          setAiMessage("AI explanations remain available for passive and Active Demo scans.");
+          setAiMessage("Finding guidance remains available for passive and Active Demo scans.");
         }
         await loadDashboardOverview();
         const subject = auditSubjects.find((item) =>
@@ -1527,7 +1538,7 @@ export function TargetSetup({
           return;
         }
         setAiExplanation(null);
-        setAiMessage("AI explanations are available after this passive or Active Demo scan completes.");
+        setAiMessage("Finding guidance is available after this passive or Active Demo scan completes.");
         return;
       }
       const body = (await response.json()) as AiExplanation;
@@ -1535,13 +1546,13 @@ export function TargetSetup({
         return;
       }
       setAiExplanation(body);
-      setAiMessage(body.fallback_used ? "Template fallback explanation is ready." : "AI explanations are ready.");
+      setAiMessage(body.fallback_used ? "Local fallback guidance is ready." : body.configured_provider === "openai" && body.provider === "openai" ? "AI-assisted guidance is ready." : "Local finding guidance is ready.");
     } catch {
       if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
         return;
       }
       setAiExplanation(null);
-      setAiMessage("AI explanations could not be loaded.");
+      setAiMessage("Finding guidance could not be loaded.");
     }
   }
 
@@ -1567,15 +1578,15 @@ export function TargetSetup({
   async function generateAiExplanation() {
     if (!selectedScan || !canUseAi(selectedScan) || isGeneratingAi) return;
     setIsGeneratingAi(true);
-    setAiMessage("Generating bounded explanations from normalized findings…");
+    setAiMessage(aiExplanation?.configured_provider === "openai" ? "Generating AI-assisted guidance from bounded normalized findings…" : "Refreshing deterministic local guidance…");
     try {
       const request = aiExplanationRequest(selectedScan.id, true);
       const response = await apiFetch(request.url, request.init);
-      const body = await readJson<AiExplanation>(response, "AI explanation generation failed.");
+      const body = await readJson<AiExplanation>(response, "Finding guidance generation failed.");
       setAiExplanation(body);
-      setAiMessage(body.fallback_used ? "The safe template fallback is ready." : "AI explanations are ready.");
+      setAiMessage(body.fallback_used ? "The safe local fallback is ready." : body.provider === "openai" ? "AI-assisted guidance is ready." : "Local finding guidance is ready.");
     } catch (error) {
-      setAiMessage(error instanceof Error ? error.message : "AI explanation generation failed.");
+      setAiMessage(error instanceof Error ? error.message : "Finding guidance generation failed.");
     } finally {
       setIsGeneratingAi(false);
     }
@@ -1748,7 +1759,7 @@ export function TargetSetup({
     <section className="dashboard" aria-label="ScopeHarbor workspace">
       {activeView !== "scanning" && activeView !== "guide" ? (
         <div className="workspaceUtilityBar">
-          <span><AppIcon name={workspaceViews.find((view) => view.id === activeView)?.icon ?? "overview"} size={16} />{workspaceViews.find((view) => view.id === activeView)?.description}</span>
+          <span><AppIcon name={workspaceViewMetadata.find((view) => view.id === activeView)?.icon ?? "overview"} size={16} />{workspaceViewMetadata.find((view) => view.id === activeView)?.description}</span>
           <button className="refreshButton" type="button" onClick={refreshWorkspace} disabled={isRefreshing}>
             <AppIcon name="refresh" size={16} />
             {isRefreshing ? "Refreshing…" : "Refresh workspace"}
@@ -1791,32 +1802,36 @@ export function TargetSetup({
 
         {activeView === "scanning" ? (
           <div className="auditWorkspace">
-            <nav ref={auditPhaseTabsRef} className="auditPhaseTabs" role="tablist" aria-label="Audit phases">
-              {auditPhases.map((phase, index) => {
-                const isActive = auditPhase === phase.id;
-                const isComplete = phaseComplete[phase.id] && !isActive;
-                const isRunInterrupted = phase.id === "run" && Boolean(currentAuditScan && ["failed", "cancelled"].includes(currentAuditScan.status));
-                const phaseState = auditPhaseState(phase.id, isActive, isComplete, currentAuditScan);
-                return (
-                  <button
-                    ref={isActive ? activeAuditPhaseRef : undefined}
-                    key={phase.id}
-                    type="button"
-                    role="tab"
-                    id={`audit-phase-${phase.id}`}
-                    aria-selected={isActive}
-                    aria-controls="audit-phase-panel"
-                    tabIndex={isActive ? 0 : -1}
-                    className={`auditPhaseTab${isActive ? " auditPhaseTabActive" : ""}${isComplete ? " auditPhaseTabComplete" : ""}${isRunInterrupted ? " auditPhaseTabInterrupted" : ""}`}
-                    onClick={() => setAuditPhase(phase.id)}
-                    onKeyDown={(event) => handlePhaseKeyDown(event, index)}
-                  >
-                    <span className="auditPhaseMarker">{isComplete ? <AppIcon name="check" size={15} /> : index + 1}</span>
-                    <span><strong>{phase.label}</strong><small>{phaseState}</small></span>
-                  </button>
-                );
-              })}
-            </nav>
+            <div className="auditPhaseNavigation">
+              <button className="phaseScrollButton" type="button" onClick={() => moveAuditPhase(-1)} aria-label="Previous audit phase"><span aria-hidden="true">‹</span></button>
+              <nav ref={auditPhaseTabsRef} className="auditPhaseTabs" role="tablist" aria-label="Audit phases">
+                {auditPhases.map((phase, index) => {
+                  const isActive = auditPhase === phase.id;
+                  const isComplete = phaseComplete[phase.id] && !isActive;
+                  const isRunInterrupted = phase.id === "run" && Boolean(currentAuditScan && ["failed", "cancelled"].includes(currentAuditScan.status));
+                  const phaseState = auditPhaseState(phase.id, isActive, isComplete, currentAuditScan);
+                  return (
+                    <button
+                      ref={isActive ? activeAuditPhaseRef : undefined}
+                      key={phase.id}
+                      type="button"
+                      role="tab"
+                      id={`audit-phase-${phase.id}`}
+                      aria-selected={isActive}
+                      aria-controls="audit-phase-panel"
+                      tabIndex={isActive ? 0 : -1}
+                      className={`auditPhaseTab${isActive ? " auditPhaseTabActive" : ""}${isComplete ? " auditPhaseTabComplete" : ""}${isRunInterrupted ? " auditPhaseTabInterrupted" : ""}`}
+                      onClick={() => setAuditPhase(phase.id)}
+                      onKeyDown={(event) => handlePhaseKeyDown(event, index)}
+                    >
+                      <span className="auditPhaseMarker">{isComplete ? <AppIcon name="check" size={15} /> : index + 1}</span>
+                      <span><strong>{phase.label}</strong><small>{phaseState}</small></span>
+                    </button>
+                  );
+                })}
+              </nav>
+              <button className="phaseScrollButton" type="button" onClick={() => moveAuditPhase(1)} aria-label="Next audit phase"><span aria-hidden="true">›</span></button>
+            </div>
 
             <div id="audit-phase-panel" className="auditPhasePanel" role="tabpanel" aria-labelledby={`audit-phase-${auditPhase}`} tabIndex={0}>
               {auditPhase === "ready" ? (
@@ -1843,7 +1858,7 @@ export function TargetSetup({
                     <span><AppIcon name="shield" size={16} /><strong>Workspace context</strong> rechecked</span>
                     <span><AppIcon name="operations" size={16} /><strong>Bounded tools</strong> with safe receipts</span>
                   </div>
-                  <div className="phaseFooter"><span>{platformReady ? "All required components report healthy." : "Resolve degraded components, then refresh readiness."}</span><button type="button" onClick={() => setAuditPhase("scope")} disabled={!platformReady}>Continue to scope <AppIcon name="arrow" size={15} /></button></div>
+                  <div className="phaseFooter"><span>{platformReady ? "All required components report healthy." : "Resolve degraded components, then refresh readiness."}</span><button className="primaryButton" type="button" onClick={() => setAuditPhase("scope")} disabled={!platformReady}>Continue to scope <AppIcon name="arrow" size={15} /></button></div>
                 </div>
               ) : null}
 
@@ -1993,25 +2008,26 @@ export function TargetSetup({
                     {selectedScan ? <ScanProgress scan={selectedScan} targetName={selectedScanSubject?.name ?? "Historical subject"} toolRuns={toolRuns} isCancelling={isCancellingScan} onCancel={cancelSelectedScan} /> : <div className="emptyState richEmptyState"><AppIcon name="activity" size={24} /><strong>No scan selected</strong><span>Launch this audit or choose a historical scan to monitor it.</span></div>}
                     <ScanHistory scans={scanHistory} selectedScanId={selectedScanId} onSelectScan={setSelectedScanId} />
                   </div>
-                  <div className="phaseFooter"><span>{currentAuditReviewReady ? "The current audit's normalized results are ready for triage." : "Review unlocks after the current audit completes or completes with warnings."}</span><button type="button" onClick={() => { if (currentAuditScan) setSelectedScanId(currentAuditScan.id); setAuditPhase("review"); }} disabled={!currentAuditReviewReady}>Review current findings <AppIcon name="arrow" size={15} /></button></div>
+                  <div className="phaseFooter"><span>{currentAuditReviewReady ? "The current audit's normalized results are ready for triage." : "Review unlocks after the current audit completes or completes with warnings."}</span><button className="primaryButton" type="button" onClick={() => { if (currentAuditScan) setSelectedScanId(currentAuditScan.id); setAuditPhase("review"); }} disabled={!currentAuditReviewReady}>Review current findings <AppIcon name="arrow" size={15} /></button></div>
                 </div>
               ) : null}
 
               {auditPhase === "review" ? (
                 <div className="auditPhaseContent auditPhaseContentPriority">
                   <div className="phaseHeading reviewPhaseHeading">
-                    <div><span>Normalized evidence</span><h2>Turn scanner output into decisions</h2><p>Triage lifecycle, suppression, and tags here, then generate sanitized reports or bounded explanations when the profile supports them.</p></div>
-                    <div className="viewToolbarActions">
-                      <label className="searchField"><AppIcon name="search" size={17} /><span className="srOnly">Search loaded findings</span><input value={findingSearchQuery} onChange={(event) => setFindingSearchQuery(event.target.value)} placeholder="Search finding, tool, URL, CWE…" /></label>
-                      <button type="button" className="secondaryButton" onClick={resetFindingFilters}>Reset filters</button>
-                    </div>
+                    <div><span>Completed audit</span><h2>Review the result and choose the next action</h2><p>Confirm the audit outcome, inspect the most important signals, then continue to canonical finding triage or risk intelligence.</p></div>
                   </div>
                   {renderHistoricalAuditNotice()}
-                  {reviewReady ? renderFindingsDashboard() : <div className="emptyState richEmptyState"><AppIcon name="finding" size={24} /><strong>No completed audit selected</strong><span>Choose a completed scan in Run to review its normalized findings.</span><button type="button" onClick={() => setAuditPhase("run")}>Open scan history</button></div>}
-                  <div className="reviewOutputs">
-                    <ReportsPanel scan={selectedScan} reports={reports} message={reportMessage} isGenerating={isGeneratingReports} pendingAction={pendingReportAction} onGenerate={generateReports} onViewReport={viewReport} onDownloadReport={downloadReport} />
-                    <AiExplanationsPanel explanation={displayAiExplanation} message={aiMessage} canGenerate={Boolean(selectedScan && canUseAi(selectedScan) && reviewReady)} isGenerating={isGeneratingAi} onGenerate={generateAiExplanation} />
-                  </div>
+                  {reviewReady && selectedScan ? (
+                    <AuditReviewSummary
+                      scan={selectedScan}
+                      findings={displayFindings}
+                      subjectName={selectedScanSubject?.name ?? "Completed audit"}
+                      onOpenFindings={() => onActiveViewChange("findings")}
+                      onOpenIntelligence={() => onActiveViewChange("intelligence")}
+                      onOpenHistory={() => setAuditPhase("run")}
+                    />
+                  ) : <div className="emptyState richEmptyState"><AppIcon name="finding" size={24} /><strong>No completed audit selected</strong><span>Choose a completed scan in Run to review its normalized findings.</span><button type="button" onClick={() => setAuditPhase("run")}>Open scan history</button></div>}
                 </div>
               ) : null}
             </div>
@@ -2053,7 +2069,7 @@ export function TargetSetup({
 
         {activeView === "intelligence" ? (
           <div className="intelligenceWorkspace productPage">
-            <div className="viewIntro"><div><h2>Risk intelligence</h2><p>Compare security posture, generate sanitized reports, and review bounded explanations.</p></div></div>
+            <div className="viewIntro"><div><h2>Risk intelligence</h2><p>Compare security posture, generate sanitized reports, and review local guidance or explicitly request AI assistance when configured.</p></div></div>
             <RiskDashboardPanel
               overview={dashboardOverview}
               targetDashboard={targetDashboard}
@@ -2094,7 +2110,7 @@ export function TargetSetup({
                 onViewReport={viewReport}
                 onDownloadReport={downloadReport}
               />
-              <AiExplanationsPanel explanation={displayAiExplanation} message={aiMessage} canGenerate={Boolean(selectedScan && canUseAi(selectedScan) && reviewReady)} isGenerating={isGeneratingAi} onGenerate={generateAiExplanation} />
+              <FindingGuidancePanel explanation={displayAiExplanation} message={aiMessage} canGenerate={Boolean(selectedScan && canUseAi(selectedScan) && reviewReady)} isGenerating={isGeneratingAi} onGenerate={generateAiExplanation} />
             </div>
           </div>
         ) : null}
@@ -2103,7 +2119,7 @@ export function TargetSetup({
           <div className="credentialWorkspace productPage">
             <div className="viewIntro">
               <div><h2>Credential profiles</h2><p>Manage target-application secrets used only by guarded passive requests. Secret values never return through the API.</p></div>
-              <span className="safetyPill"><AppIcon name="credential" size={15} /> Fernet encrypted</span>
+              <span className="safetyPill"><AppIcon name="credential" size={15} /> Encrypted locally; never returned</span>
             </div>
             <AuthProfilesPanel
               authProfiles={authProfiles}
@@ -2157,7 +2173,7 @@ export function TargetSetup({
               </div>
               <div className="operationsBoundaryList">
                 <article><AppIcon name="target" /><strong>Exact target scope</strong><p>Only configured Docker services or same-machine host-gateway applications can be launched; general targets remain passive-only.</p></article>
-                <article><AppIcon name="shield" /><strong>Safe persistence</strong><p>URLs and evidence are sanitized before database, report, or AI boundaries.</p></article>
+                <article><AppIcon name="shield" /><strong>Safe persistence</strong><p>URLs and evidence are sanitized before database, report, or finding-guidance boundaries.</p></article>
                 <article><AppIcon name="operations" /><strong>Local ownership</strong><p>Workspace records and generated artifacts stay isolated inside this deployment.</p></article>
               </div>
             </section>

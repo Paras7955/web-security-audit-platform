@@ -1,8 +1,6 @@
 import type { ReportArtifact, Scan } from "@/lib/securityAuditApi";
 
 import { canUseReports, reportableStatuses } from "./ScanControls";
-
-const visibleReportCount = 4;
 type PendingReportAction = { reportId: string; action: "view" | "download" } | null;
 
 export function ReportsPanel({
@@ -25,8 +23,8 @@ export function ReportsPanel({
   onDownloadReport: (report: ReportArtifact) => void;
 }) {
   const canGenerate = Boolean(scan && canUseReports(scan) && reportableStatuses.has(scan.status) && !isGenerating && !pendingAction);
-  const visibleReports = reports.slice(0, visibleReportCount);
-  const remainingReports = reports.slice(visibleReportCount);
+  const htmlReport = reports.find((report) => report.report_type === "html") ?? null;
+  const markdownReport = reports.find((report) => report.report_type === "markdown") ?? null;
 
   return (
     <div className="reportPanel">
@@ -36,58 +34,36 @@ export function ReportsPanel({
       </div>
 
       <div className="reportActions">
-        <button type="button" onClick={onGenerate} disabled={!canGenerate}>
+        <button className="primaryButton" type="button" onClick={onGenerate} disabled={!canGenerate}>
           {isGenerating ? "Generating…" : "Generate reports"}
         </button>
         <p role="status" aria-live="polite">{scan && !canUseReports(scan) ? "Reports remain available for passive, Active Demo, and Repo scans." : message}</p>
       </div>
 
       {reports.length > 0 ? (
-        <div className="reportHistory">
-          <ReportList reports={visibleReports} pendingAction={pendingAction} onViewReport={onViewReport} onDownloadReport={onDownloadReport} />
-          {remainingReports.length > 0 ? (
-            <details className="reportOverflowDetails">
-              <summary>Show {remainingReports.length} older report{remainingReports.length === 1 ? "" : "s"}</summary>
-              <ReportList reports={remainingReports} pendingAction={pendingAction} onViewReport={onViewReport} onDownloadReport={onDownloadReport} />
-            </details>
-          ) : null}
+        <div className="reportArtifactActions">
+          <div className="reportPrimaryAction">
+            <div>
+              <strong>Formatted audit report</strong>
+              <span>{htmlReport ? `Updated ${new Date(htmlReport.created_at).toLocaleString()}` : "HTML artifact unavailable"}</span>
+            </div>
+            <button className="secondaryButton" type="button" onClick={() => htmlReport && onViewReport(htmlReport)} disabled={!htmlReport || Boolean(pendingAction)}>
+              {htmlReport && pendingAction?.reportId === htmlReport.id && pendingAction.action === "view" ? "Opening…" : "Open formatted report"}
+            </button>
+          </div>
+          <div className="reportDownloads" aria-label="Report downloads">
+            <span>Download a portable copy</span>
+            <button className="textButton" type="button" onClick={() => htmlReport && onDownloadReport(htmlReport)} disabled={!htmlReport || Boolean(pendingAction)}>
+              {htmlReport && pendingAction?.reportId === htmlReport.id && pendingAction.action === "download" ? "Preparing HTML…" : "HTML"}
+            </button>
+            <button className="textButton" type="button" onClick={() => markdownReport && onDownloadReport(markdownReport)} disabled={!markdownReport || Boolean(pendingAction)}>
+              {markdownReport && pendingAction?.reportId === markdownReport.id && pendingAction.action === "download" ? "Preparing Markdown…" : "Markdown"}
+            </button>
+          </div>
         </div>
       ) : (
         <p className="emptyState">No report artifacts yet.</p>
       )}
     </div>
-  );
-}
-
-function ReportList({
-  reports,
-  pendingAction,
-  onViewReport,
-  onDownloadReport
-}: {
-  reports: ReportArtifact[];
-  pendingAction: PendingReportAction;
-  onViewReport: (report: ReportArtifact) => void;
-  onDownloadReport: (report: ReportArtifact) => void;
-}) {
-  return (
-    <ul className="reportList">
-      {reports.map((report) => {
-        const isViewing = pendingAction?.reportId === report.id && pendingAction.action === "view";
-        const isDownloading = pendingAction?.reportId === report.id && pendingAction.action === "download";
-        return (
-          <li key={report.id}>
-            <strong>{report.report_type}</strong>
-            <span>{new Date(report.created_at).toLocaleString()}</span>
-            <button className="secondaryButton" type="button" onClick={() => onViewReport(report)} disabled={Boolean(pendingAction)}>
-              {isViewing ? "Opening…" : "View"}
-            </button>
-            <button className="secondaryButton" type="button" onClick={() => onDownloadReport(report)} disabled={Boolean(pendingAction)}>
-              {isDownloading ? "Preparing…" : "Download"}
-            </button>
-          </li>
-        );
-      })}
-    </ul>
   );
 }

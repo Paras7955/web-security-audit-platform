@@ -55,7 +55,7 @@ const workflowSteps: Array<{
   {
     number: "06",
     title: "Explain impact and track posture",
-    description: "Use risk summaries, scan comparisons, sanitized reports, and bounded explanations to turn evidence into remediation work.",
+    description: "Use risk summaries, scan comparisons, sanitized reports, and bounded finding guidance to turn evidence into remediation work.",
     action: "Open Intelligence",
     view: "intelligence"
   }
@@ -65,21 +65,21 @@ const profiles = [
   {
     name: "Passive Web",
     use: "A quick high-level review of an exact allowlisted HTTP service.",
-    boundary: "Optional guarded target credential; reports and explanations supported."
+    boundary: "Optional guarded target credential; reports and finding guidance supported."
   },
   {
     name: "Active Demo",
-    use: "Bounded ZAP active testing against a configured local demo only.",
-    boundary: "Never uses saved credentials; reports and explanations supported."
+    use: "Bounded OWASP ZAP web-scanner testing against a configured local demo only.",
+    boundary: "Never uses saved credentials; reports and finding guidance supported."
   },
   {
     name: "Modern Web Crawl",
-    use: "A short ZAP Client Spider crawl for a configured local demo.",
-    boundary: "Browser-style crawl only; no credentials, reports, or explanations."
+    use: "A short OWASP ZAP Client Spider crawl for a configured local demo.",
+    boundary: "Browser-style crawl only; no credentials, reports, or finding guidance."
   },
   {
     name: "Repository",
-    use: "Pinned Gitleaks and offline OSV checks for an approved local path.",
+    use: "Pinned Gitleaks secret detection and offline OSV dependency-advisory checks for an approved local path.",
     boundary: "Never clones, fetches, builds, installs, runs hooks, or executes repository code."
   }
 ];
@@ -96,7 +96,7 @@ export function ProductGuide({
           <h2>How to use ScopeHarbor</h2>
           <p>A practical guide to running authorized local audits, reviewing normalized evidence, and producing useful remediation outputs.</p>
         </div>
-        <button type="button" onClick={() => onNavigate("scanning", "profile")}>
+        <button type="button" className="primaryButton" onClick={() => onNavigate("scanning", "profile")}>
           <AppIcon name="scan" size={16} /> Start an audit
         </button>
       </div>
@@ -127,7 +127,7 @@ export function ProductGuide({
             </div>
             <div className="guidePrinciples">
               <div><AppIcon name="target" size={18} /><strong>Exact scope</strong><p>Launches are limited to configured targets or authorized repository assets.</p></div>
-              <div><AppIcon name="shield" size={18} /><strong>Safe evidence</strong><p>Raw bodies, secrets, unsafe paths, and unredacted scanner output stay outside reports and AI boundaries.</p></div>
+              <div><AppIcon name="shield" size={18} /><strong>Safe evidence</strong><p>Raw bodies, secrets, unsafe paths, and unredacted scanner output stay outside reports and finding-guidance boundaries.</p></div>
               <div><AppIcon name="finding" size={18} /><strong>Actionable results</strong><p>Scanner output is normalized so triage and remediation remain consistent across profiles.</p></div>
             </div>
           </section>
@@ -171,7 +171,7 @@ export function ProductGuide({
               ))}
             </div>
             <div className="guideSectionAction">
-              <button type="button" onClick={() => onNavigate("scanning", "profile")}>Compare audit profiles</button>
+              <button type="button" className="primaryButton" onClick={() => onNavigate("scanning", "profile")}>Compare audit profiles</button>
             </div>
           </section>
 
@@ -186,7 +186,7 @@ export function ProductGuide({
             <div>
               <div className="guideSectionHeading">
                 <span>Outputs</span>
-                <div><h3>Risk, reports, and explanations</h3><p>Intelligence summarizes posture and compares completed scans only when the target and audit profile match. Reports use normalized findings, while explanations remain bounded by profile and data-handling policy.</p></div>
+                <div><h3>Risk, reports, and finding guidance</h3><p>Intelligence summarizes posture and compares completed scans only when the target and audit profile match. Reports always use local guidance; optional AI assistance is explicit and remains bounded by profile and data-handling policy.</p></div>
               </div>
               <button type="button" className="secondaryButton" onClick={() => onNavigate("intelligence")}>Open Intelligence</button>
             </div>
@@ -203,7 +203,7 @@ export function ProductGuide({
             <ul className="guideBoundaryList">
               <li><AppIcon name="check" size={15} /><span><strong>No arbitrary public scanning.</strong> Web targets must match the exact configured allowlist.</span></li>
               <li><AppIcon name="check" size={15} /><span><strong>No repository execution.</strong> Repository scans stage bounded regular files and use pinned/offline tooling.</span></li>
-              <li><AppIcon name="check" size={15} /><span><strong>No secret projection.</strong> Target credentials never enter findings, reports, AI, scanner receipts, or audit logs.</span></li>
+              <li><AppIcon name="check" size={15} /><span><strong>No secret projection.</strong> Target credentials never enter findings, reports, finding guidance, scanner receipts, or audit logs.</span></li>
               <li><AppIcon name="check" size={15} /><span><strong>No hidden redirect trust.</strong> Redirects and outbound destinations are revalidated against SSRF and scope controls.</span></li>
             </ul>
             <div className="guideSectionAction guideSectionActionSplit">

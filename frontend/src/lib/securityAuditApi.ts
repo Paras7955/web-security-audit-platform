@@ -194,6 +194,7 @@ export type FindingExplanation = {
 export type AiExplanation = {
   scan_id: string;
   provider: string;
+  configured_provider: "template" | "openai";
   fallback_used: boolean;
   provider_error_code: string | null;
   summary: string;

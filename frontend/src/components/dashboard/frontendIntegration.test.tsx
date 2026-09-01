@@ -35,7 +35,7 @@ describe("Phase 25 protected workflow state", () => {
 
     const props = {
       onActiveViewChange: vi.fn(),
-      onHeroStateChange: vi.fn(),
+      onPlatformStatusChange: vi.fn(),
     };
     const view = render(<TargetSetup activeView="operations" {...props} />);
     const clearButton = await screen.findByRole("button", { name: "Clear session token" });
@@ -84,7 +84,7 @@ describe("Phase 25 protected workflow state", () => {
     expect(screen.getByRole("button", { name: /Continue to launch review/ })).toHaveProperty("disabled", true);
     view.rerender(<TargetSetup activeView="findings" {...props} />);
     await screen.findAllByText("Authentication transition finding");
-    fireEvent.click(screen.getByText("Filters & tags"));
+    fireEvent.click(screen.getByText("Filters"));
     expect(screen.getByLabelText("Scope")).toHaveProperty("value", "scan");
     expect(screen.getByLabelText("Subject")).toHaveProperty("value", "");
     expect(screen.getByLabelText("Profile")).toHaveProperty("value", "");
@@ -142,8 +142,9 @@ describe("Phase 25 protected workflow state", () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
     vi.stubGlobal("fetch", readinessApi(target, "degraded"));
-    render(<TargetSetup activeView="scanning" onActiveViewChange={vi.fn()} onHeroStateChange={vi.fn()} />);
+    render(<TargetSetup activeView="scanning" onActiveViewChange={vi.fn()} onPlatformStatusChange={vi.fn()} />);
 
+    await userEvent.click(await screen.findByRole("tab", { name: /Profile/ }));
     await screen.findByText("Allowed for the selected subject");
     await userEvent.click(screen.getByRole("tab", { name: /Authorize/ }));
     await userEvent.click(screen.getByRole("checkbox", { name: "I confirm I am authorized to assess this saved web target." }));
@@ -161,22 +162,23 @@ describe("Phase 25 protected workflow state", () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
     vi.stubGlobal("fetch", readinessApi(target, "degraded"));
-    render(<TargetSetup activeView="scanning" onActiveViewChange={vi.fn()} onHeroStateChange={vi.fn()} />);
+    render(<TargetSetup activeView="scanning" onActiveViewChange={vi.fn()} onPlatformStatusChange={vi.fn()} />);
 
+    await userEvent.click(await screen.findByRole("tab", { name: /Profile/ }));
     await screen.findByText("Allowed for the selected subject");
     await userEvent.click(screen.getByRole("tab", { name: /Authorize/ }));
     await userEvent.click(screen.getByRole("checkbox", { name: "I confirm I am authorized to assess this saved web target." }));
     await userEvent.click(screen.getByRole("button", { name: /Continue to launch review/ }));
 
     expect(screen.getByRole("button", { name: /Launch Passive Web/ })).toHaveProperty("disabled", true);
-    expect(screen.getByText(/This target policy requires ZAP/)).toBeTruthy();
+    expect(screen.getByText(/This target policy requires the ZAP web scanner/)).toBeTruthy();
   });
 
   it("refreshes workspace, subject, and comparison posture after every finding-governance mutation", async () => {
     setSessionAuthToken("valid-session");
     const fixture = postureMutationApi();
     vi.stubGlobal("fetch", fixture.fetchMock);
-    render(<TargetSetup activeView="findings" onActiveViewChange={vi.fn()} onHeroStateChange={vi.fn()} />);
+    render(<TargetSetup activeView="findings" onActiveViewChange={vi.fn()} onPlatformStatusChange={vi.fn()} />);
 
     await screen.findAllByText("Posture regression finding");
     await waitFor(() => {
@@ -335,7 +337,7 @@ async function expectEveryPostureLayerRefreshed(
 }
 
 async function selectFindingFilter(label: string, value: string) {
-  const summary = screen.getByText("Filters & tags");
+  const summary = screen.getByText("Filters");
   const details = summary.closest("details");
   if (!details?.open) fireEvent.click(summary);
   await userEvent.selectOptions(screen.getByLabelText(label), value);

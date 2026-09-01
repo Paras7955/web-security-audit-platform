@@ -116,7 +116,7 @@ export function ScanProfileSelector({
           </div>
           <ul className="profileAssuranceList">
             <li><AppIcon name="shield" size={17} /><span><strong>Guarded eligibility</strong><small>{selectedSubjectSupportsProfile ? "Allowed for the selected subject" : "Not allowed for the selected subject"}</small></span></li>
-            <li><AppIcon name="intelligence" size={17} /><span><strong>Sanitized outputs</strong><small>{selectedProfile.reports_enabled ? `Reports${selectedProfile.ai_enabled ? " and explanations" : ""} available` : "No reports or explanations"}</small></span></li>
+            <li><AppIcon name="intelligence" size={17} /><span><strong>Sanitized outputs</strong><small>{selectedProfile.reports_enabled ? `Reports${selectedProfile.ai_enabled ? " and finding guidance" : ""} available` : "No reports or finding guidance"}</small></span></li>
             <li><AppIcon name="credential" size={17} /><span><strong>Credential boundary</strong><small>{selectedProfile.mode === "passive" ? "Optional guarded credential" : "Credentials are never used"}</small></span></li>
           </ul>
           {selectedSubject?.repositoryAsset ? (
@@ -127,7 +127,7 @@ export function ScanProfileSelector({
             </div>
           ) : null}
           {authProfileUnsupported ? <p className="formMessage errorText">Detach the target credential or choose Passive Web. Credentials never enter active, browser, or repository scans.</p> : null}
-          <button type="button" onClick={onContinue} disabled={!selectedSubjectSupportsProfile || authProfileUnsupported}>
+          <button type="button" className="primaryButton" onClick={onContinue} disabled={!selectedSubjectSupportsProfile || authProfileUnsupported}>
             Continue to authorization <AppIcon name="arrow" size={15} />
           </button>
         </aside>
@@ -182,7 +182,7 @@ export function ScanAuthorization({
           ))}
         </div>
         {authProfileUnsupported ? <p className="formMessage errorText">This target has a credential attached. Credentials are limited to guarded Passive Web requests, so detach it before continuing.</p> : null}
-        <button type="button" onClick={onContinue} disabled={!profileReady || !allConfirmed || authProfileUnsupported}>
+        <button type="button" className="primaryButton" onClick={onContinue} disabled={!profileReady || !allConfirmed || authProfileUnsupported}>
           Continue to launch review <AppIcon name="arrow" size={15} />
         </button>
       </section>
@@ -193,7 +193,7 @@ export function ScanAuthorization({
         <ul>
           <li><AppIcon name="check" size={15} /><span><strong>Exact subject</strong>{subject?.subjectType === "repository_asset" ? "Repository access remains confined below the operator root." : "Scanner traffic remains bound to the configured destination policy."}</span></li>
           <li><AppIcon name="check" size={15} /><span><strong>Redirect checks</strong>Every redirect is revalidated; automatic redirects stay disabled.</span></li>
-          <li><AppIcon name="check" size={15} /><span><strong>Sanitized output</strong>Queries, fragments, secrets, and raw bodies do not cross report or AI boundaries.</span></li>
+          <li><AppIcon name="check" size={15} /><span><strong>Sanitized output</strong>Queries, fragments, secrets, and raw bodies do not cross report or finding-guidance boundaries.</span></li>
         </ul>
         {profile.mode === "passive" ? (
           <div className="credentialPrompt">
@@ -238,7 +238,7 @@ export function ScanLaunchPanel({
         <div><dt>Profile</dt><dd>{profile.label}</dd></div>
         <div><dt>Platform</dt><dd>{platformReady ? "Ready" : "Needs attention"}</dd></div>
       </dl>
-      <button type="button" onClick={onStartScan} disabled={!canStartScan || isBusy}>
+      <button type="button" className="primaryButton" onClick={onStartScan} disabled={!canStartScan || isBusy}>
         {isBusy ? "Queuing audit…" : `Launch ${profile.label}`} <AppIcon name="arrow" size={15} />
       </button>
       {!platformReady ? <p className="formMessage errorText">{readinessMessage}</p> : null}
@@ -248,7 +248,7 @@ export function ScanLaunchPanel({
 
 function profileCapabilities(profile: ScanProfileMetadata) {
   const capabilities = [profile.local_demo_only ? "Local demo" : profile.mode === "repo" ? "Offline" : "Allowlisted"];
-  if (profile.reports_enabled) capabilities.push(profile.ai_enabled ? "Reports + AI" : "Reports");
+  if (profile.reports_enabled) capabilities.push(profile.ai_enabled ? "Reports + guidance" : "Reports");
   else capabilities.push("No reports");
   return capabilities;
 }
