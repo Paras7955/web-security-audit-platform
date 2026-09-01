@@ -61,6 +61,7 @@ class RiskDashboardTests(unittest.TestCase):
 
     def test_scan_risk_score_calculates_missing_legacy_score_without_get_write(self) -> None:
         target_id = self.create_target()
+        self.create_target(name="Repository compatibility record", repo_path="security-project")
         scan_id = self.create_scan(target_id)
         self.create_finding(scan_id, "medium-high", severity="medium", confidence="high")
 
@@ -321,7 +322,14 @@ class RiskDashboardTests(unittest.TestCase):
         self.assertEqual(overview.status_code, 200)
         self.assertEqual(overview.json()["latest_risk_score"]["scan_id"], higher_scan_id)
 
-    def create_target(self, *, workspace_id: str = DEV_WORKSPACE_ID, user_id: str = DEV_USER_ID, name: str = "Juice Shop") -> str:
+    def create_target(
+        self,
+        *,
+        workspace_id: str = DEV_WORKSPACE_ID,
+        user_id: str = DEV_USER_ID,
+        name: str = "Juice Shop",
+        repo_path: str | None = None,
+    ) -> str:
         target_id = str(uuid4())
         with SessionLocal() as db:
             ensure_identity(db, workspace_id=workspace_id, user_id=user_id)
@@ -333,6 +341,7 @@ class RiskDashboardTests(unittest.TestCase):
                 name=name,
                 base_url="http://juice-shop:3000",
                 permission_confirmed=True,
+                repo_path=repo_path,
             )
             db.add(target)
             db.commit()

@@ -91,6 +91,7 @@ describe("Phase 25 protected workflow state", () => {
     expect(screen.getByLabelText("Tag")).toHaveProperty("value", "");
     view.rerender(<TargetSetup activeView="scanning" {...props} />);
     await userEvent.click(screen.getByRole("tab", { name: /Scope/ }));
+    expect(screen.queryByText("Repository compatibility record")).toBeNull();
     expect(screen.getByText("Enter an allowlisted local/demo target.")).toBeTruthy();
     expect(screen.getByText("Authorize a confined local repository path to save it as a scan subject.")).toBeTruthy();
   });
@@ -289,7 +290,10 @@ function protectedApiResponse(url: string, method = "GET") {
     posture_basis: "latest completed scan per subject and profile", current_posture_score: null, historical_findings_count: 0,
     historical_severity_counts: {},
   });
-  if (url.includes("/targets")) return jsonResponse(page([targetFixture()]));
+  if (url.includes("/targets")) return jsonResponse(page([
+    targetFixture(),
+    targetFixture({ id: "repository-compatibility-target", name: "Repository compatibility record", has_repo_path: true }),
+  ]));
   if (url.includes("/repository-assets")) return jsonResponse(page());
   if (url.includes("/auth-profiles")) return jsonResponse(page());
   if (url.includes("/scans/auth-scan/findings")) return jsonResponse(page([authenticationTransitionFinding()]));

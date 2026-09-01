@@ -65,7 +65,7 @@ def dashboard_overview(
     )
 
     return DashboardOverviewRead(
-        targets_count=sum(target.archived_at is None for target in targets),
+        targets_count=sum(target.archived_at is None and target.repo_path is None for target in targets),
         repository_assets_count=sum(asset.archived_at is None for asset in repository_assets),
         scans_count=len(scans),
         completed_scans_count=len(completed_scans),

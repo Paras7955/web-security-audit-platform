@@ -1019,9 +1019,13 @@ export function TargetSetup({
 
   async function loadTargets(preferredTargetId?: string) {
     const items = await readAllPages<Target>(`${apiBaseUrl}/targets`, "Target list load failed.");
-    setTargets(items);
+    // Historical repository scans retain an internal Target row for backwards
+    // compatibility. RepositoryAsset is the public repository subject, so the
+    // compatibility row must never appear as a second web target in the UI.
+    const webTargets = items.filter((target) => !target.has_repo_path);
+    setTargets(webTargets);
     const requestedTargetId = preferredTargetId ?? selectedTargetId;
-    const nextTargetId = items.some((target) => target.id === requestedTargetId) ? requestedTargetId : items[0]?.id ?? "";
+    const nextTargetId = webTargets.some((target) => target.id === requestedTargetId) ? requestedTargetId : webTargets[0]?.id ?? "";
     setSelectedTargetId(nextTargetId);
     setBootstrapError("");
   }

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from html import escape
 from pathlib import Path
 
 from sqlalchemy import select
@@ -27,8 +26,14 @@ from app.models import (
     Target,
     Workspace,
 )
-from app.reports.service import safe_report_dir, write_report_file
-from app.risk import SCORING_MODEL_VERSION, calculate_scan_risk_score
+from app.reports.service import (
+    build_report_data,
+    render_html_report,
+    render_markdown_report,
+    safe_report_dir,
+    write_report_file,
+)
+from app.risk import calculate_scan_risk_score
 from app.security.allowlist import load_allowlist
 
 DEMO_USER_ID = "dev-user"
@@ -465,6 +470,7 @@ def upsert_scans(db: Session, *, workspace_id: str, user_id: str) -> None:
             error_code=None,
             error_detail=None,
             attempt_count=0,
+            created_at=DEMO_STARTED_AT,
         ),
         Scan(
             id=LATEST_SCAN_ID,
@@ -485,6 +491,7 @@ def upsert_scans(db: Session, *, workspace_id: str, user_id: str) -> None:
             error_code=None,
             error_detail=None,
             attempt_count=0,
+            created_at=DEMO_STARTED_AT + timedelta(days=1),
         ),
         Scan(
             id=REPO_SCAN_ID,
@@ -510,6 +517,7 @@ def upsert_scans(db: Session, *, workspace_id: str, user_id: str) -> None:
             error_code=None,
             error_detail=None,
             attempt_count=0,
+            created_at=DEMO_STARTED_AT + timedelta(days=2),
         ),
     )
     for scan in scans:
@@ -689,6 +697,10 @@ def upsert_risk_scores(db: Session) -> None:
 
 
 def upsert_reports(db: Session, *, artifact_root: Path, workspace_id: str, user_id: str) -> None:
+    report_data = {
+        scan_id: build_report_data(db, scan_id=scan_id, workspace_id=workspace_id)
+        for scan_id in (LATEST_SCAN_ID, REPO_SCAN_ID)
+    }
     report_specs = (
         (LATEST_SCAN_ID, "demo-report-latest-markdown", "markdown", "report.md"),
         (LATEST_SCAN_ID, "demo-report-latest-html", "html", "report.html"),
@@ -701,7 +713,9 @@ def upsert_reports(db: Session, *, artifact_root: Path, workspace_id: str, user_
             continue
         report_dir = safe_report_dir(artifact_root, scan_id)
         report_path = report_dir / filename
-        write_report_file(report_path, render_seed_report(db, scan, report_type))
+        data = report_data[scan_id]
+        content = render_html_report(data) if report_type == "html" else render_markdown_report(data)
+        write_report_file(report_path, content)
         artifact = ReportArtifact(
             id=report_id,
             workspace_id=workspace_id,
@@ -709,46 +723,9 @@ def upsert_reports(db: Session, *, artifact_root: Path, workspace_id: str, user_
             scan_id=scan_id,
             report_type=report_type,
             path=str(report_path.resolve()),
+            created_at=scan.completed_at,
         )
         merge_model(db, artifact)
-
-
-def render_seed_report(db: Session, scan: Scan, report_type: str) -> str:
-    findings = list(db.scalars(select(Finding).where(Finding.scan_id == scan.id).order_by(Finding.severity.asc(), Finding.title.asc())).all())
-    risk = db.scalar(
-        select(RiskScore).where(
-            RiskScore.scan_id == scan.id,
-            RiskScore.scoring_model_version == SCORING_MODEL_VERSION,
-        )
-    )
-    title = f"Seeded Demo Report - {scan.scan_profile_id}"
-    lines = [
-        f"# {title}",
-        "",
-        f"Scan ID: {scan.id}",
-        f"Risk: {risk.score if risk is not None else 'n/a'} {risk.label if risk is not None else ''}".strip(),
-        "",
-        "## Findings",
-    ]
-    for finding in findings:
-        lines.append(f"- {finding.severity.upper()}: {finding.title} ({finding.dedupe_key})")
-    markdown = "\n".join(lines) + "\n"
-    if report_type == "markdown":
-        return markdown
-
-    items = "\n".join(
-        f"<li>{escape(finding.severity.upper())}: {escape(finding.title)} ({escape(finding.dedupe_key)})</li>"
-        for finding in findings
-    )
-    risk_text = escape(f"{risk.score} {risk.label}" if risk is not None else "n/a")
-    escaped_title = escape(title)
-    escaped_scan_id = escape(scan.id)
-    return (
-        "<!doctype html>\n"
-        "<html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\"><title>ScopeHarbor Seeded Demo Report</title></head>"
-        f"<body><h1>{escaped_title}</h1><p>Scan ID: {escaped_scan_id}</p><p>Risk: {risk_text}</p><h2>Findings</h2><ul>{items}</ul></body></html>\n"
-    )
-
 
 def merge_model(db: Session, incoming):
     existing = db.get(type(incoming), incoming.id)

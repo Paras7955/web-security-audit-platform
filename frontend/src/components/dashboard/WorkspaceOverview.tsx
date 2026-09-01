@@ -27,7 +27,7 @@ export function WorkspaceOverview({
     <div className="overviewWorkspace productPage">
       <div className="viewIntro"><div><h2>Workspace overview</h2><p>See current risk, platform readiness, authorized scope, and the latest audit activity at a glance.</p></div></div>
       <section className="metricGrid" aria-label="Workspace metrics">
-        <MetricCard icon="target" label="Saved subjects" value={overview ? overview.targets_count + overview.repository_assets_count : "—"} detail={`${overview?.targets_count ?? 0} web · ${overview?.repository_assets_count ?? 0} repositories`} tone="cyan" />
+        <MetricCard icon="target" label="Saved subjects" value={overview ? overview.targets_count + overview.repository_assets_count : "—"} detail={`${overview?.targets_count ?? 0} web · ${repositoryLabel(overview?.repository_assets_count ?? 0)}`} tone="cyan" />
         <MetricCard icon="scan" label="Total scans" value={overview?.scans_count ?? "—"} detail={`${overview?.completed_scans_count ?? 0} completed`} tone="blue" />
         <MetricCard icon="finding" label="Open evidence" value={overview?.findings_count ?? "—"} detail={`${criticalCount + highCount} high priority`} tone={criticalCount ? "danger" : "accent"} />
         <MetricCard icon="activity" label="Current posture" value={riskScore ?? "—"} detail={overview?.current_posture_score?.label ?? "Awaiting completed scan"} tone="amber" />
@@ -89,7 +89,7 @@ export function WorkspaceOverview({
                 <div className="progressTrack"><span style={{ width: `${selectedScan.progress_percent}%` }} /></div>
               </div>
               <dl className="compactMeta">
-                <div><dt>State</dt><dd>{selectedScan.current_step ?? formatStatus(selectedScan.status)}</dd></div>
+                <div><dt>State</dt><dd>{formatStatus(selectedScan.current_step ?? selectedScan.status)}</dd></div>
                 <div><dt>Started</dt><dd>{formatDate(selectedScan.started_at ?? selectedScan.created_at)}</dd></div>
               </dl>
             </>
@@ -149,4 +149,8 @@ function formatDate(value: string | null) {
 
 function formatStatus(value: string) {
   return value.replaceAll("_", " ");
+}
+
+function repositoryLabel(count: number) {
+  return `${count} ${count === 1 ? "repository" : "repositories"}`;
 }

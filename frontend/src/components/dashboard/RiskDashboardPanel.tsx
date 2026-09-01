@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { formatScanProfileLabel } from "@/components/dashboard/ScanControls";
 import type { AuditSubject, DashboardOverview, RepositoryDashboard, Scan, ScanComparison, TargetDashboard } from "@/lib/securityAuditApi";
 
 const completedStatuses = new Set(["completed", "completed_with_warnings"]);
@@ -125,7 +126,7 @@ export function RiskDashboardPanel({
                 <option value="">Select baseline</option>
                 {eligibleBaselineScans.map((scan) => (
                   <option key={scan.id} value={scan.id}>
-                    {scan.scan_profile_id} · {formatDate(scan.created_at)}
+                    {formatScanProfileLabel(scan.scan_profile_id)} · {formatDate(scanCompletionTime(scan))}
                   </option>
                 ))}
               </select>
@@ -137,10 +138,10 @@ export function RiskDashboardPanel({
                 onChange={(event) => onComparisonScanChange(event.target.value)}
                 disabled={!selectedBaseline}
               >
-                <option value="">{selectedBaseline ? `Select another ${selectedBaseline.scan_profile_id} audit` : "Choose a baseline first"}</option>
+                <option value="">{selectedBaseline ? `Select another ${formatScanProfileLabel(selectedBaseline.scan_profile_id)} audit` : "Choose a baseline first"}</option>
                 {eligibleComparisonScans.map((scan) => (
                   <option key={scan.id} value={scan.id}>
-                    {scan.scan_profile_id} · {formatDate(scan.created_at)}
+                    {formatScanProfileLabel(scan.scan_profile_id)} · {formatDate(scanCompletionTime(scan))}
                   </option>
                 ))}
               </select>
@@ -208,7 +209,7 @@ function CompactScanTable({ scans }: { scans: DashboardOverview["recent_scans"] 
     <table className="compactTable">
       <thead>
         <tr>
-          <th>Target</th>
+          <th>Subject</th>
           <th>Profile</th>
           <th>Status</th>
           <th>Risk</th>
@@ -218,8 +219,8 @@ function CompactScanTable({ scans }: { scans: DashboardOverview["recent_scans"] 
         {scans.map((scan) => (
           <tr key={scan.id}>
             <td>{scan.target_name}</td>
-            <td>{scan.scan_profile_id}</td>
-            <td>{scan.status}</td>
+            <td>{formatScanProfileLabel(scan.scan_profile_id)}</td>
+            <td>{formatStatus(scan.status)}</td>
             <td>{scan.risk_score ? `${scan.risk_score.score} ${scan.risk_score.label}` : "-"}</td>
           </tr>
         ))}
@@ -319,4 +320,8 @@ function formatDate(value: string) {
 
 function scanCompletionTime(scan: Scan) {
   return scan.completed_at ?? scan.created_at;
+}
+
+function formatStatus(value: string) {
+  return value.replaceAll("_", " ");
 }

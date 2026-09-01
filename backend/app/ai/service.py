@@ -377,9 +377,9 @@ def require_ai_scan(db: Session, *, scan_id: str, workspace_id: str) -> Scan:
         raise AiExplanationError("Scan not found.")
     profile = scan_profile_for_values(scan.scan_profile_id, scan.mode)
     if profile is None or not profile.ai_enabled:
-        raise AiExplanationError("AI explanations can only be generated for passive and Active Demo scans.")
+        raise AiExplanationError("Finding guidance is available only for Passive Web and Active Demo scans.")
     if scan.status not in ELIGIBLE_SCAN_STATUSES:
-        raise AiExplanationError("AI explanations can only be generated for completed scans.")
+        raise AiExplanationError("Finding guidance is available only for completed scans.")
     return scan
 
 

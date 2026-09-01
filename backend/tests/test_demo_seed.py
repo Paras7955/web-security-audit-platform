@@ -1,11 +1,13 @@
 import tempfile
 import unittest
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 from app import demo_seed
 from app.demo_seed import (
     BASELINE_SCAN_ID,
+    DEMO_STARTED_AT,
     DEMO_USER_ID,
     DEMO_WORKSPACE_ID,
     FINDING_SEEDS,
@@ -94,6 +96,14 @@ class DemoSeedTests(unittest.TestCase):
                 self.assertTrue(all(target.allowlist_id == "juice-shop" for target in targets))
                 self.assertTrue(all(target.base_url == "http://juice-shop:3000" for target in targets))
                 self.assertTrue(all(scan.workspace_id == DEMO_WORKSPACE_ID for scan in scans))
+                self.assertEqual(
+                    {scan.id: scan.created_at for scan in scans},
+                    {
+                        BASELINE_SCAN_ID: DEMO_STARTED_AT,
+                        LATEST_SCAN_ID: DEMO_STARTED_AT + timedelta(days=1),
+                        REPO_SCAN_ID: DEMO_STARTED_AT + timedelta(days=2),
+                    },
+                )
                 self.assertTrue(all(finding.workspace_id == DEMO_WORKSPACE_ID for finding in findings))
                 self.assertTrue(all(finding.redaction_applied for finding in findings))
                 self.assertFalse(any("super-secret" in (finding.evidence or "") for finding in findings))
@@ -142,6 +152,18 @@ class DemoSeedTests(unittest.TestCase):
                     self.assertTrue(report_path.resolve().is_relative_to(artifact_root.resolve()))
                     content = read_report_artifact_file(report, artifact_root=artifact_root)
                     self.assertNotIn("super-secret", content)
+                    self.assertIn("Audit completed at", content)
+                    self.assertIn("Executive summary", content)
+                    self.assertIn("Severity distribution", content)
+                    self.assertIn("detailed findings", content.lower())
+                    if report.report_type == "html":
+                        self.assertIn("<header class=\"masthead\">", content)
+                        self.assertIn("@media print", content)
+                        self.assertIn("default-src 'none'", content)
+                        self.assertNotIn("<script", content.lower())
+                    else:
+                        self.assertIn("# ScopeHarbor Security Audit Report", content)
+                        self.assertIn("## Prioritized Finding Guidance", content)
 
 
 def run_seed(artifact_root: Path, repo_root: Path):
