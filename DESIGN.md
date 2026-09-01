@@ -134,8 +134,8 @@ The system explicitly rejects the look and behavior of a hacker-themed terminal,
 - Continuous surfaces divided by fine lines instead of stacks of bubbly cards.
 - Sleek system typography with compact, readable hierarchy and bounded prose.
 - Explicit audit phases, prerequisites, status feedback, and next actions.
-- A secure-network WebGL hero that supports the workflow without controlling it.
-- Progressive disclosure for findings, activity, comparisons, reports, and explanations.
+- A compact application shell that keeps workspace state and readiness visible.
+- Progressive disclosure for findings, activity, comparisons, reports, and guidance.
 
 ## 2. Colors
 
@@ -143,8 +143,8 @@ The palette is a dark maritime neutral system illuminated by one warm audit sign
 
 ### Primary
 
-- **Signal Orange** (`colors.signal-orange`): active audit phases, selected profiles, primary progress, hero network links, and the three product-promise icons.
-- **Action Orange** (`colors.action-orange` through `colors.action-orange-end`): primary buttons and irreversible forward movement. It is intentionally lighter than the hero's deeper orange.
+- **Signal Orange** (`colors.signal-orange`): active audit phases, selected profiles, primary progress, and the current decision path.
+- **Action Orange** (`colors.action-orange` through `colors.action-orange-end`): primary buttons and irreversible forward movement. It is intentionally brighter than the deeper signal border.
 - **Deep Signal Orange** (`colors.signal-orange-deep`): borders and pressed depth around orange actions, never a large background field.
 
 ### Secondary
@@ -163,7 +163,7 @@ The palette is a dark maritime neutral system illuminated by one warm audit sign
 - **Primary, Soft, and Muted Ink** (`colors.ink`, `colors.ink-soft`, `colors.ink-muted`): headings, supporting text, metadata, and inactive controls in descending emphasis.
 - **Divider** and **Soft Fill** (`colors.divider`, `colors.soft-fill`): one-pixel structure, hover states, selected rows, and compact chips.
 
-**The Orange Thread Rule.** Orange must remain a scarce directional signal. Use it for the current step, the primary action, selected state, and hero network—not for headings, decorative illustrations, or whole dashboard sections.
+**The Orange Thread Rule.** Orange must remain a scarce directional signal. Use it for the current step, the primary action, selected state, and critical progress—not for headings, decorative illustrations, or whole dashboard sections.
 
 **The Signal Sprinkle Rule.** Blue and amber may appear in progress bars, comparison details, and live state indicators. They must not recolor section titles, navigation icons, or general imagery.
 
@@ -183,7 +183,7 @@ The light theme must preserve these semantic roles through the existing role-bas
 
 ### Hierarchy
 
-- **Display** (`typography.display`): the ScopeHarbor hero title and rare page-level emphasis.
+- **Display** (`typography.display`): rare page-level emphasis and key outcome values.
 - **Headline** (`typography.headline`): page introductions and primary task headings.
 - **Title** (`typography.title`): panel titles, audit decisions, and major subsection headings.
 - **Body** (`typography.body`): primary explanations; prose is capped around 64–70 characters per line.
@@ -204,7 +204,7 @@ ScopeHarbor uses tonal layering and dividers as its primary depth system. Most s
 - **Ambient Soft** (`0 2px 6px oklch(2% 0.02 250 / 0.26)`): the subtle shadow used by standalone panels and metric surfaces. It must remain close to the surface.
 - **Ambient Panel** (`0 4px 8px oklch(2% 0.02 250 / 0.34)`): the slightly stronger panel shadow used only where tonal separation is insufficient.
 - **Dialog Lift** (`0 6px 8px oklch(0% 0 0 / 0.38)`): a short, defined shadow under confirmation dialogs, combined with a dark scrim and restrained backdrop blur.
-- **Signal Glow** (`0 0 18px oklch(76% 0.12 157)`): a colored halo reserved for the hero object and tiny live-status dots; it is not a card treatment.
+- **Signal Glow** (`0 0 18px oklch(76% 0.12 157)`): a colored halo reserved for the brand mark and tiny live-status dots; it is not a card treatment.
 
 **The Flat-by-Default Rule.** Depth begins with tone and a one-pixel divider. If a section reads clearly without a shadow, the shadow is forbidden.
 
@@ -245,8 +245,8 @@ Components should feel precise, familiar, and task-oriented. Every interactive c
 
 ### Navigation
 
-- **Primary navigation:** neutral labels, transparent default state, and a two-pixel orange underline for the current page. The seven-tab row wraps into a horizontally scrollable second line before collision.
-- **Audit phases:** a six-column divider-led band with numbered or completed markers, concise state text, and an orange underline on the current phase. On smaller screens it becomes a keyboard-accessible horizontal rail.
+- **Primary navigation:** five neutral labels—Workspace, Audits, Findings, Intelligence, and Guide—with a transparent default state and two-pixel orange underline for the current page. Credentials and Operations remain contextual destinations rather than permanent tabs. The row wraps into a horizontally scrollable second line before collision.
+- **Audit phases:** a six-column divider-led band with numbered or completed markers, concise state text, and an orange underline on the current phase. On smaller screens it becomes a keyboard-accessible horizontal rail with visible previous/next controls.
 - **Guide navigation:** a quiet contents rail on wide screens and a single ordered flow on narrow screens.
 
 ### Tables and Evidence Lists
@@ -254,7 +254,7 @@ Components should feel precise, familiar, and task-oriented. Every interactive c
 - Use tables for comparable fields and lists for narrative evidence.
 - Keep table rows divided by one-pixel lines; do not wrap every row in a card.
 - Paginate, filter, or progressively disclose when a result set exceeds the useful first view.
-- AI explanations, activity, and comparison groups show a bounded preview with explicit “show more” controls.
+- Finding guidance, activity, and comparison groups show a bounded preview with explicit “show more” controls.
 
 ### Loading and Empty States
 
@@ -262,11 +262,11 @@ Components should feel precise, familiar, and task-oriented. Every interactive c
 - Empty states explain whether the user must select, configure, run, or wait; they never render as unexplained grey rectangles.
 - Loaded-empty, loading, failure, and unavailable are distinct states with distinct copy.
 
-### Secure Network Hero
+### Shell and readiness
 
-- The hero combines a restrained orange node path with a faceted shield aligned to the site's palette.
-- WebGL is progressive enhancement. A polished shield fallback remains visible when WebGL is unavailable.
-- Animation is ambient and state-responsive, never a prerequisite for understanding scope, readiness, or results.
+- The shell opens on Workspace and lets authorized scope, current posture, and real audit evidence establish product identity.
+- The sticky topbar reports platform readiness through a live region and provides contextual access to Operations.
+- The audit phase rail begins below the measured topbar height and keeps its active phase visible without covering content.
 
 ## 6. Do's and Don'ts
 
@@ -277,9 +277,9 @@ Components should feel precise, familiar, and task-oriented. Every interactive c
 - **Do** use one continuous Harbor Band with internal one-pixel dividers for related content.
 - **Do** add one concise description wherever a prerequisite, consequence, or unfamiliar security concept would otherwise force the user to guess.
 - **Do** use purposeful loading and empty states that teach the next step.
-- **Do** bound long findings, comparisons, activity, reports, and explanations with sorting, pagination, or progressive disclosure.
+- **Do** bound long findings, comparisons, activity, reports, and guidance with sorting, pagination, or progressive disclosure.
 - **Do** preserve visible focus, keyboard operation, WCAG 2.2 AA contrast, non-color status cues, and reduced-motion behavior.
-- **Do** keep the secure-network hero polished, orange-led, and subordinate to the audit workflow.
+- **Do** let real scope, readiness, findings, and audit receipts establish the product's security identity.
 - **Do** preserve semantic light-theme mappings whenever a dark-theme token changes.
 
 ### Don't:
@@ -293,4 +293,4 @@ Components should feel precise, familiar, and task-oriented. Every interactive c
 - **Don't** use mono typography as the product voice, add fake command prompts, or expose raw tool output for atmosphere.
 - **Don't** show every result or explanation at once when a bounded preview communicates the set.
 - **Don't** let text overflow, truncate essential security meaning, or shrink body text to solve a layout problem.
-- **Don't** rely on motion, WebGL, or color alone to communicate readiness, severity, completion, or permission.
+- **Don't** rely on motion or color alone to communicate readiness, severity, completion, or permission.

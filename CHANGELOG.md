@@ -3,7 +3,7 @@
 All notable ScopeHarbor changes are recorded here. Versions follow semantic
 versioning for the public source contract.
 
-## [1.1.0] - 2026-07-29
+## [1.1.0] - Unreleased
 
 ### Fixed
 
@@ -21,6 +21,10 @@ versioning for the public source contract.
 - The operator UI gates launches by the selected profile's actual dependencies:
   degraded ZAP readiness blocks ZAP profiles without disabling independent
   ScopeHarbor-passive or repository scans.
+- Repository compatibility records no longer appear as duplicate web subjects
+  or inflate public dashboard counts.
+- The explicit demo seed now uses the production structured report renderer and
+  deterministic audit/report timestamps instead of its legacy basic HTML.
 
 ### Added
 
@@ -67,12 +71,30 @@ versioning for the public source contract.
   history, and exposes policy reauthorization and finding-governance controls.
 - OIDC bearer tokens can be supplied for one browser tab and remain in memory;
   local development authentication remains available.
+- Structured Markdown and standalone HTML reports now include an audit
+  overview, severity distribution, authorization/data-handling context,
+  scanner receipts, prioritized local guidance, and print-friendly finding
+  detail with exact CSP and no script or external resource dependency.
+- Report generation always uses deterministic local guidance. Configuring
+  OpenAI affects only explicit interactive generation and cannot create report
+  network work, AI request logs, cache rows, or AI rate-limit reservations.
+- The operator shell opens on Workspace, uses five primary destinations,
+  exposes Credentials and Operations contextually, and keeps Audit Review
+  focused on outcome, priority signals, and canonical handoffs.
+- Finding guidance replaces misleading default “AI explanations” terminology;
+  optional external assistance now has provider-aware consent copy.
+- Frontend accessibility now includes skip navigation, measured sticky offsets,
+  live readiness status, state-aware theme semantics, and visible mobile audit
+  phase controls.
+- Browserslist was advanced to a patched release after two HIGH advisories were
+  published; frontend dependency audit remains clean.
 
 ### Removed
 
 - Dormant `EvidenceArtifact` persistence and raw-artifact reference fields.
 - Passive crawl-summary artifacts.
 - Dead AJAX execution methods and the unused `httpx2` development dependency.
+- The persistent WebGL hero, its runtime/styling, and Three.js dependencies.
 
 ### Compatibility
 

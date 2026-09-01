@@ -38,8 +38,10 @@ Check:
 
 The UI supports local development auth and first-class repository assets. In
 strict OIDC mode, paste an already-issued platform bearer token into
-**Operations → Operator access**. The token remains only in memory for that
-browser tab; ScopeHarbor does not implement an identity-provider redirect flow.
+**Platform readiness → Operator access**. The readiness control in the topbar
+opens the contextual Operations page. The token remains only in memory for
+that browser tab; ScopeHarbor does not implement an identity-provider redirect
+flow.
 
 ## Configuration rules
 
@@ -69,8 +71,9 @@ For production-like local use:
 3. Configure exact `AUTH_OIDC_ISSUER`, `AUTH_OIDC_AUDIENCE`, and
    `AUTH_OIDC_JWKS_URL`.
 4. Stop using the development token.
-5. Open **Operations → Operator access** and supply an already-issued OIDC
-   bearer token, or use an API client that supplies it.
+5. Open the topbar **Platform readiness** control, then **Operator access**, and
+   supply an already-issued OIDC bearer token, or use an API client that
+   supplies it.
 6. Rebuild and confirm `/ready` plus one protected request.
 
 ScopeHarbor accepts RS256 tokens with strict issuer/audience and required
@@ -214,6 +217,36 @@ docker compose run --rm -e DEMO_SEED_ENABLED=true backend python -m app.demo_see
 Seed preflights every fixed ID and refuses cross-workspace collisions before
 writing. It is idempotent, contains safe normalized data, and performs no
 network/scan work.
+
+## Reports and finding guidance
+
+Open **Intelligence** after selecting a completed Passive Web, Active Demo, or
+Repository audit. Report generation creates exactly two idempotent artifacts:
+a portable Markdown document and a formatted standalone HTML document. The UI
+opens HTML as the primary view and keeps both formats available for download.
+The HTML artifact uses no JavaScript, external fonts, images, or network
+resources and includes print styles plus embedded CSP.
+
+Report content always uses deterministic local guidance derived from normalized,
+independently redacted findings. It does not contact OpenAI even when
+`AI_PROVIDER=openai`, consume AI generation capacity, or write AI request/cache
+records.
+
+The interactive **Finding guidance** panel is separate:
+
+- `AI_PROVIDER=template` keeps generation deterministic and local.
+- `AI_PROVIDER=openai` changes the explicit action to **Generate AI-assisted
+  guidance** and displays the provider boundary before activation.
+- Only eligible, bounded, normalized, independently redacted web-finding fields
+  may leave the machine. Repository/modern-crawl findings, raw artifacts,
+  bodies, cookies, credentials, URL queries, provider errors, and secrets remain
+  ineligible.
+- GET retrieves cached output or calculates local guidance and never starts
+  external paid/network work. External generation requires explicit POST.
+
+Treat the external provider as an operator-selected data processor. Configure
+`OPENAI_API_KEY` and `OPENAI_MODEL` only after reviewing that boundary and the
+provider's data-handling terms. Never commit either value.
 
 ## Maintenance
 

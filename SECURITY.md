@@ -114,7 +114,8 @@ context before execution.
 Target auth profiles are not platform identities. Supported secrets are
 Fernet-encrypted, write-only, and injected only into ScopeHarbor passive
 requests through the relay. They never enter ZAP, browser scans, repository
-scans, findings, reports, AI, receipts, status, artifacts, logs, or audits.
+scans, findings, reports, finding guidance, external AI, receipts, status,
+artifacts, logs, or audits.
 
 Plaintext auth-profile create/rotate requests are accepted only when
 `APP_ENV=local`. Non-local requests require direct HTTPS or an exact trusted
@@ -143,7 +144,7 @@ Active/browser work is not automatically replayed after interruption.
 
 Every boundary independently sanitizes and caps input; source-provided redaction
 flags are never trusted. These values must not cross database, artifact, API,
-report, AI, cache, audit, or log boundaries:
+report, finding-guidance, external-provider, cache, audit, or log boundaries:
 
 - raw HTTP request/response bodies or passive crawl summaries;
 - cookies, authorization values, API keys, passwords, or session material;
@@ -155,10 +156,12 @@ report, AI, cache, audit, or log boundaries:
 
 Reports use normalized projections, idempotent uniqueness, Markdown-structure
 escaping, safe dynamic fences, HTML escaping, atomic no-follow writes,
-restrictive permissions, and report CSP. External AI receives a bounded safe
-projection only for eligible web profiles, streams under a hard response cap,
-and must return incrementally valid structured output. GET never initiates
-external paid/network work.
+restrictive permissions, and report CSP. Report generation always derives
+guidance through deterministic local template logic; it never contacts an
+external provider or consumes AI cache, request-log, or rate-limit capacity.
+Optional interactive AI receives a bounded safe projection only for eligible
+web profiles, streams under a hard response cap, and must return incrementally
+valid structured output. GET never initiates external paid/network work.
 
 If a canary appears in any persisted or returned surface, stop the affected
 workflow and treat it as a security defect.

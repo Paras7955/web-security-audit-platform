@@ -111,6 +111,26 @@ SBOMs available as short-retention CI artifacts. Final removal of local agent
 tooling from the public-facing tree remains a separately approved cleanup; the
 project history and existing commit attribution are intentionally preserved.
 
+## Phase 27: final public polish
+
+Phase 27 concentrated the release around the product's real evidence rather
+than adding scanner breadth. Reports became structured, standalone,
+print-friendly audit documents with local deterministic guidance and no
+external resources or provider dependency. The interactive compatibility AI
+surface was renamed Finding guidance, while optional external generation
+remained an explicit operator-controlled action with bounded consent copy.
+
+The operator shell now opens on Workspace with five primary destinations. The
+persistent WebGL hero and its Three.js dependency tree were removed; Credentials
+and Operations remain available through audit authorization and platform
+readiness. Audit Review became a concise outcome and handoff surface, and
+finding tag management moved out of filtering. Skip navigation, measured sticky
+offsets, live readiness state, theme semantics, mobile phase controls, and
+focused UI tests completed the accessibility pass. The explicit demo seed now
+uses the production report renderer and deterministic timestamps; repository
+compatibility rows no longer appear as duplicate public web subjects. Final
+agent/tooling removal remains approval-gated.
+
 ## Scope decisions retained through 1.1
 
 - The product remains defensive and local-first.
@@ -120,7 +140,8 @@ project history and existing commit attribution are intentionally preserved.
 - Static target auth is passive-client-only; browser login workflows are not
   implemented.
 - Repository scans never clone, install, build, or execute repository code.
-- Reports and AI consume only normalized/redacted projections.
+- Reports use only normalized/redacted projections and deterministic local
+  guidance. Optional interactive AI remains explicit and bounded.
 - RBAC/team administration, business-logic testing, user-pair IDOR automation,
   Nuclei, Semgrep/full SAST, PDF export, and SaaS hardening remain outside scope.
 

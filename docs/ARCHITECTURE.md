@@ -38,10 +38,10 @@ PostgreSQL (data) <------ lease monitor + scanner worker
 ### Frontend
 
 The Next.js UI consumes `/api/v1` for target-policy, repository-asset,
-subject-aware scan, posture, finding-governance, report, and AI workflows. It
-supports the build-provided local development token and an in-memory OIDC bearer
-session supplied by the operator. It does not implement provider redirects,
-persist bearer tokens, or make authorization decisions.
+subject-aware scan, posture, finding-governance, report, and finding-guidance
+workflows. It supports the build-provided local development token and an
+in-memory OIDC bearer session supplied by the operator. It does not implement
+provider redirects, persist bearer tokens, or make authorization decisions.
 
 ### Local bootstrap
 
@@ -58,7 +58,8 @@ only to the updater network.
 
 FastAPI owns platform authentication, workspace authorization, target/repository
 asset creation, policy catalog and validation, scan launch, safe projections,
-reports, AI orchestration, rate limits, and audit events. It never runs scan
+reports, deterministic local guidance, optional AI orchestration, rate limits,
+and audit events. It never runs scan
 jobs inline.
 
 All product routes are below `/api/v1`. `/health` is minimal liveness; `/ready`
@@ -150,15 +151,20 @@ redacts all secret material. OSV uses the operator-updated offline database with
 `--no-resolve`. No repository code/config is executed or honored; raw tool
 output is ephemeral.
 
-### Reports and AI
+### Reports and finding guidance
 
 Report creation is unique per `(workspace, scan, format)` and race-safe.
-Markdown structure/fences and HTML are escaped. Writes are atomic and no-follow.
+Markdown structure/fences and HTML are escaped. The standalone light HTML
+artifact is responsive, print-friendly, script-free, resource-free, and
+protected by exact response and embedded CSP. Writes are atomic and no-follow.
 
-Template AI can be calculated in memory. External generation is explicit POST,
-atomically rate-reserved, safely projected, streamed under a hard cap, and
-incrementally JSON-validated. External GET is retrieval-only. Repository and
-modern-crawl findings are ineligible.
+Reports always calculate deterministic local guidance in memory, even when an
+external provider is configured. Report creation never performs provider
+network work or writes AI cache/request-log/rate-limit records. Interactive
+local guidance remains available through the compatibility AI endpoints.
+Optional external generation is explicit POST, atomically rate-reserved, safely
+projected, streamed under a hard cap, and incrementally JSON-validated. External
+GET is retrieval-only. Repository and modern-crawl findings are ineligible.
 
 ## Data flow
 
@@ -176,8 +182,8 @@ normalized subject/workspace object
         |
         +-> PostgreSQL
         +-> API projection
-        +-> report projection
-        +-> eligible AI projection
+        +-> report projection + deterministic local guidance
+        +-> explicitly requested eligible external-AI projection
         +-> bounded structured log/audit metadata
 ```
 

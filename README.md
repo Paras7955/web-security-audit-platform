@@ -11,8 +11,9 @@
 
 ScopeHarbor combines guarded local web scanning, isolated repository analysis,
 normalized findings, current-posture risk, comparisons, reports, and optional
-AI explanations in one Docker-first operator workspace. Scanner authority is
-deny-by-default: arbitrary public URLs and private-LAN targets are not accepted.
+AI-assisted finding guidance in one Docker-first operator workspace. Scanner
+authority is deny-by-default: arbitrary public URLs and private-LAN targets are
+not accepted.
 
 > [!IMPORTANT]
 > Use ScopeHarbor only on applications and repositories you own or have explicit
@@ -33,21 +34,28 @@ deny-by-default: arbitrary public URLs and private-LAN targets are not accepted.
   installing, resolving, building, running hooks, or executing repository code.
 - **Evidence that supports decisions.** Findings have lifecycle state,
   revocable suppressions, auditable tags, comparisons, `risk-v1` scan scores,
-  current `posture-v1`, sanitized Markdown/HTML reports, and bounded
-  explanations.
+  current `posture-v1`, sanitized Markdown/HTML reports, and bounded local
+  finding guidance.
 - **Local-first operations.** PostgreSQL, the API, UI, worker, relay, ZAP, demo
   target, migrations, and advisory updater run through hardened Compose
   services. Sensitive evidence stays under the operator's control.
 
 ## Product tour
 
-| Authorized audit workflow | Risk intelligence |
+| Authorized audit workflow | Finding triage |
 | --- | --- |
-| ![Repository profile selected with its eligibility, output, and credential boundaries visible](docs/images/scopeharbor-audit-workflow.jpg) | ![Current workspace and selected-subject posture with severity distributions](docs/images/scopeharbor-intelligence.jpg) |
+| ![Audit preflight showing healthy local services, bounded tools, and the six-stage workflow](docs/images/scopeharbor-audit-workflow.jpg) | ![Synthetic repository findings with lifecycle, tags, redacted evidence, and remediation context](docs/images/scopeharbor-findings.jpg) |
+
+| Risk intelligence | Reports and local guidance |
+| --- | --- |
+| ![Current workspace and selected-subject posture with severity distributions](docs/images/scopeharbor-intelligence.jpg) | ![Formatted report actions beside deterministic local finding guidance](docs/images/scopeharbor-reports-guidance.jpg) |
 
 The interface guides scope → profile → authorization → execution → review while
 keeping policy eligibility, credential boundaries, readiness, and sanitized
-outputs visible. The screenshots use synthetic local demo data.
+outputs visible. The screenshots use only the explicit synthetic demo seed; no
+real target, credential, or finding data appears in them. A verified light-theme
+view is also available in
+[`docs/images/scopeharbor-reports-guidance-light.jpg`](docs/images/scopeharbor-reports-guidance-light.jpg).
 
 ## Quick start
 
@@ -121,7 +129,7 @@ Refresh the UI, then:
 3. Review the visible profile eligibility and credential boundary.
 4. Open **Findings** to triage normalized evidence.
 5. Open **Intelligence** for comparisons, sanitized reports, and eligible
-   explanations.
+   finding guidance.
 
 Launching a new scan still requires the profile-specific acknowledgement and
 explicit authorization confirmation. Do not adapt the demo policy to a target
@@ -162,17 +170,18 @@ ephemeral storage.
 
 Raw bodies, cookies, credentials, scanner output, provider errors, URL queries,
 absolute repository paths, and unredacted evidence are prohibited from
-crossing persistence, API, report, AI, cache, audit, and log boundaries.
+crossing persistence, API, report, finding-guidance, external-provider, cache,
+audit, and log boundaries.
 
 Read the [security policy](SECURITY.md), [threat model](docs/THREAT_MODEL.md),
 and [architecture](docs/ARCHITECTURE.md) before changing a trust boundary.
 
 ## Scan profiles
 
-| Profile | Engines | Launch boundary | Reports | AI |
+| Profile | Engines | Launch boundary | Reports | Finding guidance |
 | --- | --- | --- | --- | --- |
-| `passive-web` | ScopeHarbor passive; optional ZAP Passive | exact local policy; optional guarded static auth | yes | yes |
-| `active-demo` | passive checks + ZAP Active | compatible disposable HTTP demo only | yes | yes |
+| `passive-web` | ScopeHarbor passive; optional ZAP Passive | exact local policy; optional guarded static auth | yes | local; optional AI assistance |
+| `active-demo` | passive checks + ZAP Active | compatible disposable HTTP demo only | yes | local; optional AI assistance |
 | `modern-web-crawl` | passive checks + ZAP Client Spider | compatible disposable HTTP demo only | no | no |
 | `repository` | Gitleaks + offline OSV | asset below `REPO_SCAN_ROOT`; no code execution | yes | no |
 
@@ -281,9 +290,10 @@ inventory policy.
   multi-tenant use, RBAC/team administration, authenticated browser sessions,
   login automation, business-logic/IDOR testing, remote repository cloning,
   dependency installation, Nuclei, Semgrep/full SAST, or PDF export.
-- The template explanation provider is deterministic and local. Any configured
-  external AI provider is an operator-controlled data processor with a bounded
-  eligible projection.
+- Report guidance is always deterministic and local. Configuring OpenAI affects
+  only the explicit interactive **Generate AI-assisted guidance** action; that
+  provider is an operator-controlled data processor receiving a bounded,
+  normalized, independently redacted eligible projection.
 
 ScopeHarbor does not grant authorization. The operator remains responsible for
 scope, timing, ownership, and data-handling approval for every assessment.

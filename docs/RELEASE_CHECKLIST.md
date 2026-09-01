@@ -5,7 +5,7 @@ planned or mocked result.
 
 ## Source and scope
 
-- [ ] Release branch worktree is clean and based on merged Phase 26.
+- [ ] Release branch worktree is clean and based on merged Phase 26 `main`.
 - [ ] UI product changes remain contract-only: they do not broaden scanner
   authority, retain bearer tokens, expose raw scanner data, or bypass backend
   workspace/policy enforcement.
@@ -15,6 +15,11 @@ planned or mocked result.
   images, Compose services, and current asset provenance.
 - [ ] README, SECURITY, architecture, threat model, API, operator, upgrade,
   development history, changelog, and handoff agree.
+- [ ] Public screenshots use only the explicit synthetic demo seed and show
+  Workspace, Audits, Findings/Intelligence, and the formatted report accurately.
+- [ ] The final public tree contains none of `.agents/`, `.opencode/`,
+  `.codex/`, `.impeccable/`, `AGENTS.md`, or `HANDOFF.md` after the separate
+  approval-gated cleanup commit.
 - [ ] Issue forms sanitize public reports, blank issues are disabled, security
   reports route to private disclosure, and the PR template promises no SLA.
 - [ ] Public/private-LAN scanning remains denied; only exact local policies are
@@ -64,7 +69,8 @@ planned or mocked result.
 - [ ] Two-worker long scan proves continuous heartbeat, lease loss fencing,
   cancellation, descendant termination, and ZAP stop/lock cleanup.
 - [ ] Auth attach/launch/rotation/revocation races pass with real PostgreSQL.
-- [ ] Report race, malicious Markdown, oversized AI, seed collision, workspace
+- [ ] Report race, malicious Markdown/fences, exact CSP, external-resource
+  absence, local-only report guidance, oversized AI, seed collision, workspace
   IDOR, and filtered pagination tests pass.
 
 ## Local target verification
@@ -88,7 +94,8 @@ planned or mocked result.
 - [ ] A fresh clone reaches healthy UI, API, worker, relay, ZAP, PostgreSQL, and
   bundled demo services using only its documented Docker setup command.
 - [ ] Responsive keyboard and reduced-motion checks cover the target-policy,
-  repository, subject-aware scan, governance, AI, and OIDC-facing workflows.
+  repository, subject-aware scan, governance, finding-guidance, report,
+  theme/readiness, and OIDC-facing workflows.
 - [ ] API, worker, relay, and frontend images build.
 - [ ] Source-built scanner binaries use Go 1.26.6 or later; review the explicit
   OSV-Scanner go-git and x/mod security pins before changing them.
@@ -108,7 +115,7 @@ planned or mocked result.
 
 ## Repository owner actions
 
-- [ ] Review and merge Phase 26, requiring all release checks to pass before
+- [ ] Review and merge Phase 27, requiring all release checks to pass before
   tagging.
 - [ ] Rename the still-private repository to `scopeharbor`, validate public
   links/assets, then complete the final file/history secret review before

@@ -215,19 +215,24 @@ labelled all-history totals.
 
 GET score/dashboard requests do not persist missing scores.
 
-### Reports and AI
+### Reports and finding guidance
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/scans/{id}/reports` | Idempotently generate eligible Markdown/HTML |
+| POST | `/scans/{id}/reports` | Idempotently generate eligible Markdown/HTML with local guidance |
 | GET | `/scans/{id}/reports` | List report metadata |
 | GET | `/reports/{id}` | View escaped content |
 | GET | `/reports/{id}/download` | Download content |
-| GET | `/scans/{id}/ai-explanations` | Retrieve external result or calculate template in memory |
-| POST | `/scans/{id}/ai-explanations` | Explicitly generate/cache an eligible explanation |
+| GET | `/scans/{id}/ai-explanations` | Retrieve cached output or calculate local guidance in memory |
+| POST | `/scans/{id}/ai-explanations` | Explicitly generate/cache eligible configured-provider guidance |
 
-External-provider GET never starts paid/network work. Repository and
-modern-crawl scans are ineligible for external AI.
+The compatibility response contract includes non-secret
+`configured_provider` (`template` or `openai`) in addition to the provider that
+actually produced the result. Clients use it to label explicit consent before
+optional external generation without exposing a model or key. Report creation
+always uses local deterministic guidance and never calls the configured
+external provider. External-provider GET never starts paid/network work.
+Repository and modern-crawl scans are ineligible for external AI.
 
 ### Operations
 
@@ -247,7 +252,7 @@ ZAP readiness as a launch blocker.
 - Treat cursors, IDs, findings, reports, and relative repository identities as
   workspace-confidential.
 - Do not display problem `detail` as trusted HTML.
-- Honor `429`; do not blindly retry launch, reports, or AI generation.
+- Honor `429`; do not blindly retry launch, reports, or optional AI generation.
 - Poll conservatively and stop after terminal state.
 - Inspect tool receipts for `completed_with_warnings` before relying on coverage.
 - A stale target needs operator reauthorization, not an automated retry.
