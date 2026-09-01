@@ -175,6 +175,33 @@ describe("Phase 25 protected workflow state", () => {
     expect(screen.getByText(/This target policy requires the ZAP web scanner/)).toBeTruthy();
   });
 
+  it("keeps Audit Review totals independent from persistent triage filters", async () => {
+    setSessionAuthToken("valid-session");
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      requests.push(url);
+      if (url.includes("/scans/auth-scan/findings") && url.includes("severity=critical")) {
+        return jsonResponse(page());
+      }
+      return protectedApiResponse(url, init?.method ?? "GET");
+    }));
+    const props = { onActiveViewChange: vi.fn(), onPlatformStatusChange: vi.fn() };
+    const view = render(<TargetSetup activeView="findings" {...props} />);
+
+    await screen.findAllByText("Authentication transition finding");
+    await userEvent.click(screen.getByRole("button", { name: "critical" }));
+    await waitFor(() => expect(requests.some((url) => url.includes("severity=critical"))).toBe(true));
+
+    view.rerender(<TargetSetup activeView="scanning" {...props} />);
+    await userEvent.click(await screen.findByRole("tab", { name: /Review/ }));
+
+    expect(await screen.findByText(/with 1 normalized finding\./)).toBeTruthy();
+    expect(requests.some((url) => url.endsWith("/scans/auth-scan/findings?limit=200"))).toBe(true);
+  });
+
   it("refreshes workspace, subject, and comparison posture after every finding-governance mutation", async () => {
     setSessionAuthToken("valid-session");
     const fixture = postureMutationApi();

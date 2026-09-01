@@ -5,7 +5,7 @@ ADD --checksum=sha256:6b2638a733b85619dc80bdf28e84e4fed7e526a761ab5c148fbf67695a
     https://codeload.github.com/gitleaks/gitleaks/tar.gz/83d9cd684c87d95d656c1458ef04895a7f1cbd8e \
     /tmp/gitleaks-source.tar.gz
 RUN tar --extract --gzip --file=/tmp/gitleaks-source.tar.gz --strip-components=1 \
-    && go mod edit -require=golang.org/x/crypto@v0.52.0 \
+    && go mod edit -require=golang.org/x/crypto@v0.55.0 \
     && go mod edit -require=golang.org/x/text@v0.39.0 \
     && go mod tidy \
     && CGO_ENABLED=0 go build -trimpath -tags gore2regex \

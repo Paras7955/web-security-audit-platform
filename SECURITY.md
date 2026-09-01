@@ -82,8 +82,10 @@ access. Do not add a public/host route to the worker.
 
 The worker accepts the relay's destination projection only after parsing it as
 an IP address and reapplying the target's address-class or exact host-gateway
-policy. ZAP receives only those already validated addresses; it never receives
-target credentials.
+policy. ZAP combines only those already validated addresses with the policy's
+exact connection port; it never receives target credentials. Both policy
+loading and worker execution reject every ZAP engine unless the target is an
+explicitly compatible disposable demo.
 
 ## Repository isolation
 

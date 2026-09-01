@@ -297,15 +297,15 @@ def validate_zap_scope_url(
         destination = validate_destination(normalized, allowlist_target, resolver=resolver)
     return ScopedZapUrl(
         original_url=normalized.normalized_url,
-        pinned_url=pinned_url(normalized, destination.connection_ip),
+        pinned_url=pinned_url(normalized, destination.connection_ip, destination.connection_port),
         normalized=normalized,
     )
 
 
-def pinned_url(normalized: NormalizedTargetUrl, connection_ip: str) -> str:
+def pinned_url(normalized: NormalizedTargetUrl, connection_ip: str, connection_port: int) -> str:
     host = f"[{connection_ip}]" if ":" in connection_ip else connection_ip
     parsed = urlsplit(normalized.normalized_url)
-    return urlunsplit((normalized.scheme, f"{host}:{normalized.port}", parsed.path or "/", parsed.query, ""))
+    return urlunsplit((normalized.scheme, f"{host}:{connection_port}", parsed.path or "/", parsed.query, ""))
 
 
 def context_regex(target_url: str) -> str:

@@ -192,6 +192,7 @@ class AllowlistTarget(BaseModel):
         if not isinstance(legacy_ports, list) or legacy_ports != [port]:
             raise ValueError("legacy allowlist target must define one port matching base_url")
 
+        disposable_demo = bool(value.get("local_demo", False))
         profile_engines: dict[str, list[ScanEngine]] = {}
         retired_modes: list[str] = []
         for raw_mode in modes:
@@ -201,7 +202,11 @@ class AllowlistTarget(BaseModel):
                 continue
             profile_id = LEGACY_PROFILE_BY_MODE.get(mode)
             if profile_id is not None:
-                profile_engines[profile_id] = list(LEGACY_ENGINES_BY_PROFILE[profile_id])
+                profile_engines[profile_id] = (
+                    [ScanEngine.SCOPEHARBOR_PASSIVE]
+                    if profile_id == "passive-web" and not disposable_demo
+                    else list(LEGACY_ENGINES_BY_PROFILE[profile_id])
+                )
 
         upgraded = {
             "id": value.get("id"),
@@ -213,7 +218,7 @@ class AllowlistTarget(BaseModel):
                 "port": port,
             },
             "profile_engines": profile_engines,
-            "disposable_demo": bool(value.get("local_demo", False)),
+            "disposable_demo": disposable_demo,
             "tls": {"trust": "system"},
             "max_redirects": value.get("max_redirects"),
             "notes": value.get("notes"),
@@ -277,11 +282,16 @@ class AllowlistTarget(BaseModel):
                 raise ValueError("compose_service connection host must match a simple origin host")
         if parsed.scheme == "http" and self.tls.trust != "system":
             raise ValueError("HTTP targets cannot declare custom TLS trust")
-        if not self.legacy_mode_order and not self.disposable_demo and {
-            "active-demo",
-            "modern-web-crawl",
-        }.intersection(self.profile_engines):
-            raise ValueError("active and browser profiles require disposable_demo=true")
+        zap_engines = {
+            ScanEngine.ZAP_PASSIVE,
+            ScanEngine.ZAP_ACTIVE,
+            ScanEngine.ZAP_CLIENT_SPIDER,
+        }
+        if not self.disposable_demo and any(
+            zap_engines.intersection(engines)
+            for engines in self.profile_engines.values()
+        ):
+            raise ValueError("ZAP engines require disposable_demo=true")
         return self
 
     @property

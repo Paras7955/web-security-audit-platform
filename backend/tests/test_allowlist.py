@@ -154,15 +154,31 @@ class AllowlistTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ScanAllowlist.model_validate({"version": 2, "targets": [host_gateway]})
 
-    def test_active_or_browser_profiles_require_disposable_demo(self) -> None:
-        target = dict(
-            V2_TARGET,
-            profile_engines={
-                "active-demo": ["scopeharbor-passive", "zap-passive", "zap-active"],
-            },
+    def test_all_zap_engines_require_disposable_demo(self) -> None:
+        for profile_engines in (
+            {"passive-web": ["scopeharbor-passive", "zap-passive"]},
+            {"active-demo": ["scopeharbor-passive", "zap-passive", "zap-active"]},
+            {"modern-web-crawl": ["scopeharbor-passive", "zap-passive", "zap-client-spider"]},
+        ):
+            with self.subTest(profile_engines=profile_engines), self.assertRaises(ValidationError):
+                ScanAllowlist.model_validate({
+                    "version": 2,
+                    "targets": [dict(V2_TARGET, profile_engines=profile_engines)],
+                })
+
+    def test_legacy_non_demo_passive_policy_drops_zap_compatibility(self) -> None:
+        legacy_target = dict(
+            VALID_CONFIG["targets"][0],
+            allowed_modes=["passive"],
+            local_demo=False,
         )
-        with self.assertRaises(ValidationError):
-            ScanAllowlist.model_validate({"version": 2, "targets": [target]})
+
+        target = ScanAllowlist.model_validate({"targets": [legacy_target]}).targets[0]
+
+        self.assertEqual(
+            [engine.value for engine in target.engines_for_profile("passive-web")],
+            ["scopeharbor-passive"],
+        )
 
     def test_tls_policy_has_no_insecure_mode_and_custom_ca_is_https_only(self) -> None:
         for tls in (

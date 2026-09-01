@@ -132,6 +132,7 @@ export function TargetSetup({
   const [scanHistory, setScanHistory] = useState<Scan[]>([]);
   const [toolRuns, setToolRuns] = useState<ScannerToolRun[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
+  const [reviewFindings, setReviewFindings] = useState<Finding[] | null>(null);
   const [tags, setTags] = useState<Tag[]>([]);
   const [governanceTags, setGovernanceTags] = useState<Tag[]>([]);
   const [suppressions, setSuppressions] = useState<SuppressionRule[]>([]);
@@ -207,6 +208,7 @@ export function TargetSetup({
   const baselineScanIdRef = useRef("");
   const comparisonScanIdRef = useRef("");
   const findingsRequestIdRef = useRef(0);
+  const reviewFindingsRequestIdRef = useRef(0);
   const auditPhaseTabsRef = useRef<HTMLElement>(null);
   const activeAuditPhaseRef = useRef<HTMLButtonElement>(null);
 
@@ -419,7 +421,9 @@ export function TargetSetup({
 
   useEffect(() => {
     findingsRequestIdRef.current += 1;
+    reviewFindingsRequestIdRef.current += 1;
     setFindings([]);
+    setReviewFindings(null);
     setReports([]);
     setToolRuns([]);
     setAiExplanation(null);
@@ -431,6 +435,7 @@ export function TargetSetup({
     setIsLoadingScanEvidence(true);
     setReportMessage("Loading reports for the selected audit…");
     setAiMessage("Loading finding guidance for the selected audit…");
+    void loadReviewFindings(selectedScanId, { onlyIfSelected: true });
     void loadToolRuns(selectedScanId, { onlyIfSelected: true });
     if (selectedScan && canUseReports(selectedScan)) {
       void loadReports(selectedScanId, { onlyIfSelected: true });
@@ -549,6 +554,7 @@ export function TargetSetup({
     setScanHistory([]);
     setToolRuns([]);
     setFindings([]);
+    setReviewFindings(null);
     setTags([]);
     setGovernanceTags([]);
     setSuppressions([]);
@@ -842,6 +848,7 @@ export function TargetSetup({
       setCurrentAuditScanId(scan.id);
       setSelectedScanId(scan.id);
       setFindings([]);
+      setReviewFindings(null);
       setToolRuns([]);
       setReports([]);
       setAiExplanation(null);
@@ -970,6 +977,7 @@ export function TargetSetup({
       if (terminalStatuses.has(scan.status)) {
         await loadToolRuns(scan.id, { onlyIfSelected: true });
         await loadFindings(scan.id, { onlyIfSelected: true });
+        await loadReviewFindings(scan.id, { onlyIfSelected: true });
         if (canUseReports(scan)) {
           await loadReports(scan.id, { onlyIfSelected: true });
         } else if (selectedScanIdRef.current === scan.id) {
@@ -1274,6 +1282,32 @@ export function TargetSetup({
       if (requestId === findingsRequestIdRef.current && (!options.onlyIfSelected || selectedScanIdRef.current === scanId)) {
         setIsLoadingScanEvidence(false);
       }
+    }
+  }
+
+  async function loadReviewFindings(scanId: string, options: { onlyIfSelected?: boolean } = {}) {
+    const requestId = ++reviewFindingsRequestIdRef.current;
+    try {
+      const body = await readAllPages<Finding>(
+        `${apiBaseUrl}/scans/${scanId}/findings?limit=200`,
+        "Audit review findings could not be loaded."
+      );
+      if (requestId !== reviewFindingsRequestIdRef.current) {
+        return;
+      }
+      if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
+        return;
+      }
+      setReviewFindings(body);
+    } catch (error) {
+      if (requestId !== reviewFindingsRequestIdRef.current) {
+        return;
+      }
+      if (options.onlyIfSelected && selectedScanIdRef.current !== scanId) {
+        return;
+      }
+      setReviewFindings(null);
+      setActionFeedback({ tone: "error", text: error instanceof Error ? error.message : "Audit review findings could not be loaded." });
     }
   }
 
@@ -2022,15 +2056,17 @@ export function TargetSetup({
                     <div><span>Completed audit</span><h2>Review the result and choose the next action</h2><p>Confirm the audit outcome, inspect the most important signals, then continue to canonical finding triage or risk intelligence.</p></div>
                   </div>
                   {renderHistoricalAuditNotice()}
-                  {reviewReady && selectedScan ? (
+                  {reviewReady && selectedScan && reviewFindings !== null ? (
                     <AuditReviewSummary
                       scan={selectedScan}
-                      findings={displayFindings}
+                      findings={reviewFindings}
                       subjectName={selectedScanSubject?.name ?? "Completed audit"}
                       onOpenFindings={() => onActiveViewChange("findings")}
                       onOpenIntelligence={() => onActiveViewChange("intelligence")}
                       onOpenHistory={() => setAuditPhase("run")}
                     />
+                  ) : reviewReady && selectedScan ? (
+                    <div className="emptyState richEmptyState" role="status"><AppIcon name="activity" size={24} /><strong>Loading complete audit summary</strong><span>ScopeHarbor is loading the unfiltered findings for this completed audit.</span></div>
                   ) : <div className="emptyState richEmptyState"><AppIcon name="finding" size={24} /><strong>No completed audit selected</strong><span>Choose a completed scan in Run to review its normalized findings.</span><button type="button" onClick={() => setAuditPhase("run")}>Open scan history</button></div>}
                 </div>
               ) : null}

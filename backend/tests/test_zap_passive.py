@@ -92,6 +92,40 @@ class ZapPassiveTests(unittest.TestCase):
         self.assertEqual(result.submitted_urls, ())
         self.assertTrue(result.errors)
 
+    def test_zap_pinning_uses_the_validated_connection_port(self) -> None:
+        target = AllowlistTarget.model_validate(
+            {
+                "id": "host-demo",
+                "name": "Host demo",
+                "base_url": "http://localhost:8080/",
+                "connection": {
+                    "kind": "host_gateway",
+                    "host": "scopeharbor-host",
+                    "port": 9080,
+                    "expected_ips": ["10.0.0.4"],
+                },
+                "profile_engines": {"passive-web": ["scopeharbor-passive", "zap-passive"]},
+                "disposable_demo": True,
+                "tls": {"trust": "system"},
+                "max_redirects": 1,
+            }
+        )
+        client = FakeZapClient()
+
+        result = run_zap_passive_scan(
+            scan_id="scan-remapped-port",
+            target_url="http://localhost:8080/",
+            allowlist_target=target,
+            zap_base_url="http://zap:8080",
+            observed_urls=(),
+            client=client,
+            resolver=lambda host, port: ["10.0.0.4"] if (host, port) == ("scopeharbor-host", 9080) else [],
+        )
+
+        self.assertEqual(result.errors, ())
+        self.assertIn(("access", "http://10.0.0.4:9080/"), client.calls)
+        self.assertNotIn(("access", "http://10.0.0.4:8080/"), client.calls)
+
     def test_worker_checkpoint_failure_interrupts_passive_polling(self) -> None:
         checkpoint_count = 0
 

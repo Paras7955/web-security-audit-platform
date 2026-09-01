@@ -36,7 +36,7 @@ compromised operator account is outside the application boundary.
 | Threat | Primary controls | Residual concern |
 | --- | --- | --- |
 | Unauthorized/public scanning | exact static v2 policy, connection class/IP pin, authorization/acknowledgements, no worker route | trusted operator can deliberately edit config |
-| SSRF/DNS rebinding | prohibited address classes, all-answer validation, signed policy fingerprint, relay re-resolution/pinning, every-hop validation, relay-validated IP projection for ZAP | Docker/host routing remains trusted |
+| SSRF/DNS rebinding | prohibited address classes, all-answer validation, signed policy fingerprint, relay re-resolution/pinning, every-hop validation, relay-validated IP plus policy-bound connection port for ZAP | Docker/host routing remains trusted |
 | Path/redirect escape | canonical path rules, segment-boundary prefix, ambiguous encoding rejection, same-origin/base-path redirect policy | target parsing defects |
 | TLS interception | verified SNI/hostname, system or confined CA trust, no insecure mode | operator-controlled CA can expand trust |
 | Capability theft/replay | HMAC, short expiry, request binding, in-memory single-use nonce cache | relay restart forgets consumed nonces; expiry remains limiting |

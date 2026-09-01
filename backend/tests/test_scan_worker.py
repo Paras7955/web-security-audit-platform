@@ -519,6 +519,26 @@ class ScanWorkerTests(unittest.TestCase):
                 self.assertEqual(receipt.warning_code, "zap_passive_warning")
                 self.assertNotIn("poll limit", receipt.warning_code)
 
+    def test_worker_rejects_zap_for_a_non_disposable_target(self) -> None:
+        allowlist = build_test_allowlist(passive_zap=True)
+        unsafe_target = allowlist.targets[0].model_copy(update={"disposable_demo": False})
+        unsafe_allowlist = allowlist.model_copy(update={"targets": [unsafe_target]})
+
+        with tempfile.TemporaryDirectory() as temp_dir, SessionLocal() as db:
+            scan = db.get(Scan, self.scan_id)
+            self.assertIsNotNone(scan)
+            authorize_web_scan(scan, unsafe_allowlist)
+            db.add(scan)
+            db.commit()
+            db.refresh(scan)
+
+            with patch("app.scans.lifecycle.run_passive_scan") as passive:
+                run_passive_scan_job(db, scan, temp_dir, unsafe_allowlist, zap_base_url="http://zap:8080")
+
+            passive.assert_not_called()
+            self.assertEqual(scan.status, "failed")
+            self.assertIsNone(scan.error_detail)
+
     def test_active_demo_scan_job_persists_zap_active_findings(self) -> None:
         allowlist = build_test_allowlist(allowed_modes=("passive", "active_demo"))
         active_finding = NormalizedFindingInput(

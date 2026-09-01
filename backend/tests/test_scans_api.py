@@ -239,7 +239,10 @@ class ScanApiTests(unittest.TestCase):
         self.assertIn("acknowledgement", response.json()["detail"])
 
     def test_create_active_demo_scan_rejects_non_local_demo_target(self) -> None:
-        allowlist = build_scan_allowlist(local_demo=False, allowed_modes=("passive", "active_demo"))
+        allowlist = build_scan_allowlist(local_demo=True, allowed_modes=("passive", "active_demo"))
+        # Bypass model validation to exercise the API's independent defense-in-depth check.
+        non_demo_target = allowlist.targets[0].model_copy(update={"disposable_demo": False})
+        allowlist = allowlist.model_copy(update={"targets": [non_demo_target]})
         target = self.create_db_target(allowlist_id="remote-demo", base_url="https://owned.example.test/")
 
         app.dependency_overrides[get_scan_allowlist] = lambda: allowlist
@@ -315,7 +318,10 @@ class ScanApiTests(unittest.TestCase):
         self.assertIn("acknowledgement", response.json()["detail"])
 
     def test_create_modern_web_crawl_rejects_non_local_demo_target(self) -> None:
-        allowlist = build_scan_allowlist(local_demo=False, allowed_modes=("passive", "modern_web_crawl"))
+        allowlist = build_scan_allowlist(local_demo=True, allowed_modes=("passive", "modern_web_crawl"))
+        # Bypass model validation to exercise the API's independent defense-in-depth check.
+        non_demo_target = allowlist.targets[0].model_copy(update={"disposable_demo": False})
+        allowlist = allowlist.model_copy(update={"targets": [non_demo_target]})
         target = self.create_db_target(allowlist_id="remote-demo", base_url="http://owned-demo:8080/")
 
         app.dependency_overrides[get_scan_allowlist] = lambda: allowlist

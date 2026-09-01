@@ -140,7 +140,9 @@ Active Demo, and Client Spider run only where the policy explicitly permits the
 engine and marks the HTTP target as a compatible disposable demo. The worker
 does not resolve or route to the target network: it gives ZAP only destination
 IPs that the relay already validated while fetching the same allowlisted
-origin, and ZAP keeps the exact pinned origin inside its scoped context.
+origin, combines them with the policy's exact connection port, and keeps the
+resulting pinned origin inside ZAP's scoped context. Policy validation and the
+worker both reject all ZAP engines for non-disposable targets.
 
 ### Repository scanners
 

@@ -174,6 +174,13 @@ def run_passive_scan_job(
         engines = set(allowlist_target.engines_for_profile(scan.scan_profile_id))
         if ScanEngine.SCOPEHARBOR_PASSIVE not in engines:
             raise ScanLifecycleError("Scan policy does not authorize the ScopeHarbor passive engine.")
+        zap_engines = {
+            ScanEngine.ZAP_PASSIVE,
+            ScanEngine.ZAP_ACTIVE,
+            ScanEngine.ZAP_CLIENT_SPIDER,
+        }
+        if engines.intersection(zap_engines) and not allowlist_target.local_demo:
+            raise ScanLifecycleError("ZAP engines require a compatible disposable demo target.")
         active_demo = scan.mode == ScanMode.ACTIVE_DEMO.value
         modern_web_crawl = scan.mode == ScanMode.MODERN_WEB_CRAWL.value
         auth_headers = load_scan_auth_headers(db, scan)
