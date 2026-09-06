@@ -255,9 +255,12 @@ def aggregate_weighted_score(
     primary_weight = max(weighted_values)
     supporting_weight = max(0.0, sum(weighted_values) - primary_weight)
     highest_severity = next(
-        severity
-        for severity in SEVERITY_SCORE_CEILINGS
-        if severity_counts.get(severity, 0) > 0
+        (
+            severity
+            for severity in SEVERITY_SCORE_CEILINGS
+            if severity_counts.get(severity, 0) > 0
+        ),
+        "info",
     )
     score_ceiling = SEVERITY_SCORE_CEILINGS[highest_severity]
     score = min(

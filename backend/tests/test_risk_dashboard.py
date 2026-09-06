@@ -90,6 +90,21 @@ class RiskDashboardTests(unittest.TestCase):
         self.assertEqual((medium_score.score, medium_score.label), (49, "Moderate"))
         self.assertEqual((low_score.score, low_score.label), (19, "Low"))
 
+    def test_risk_v2_treats_unknown_legacy_severity_as_informational(self) -> None:
+        scan = self.make_scan_object()
+        legacy_finding = self.make_finding_object(
+            scan.id,
+            "legacy-severity",
+            severity="unknown-legacy-value",
+            confidence="confirmed",
+        )
+
+        score = calculate_scan_risk_score(scan, [legacy_finding])
+
+        self.assertEqual((score.score, score.label), (5, "Low"))
+        self.assertEqual(score.input_summary["score_ceiling"], 19)
+        self.assertEqual(score.input_summary["severity_counts"]["unknown-legacy-value"], 1)
+
     def test_scan_risk_score_calculates_missing_legacy_score_without_get_write(self) -> None:
         target_id = self.create_target()
         self.create_target(name="Repository compatibility record", repo_path="security-project")
