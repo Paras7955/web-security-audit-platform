@@ -332,9 +332,13 @@ actionable finding remains.
   layouts. Direct report DOM inspection passed; native print-dialog output and
   a single full-height screenshot of the long report remain manual visual
   checks because the local browser controller timed out on those operations.
-- The tracked-file, Docker-context, documentation-link, current-tree secret,
-  and full-history pinned Gitleaks checks are repeated on the final handoff
-  commit and again after any separately approved tooling cleanup.
+- The final tracked tree contains 442 files, no unexpected generated/private
+  artifact path, and no history blob above 438,644 bytes. All 178 Markdown
+  links have valid local targets, and both Dockerfiles pass BuildKit checks.
+- The current-tree pinned Gitleaks result exactly matches the five reviewed
+  Phase 27 test/config sentinel fingerprints; no new fingerprint appears. The
+  full committed history passes the pinned Gitleaks gate with no leak. Repeat
+  these checks after any separately approved tooling cleanup.
 
 ## Next required actions
 
