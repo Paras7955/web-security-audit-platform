@@ -114,6 +114,18 @@ class AllowlistTests(unittest.TestCase):
         self.assertFalse(target.local_demo)
         self.assertEqual([engine.value for engine in target.engines_for_profile("passive-web")], ["scopeharbor-passive"])
 
+    def test_v2_web_policy_rejects_repository_profile(self) -> None:
+        repository_policy = dict(
+            V2_TARGET,
+            profile_engines={"repository": ["repository"]},
+        )
+
+        with self.assertRaisesRegex(
+            ValidationError,
+            "repository scans use separately authorized repository assets",
+        ):
+            ScanAllowlist.model_validate({"version": 2, "targets": [repository_policy]})
+
     def test_policy_fingerprint_is_canonical_and_excludes_display_copy(self) -> None:
         first = ScanAllowlist.model_validate({"version": 2, "targets": [V2_TARGET]}).targets[0]
         changed_copy = dict(V2_TARGET, name="Renamed App", notes="Operator-only copy")

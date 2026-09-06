@@ -274,6 +274,10 @@ class AllowlistTarget(BaseModel):
     @model_validator(mode="after")
     def validate_policy(self) -> AllowlistTarget:
         parsed = urlsplit(self.base_url)
+        if "repository" in self.profile_engines and not self.legacy_mode_order:
+            raise ValueError(
+                "repository scans use separately authorized repository assets, not web target policies"
+            )
         if self.connection.kind == "compose_service" and self.connection.host != parsed.hostname:
             # Compose aliases may intentionally differ only when the origin is a
             # virtual host. Require an explicit dotted/localhost origin in that case.
