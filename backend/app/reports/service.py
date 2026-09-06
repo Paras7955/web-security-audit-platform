@@ -1,6 +1,6 @@
 import os
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
@@ -148,7 +148,7 @@ def build_report_data(
     # configures an external provider for the interactive endpoint, generating
     # an artifact must not create network work, rate-limit reservations, cache
     # rows, or provider request logs.
-    guidance = (
+    guidance = deduplicate_guidance(
         read_ai_explanations(
             db,
             scan_id=scan.id,
@@ -563,6 +563,7 @@ def render_markdown_guidance(guidance: AiExplanationResult) -> str:
         f"- Risk score context: {markdown_inline(guidance.risk_score_explanation)}",
         f"- Finding summary: {markdown_inline(guidance.summary)}",
         "- Limitation: Guidance uses only normalized, redacted findings and does not add vulnerability claims.",
+        "- Occurrences: Equivalent guidance actions are grouped here; every normalized occurrence remains in Detailed Findings.",
     ]
     if guidance.groups:
         lines.extend(["", "### Finding Groups", ""])
@@ -662,7 +663,7 @@ def render_html_report(data: ReportData) -> str:
     .finding {{ break-inside: avoid; border-top: 2px solid var(--navy); margin-top: 30px; padding-top: 18px; }}
     .findingHeader {{ align-items: flex-start; display: flex; gap: 12px; justify-content: space-between; }}
     .severity {{ border-radius: 999px; color: #fff; flex: none; font-size: .7rem; font-weight: 800; padding: 5px 8px; text-transform: uppercase; }}
-    .severity-critical {{ background: var(--critical); }} .severity-high {{ background: var(--high); }} .severity-medium {{ background: var(--medium); }} .severity-low {{ background: var(--low); }} .severity-info {{ background: var(--info); }}
+    .severity.severity-critical {{ background: var(--critical); }} .severity.severity-high {{ background: var(--high); }} .severity.severity-medium {{ background: var(--medium); }} .severity.severity-low {{ background: var(--low); }} .severity.severity-info {{ background: var(--info); }}
     .findingMeta th {{ width: 18%; }}
     .guidanceItem {{ background: var(--soft); border-radius: 8px; break-inside: avoid; margin-top: 12px; padding: 16px 18px; }}
     .guidanceItem h3 {{ margin-bottom: 8px; }}
@@ -777,9 +778,47 @@ def render_html_guidance(guidance: AiExplanationResult) -> str:
   <p>{escape(guidance.summary)}</p>
   <p>{escape(guidance.risk_score_explanation)}</p>
   <p><strong>Method:</strong> {escape(guidance_tooling(guidance))}. Guidance uses only normalized, redacted findings and does not add vulnerability claims.</p>
+  <p><strong>Occurrences:</strong> Equivalent guidance actions are grouped here; every normalized occurrence remains in Detailed findings.</p>
   {groups}
   {finding_notes}
 """
+
+
+def deduplicate_guidance(guidance: AiExplanationResult) -> AiExplanationResult:
+    seen_signatures: set[tuple[str, ...]] = set()
+    kept_finding_ids: set[str] = set()
+    explanations = []
+    for explanation in guidance.explanations:
+        signature = tuple(
+            normalize_guidance_text(value)
+            for value in (
+                explanation.summary,
+                explanation.why_it_matters,
+                explanation.recommended_action,
+                explanation.owasp_mapping,
+                explanation.limitations,
+            )
+        )
+        if signature in seen_signatures:
+            continue
+        seen_signatures.add(signature)
+        kept_finding_ids.add(explanation.finding_id)
+        explanations.append(explanation)
+
+    groups = tuple(
+        replace(
+            group,
+            count=len(finding_ids),
+            finding_ids=finding_ids,
+        )
+        for group in guidance.groups
+        if (finding_ids := tuple(finding_id for finding_id in group.finding_ids if finding_id in kept_finding_ids))
+    )
+    return replace(guidance, groups=groups, explanations=tuple(explanations))
+
+
+def normalize_guidance_text(value: str) -> str:
+    return " ".join(value.lower().split())
 
 
 def render_html_finding(index: int, finding: ReportFinding) -> str:

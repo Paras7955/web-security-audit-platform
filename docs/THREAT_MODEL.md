@@ -41,7 +41,7 @@ compromised operator account is outside the application boundary.
 | TLS interception | verified SNI/hostname, system or confined CA trust, no insecure mode | operator-controlled CA can expand trust |
 | Capability theft/replay | HMAC, short expiry, request binding, in-memory single-use nonce cache | relay restart forgets consumed nonces; expiry remains limiting |
 | Relay privilege creep | non-root/read-only/capability-free, minimal env/mounts, no data/AI/ZAP/repo access | container-runtime compromise |
-| ZAP scope/key escape | internal daemon, relay-validated destination IP, exact context, API-key header, `trust_env=False`, no redirects, demo-only policy, serialized cleanup | third-party scanner defect |
+| ZAP scope/key escape | internal non-root/read-only/capability-free daemon, relay-validated destination IP, exact context, API-key header, `trust_env=False`, no redirects, demo-only policy, serialized cleanup; browser state and executable bundled WebDriver are confined to tmpfs | third-party scanner or container-runtime defect |
 | Cross-workspace IDOR | principal plus workspace predicates in API/services/worker | future routes must preserve pattern |
 | Credential disclosure | Fernet, write-only schemas, HTTPS submission rule, passive-relay-only injection, multi-boundary redaction | local host/env access can reveal secrets |
 | Credential race | profile→target→scan row locks, post-lock revalidation, immutable scan references | direct database administration |

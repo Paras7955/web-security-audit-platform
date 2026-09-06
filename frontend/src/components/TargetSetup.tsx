@@ -2076,7 +2076,7 @@ export function TargetSetup({
                   {renderHistoricalAuditNotice()}
                   <div className="runWorkspaceGrid">
                     {selectedScan ? <ScanProgress scan={selectedScan} targetName={selectedScanSubject?.name ?? "Historical subject"} toolRuns={toolRuns} isCancelling={isCancellingScan} onCancel={cancelSelectedScan} /> : <div className="emptyState richEmptyState"><AppIcon name="activity" size={24} /><strong>No scan selected</strong><span>Launch this audit or choose a historical scan to monitor it.</span></div>}
-                    <ScanHistory scans={scanHistory} selectedScanId={selectedScanId} onSelectScan={setSelectedScanId} />
+                    <ScanHistory scans={scanHistory} subjects={auditSubjects} selectedScanId={selectedScanId} onSelectScan={setSelectedScanId} />
                   </div>
                   <div className="phaseFooter"><span>{currentAuditReviewReady ? "The current audit's normalized results are ready for triage." : "Review unlocks after the configured subject and profile complete or complete with warnings."}</span><button className="primaryButton" type="button" onClick={() => { if (currentDraftAuditScan) setSelectedScanId(currentDraftAuditScan.id); setAuditPhase("review"); }} disabled={!currentAuditReviewReady}>Review current findings <AppIcon name="arrow" size={15} /></button></div>
                 </div>

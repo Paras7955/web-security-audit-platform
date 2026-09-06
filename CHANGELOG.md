@@ -7,6 +7,20 @@ versioning for the public source contract.
 
 ### Fixed
 
+- Browser-backed ZAP work now starts through the image's Xvfb wrapper with
+  writable ephemeral browser state and an executable ephemeral WebDriver;
+  readiness also rejects a non-executable driver instead of allowing Active
+  Demo or Client Spider scans to report false clean completions.
+- Scan history now identifies each active or archived subject, and the
+  workspace posture table lists only the latest active scan per
+  subject/profile instead of mixing in unrelated recent history.
+- Completed-with-warnings audits no longer display a contradictory generic
+  hard-failure message; warning state remains explicit in status and scanner
+  receipts.
+- Standalone report prioritization now groups equivalent remediation actions
+  while retaining every normalized occurrence in the detailed evidence.
+- Standalone report severity badges no longer override the summary-card
+  palette and obscure the severity counts.
 - Risk scoring now uses the versioned, severity-bounded `risk-v2` and
   `posture-v2` aggregation, preventing a collection of low/medium hygiene
   findings from being presented as high or critical risk.

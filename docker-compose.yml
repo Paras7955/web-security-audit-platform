@@ -59,7 +59,7 @@ services:
     environment:
       ZAP_API_KEY: ${ZAP_API_KEY:?Run the platform setup script documented in README.md}
     command:
-      - zap.sh
+      - zap-x.sh
       - -daemon
       - -host
       - 0.0.0.0
@@ -75,12 +75,22 @@ services:
       - "8080"
     tmpfs:
       - /tmp:size=256m,mode=1777
-      - /home/zap/.ZAP:size=256m,mode=0700,uid=1000,gid=1000
+      # ZAP's Selenium add-on extracts the bundled WebDriver below .ZAP and
+      # must execute it for Client Spider and browser-backed active rules.
+      - /home/zap/.ZAP:size=256m,mode=0700,uid=1000,gid=1000,exec
+      - /home/zap/.cache:size=64m,mode=0700,uid=1000,gid=1000
+      - /home/zap/.mozilla:size=128m,mode=0700,uid=1000,gid=1000
+      - /home/zap/.java:size=16m,mode=0700,uid=1000,gid=1000
     networks:
       - scanner-control
       - scan-target
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --header=\"X-ZAP-API-Key: $$ZAP_API_KEY\" -O - http://localhost:8080/JSON/core/view/version/ >/dev/null 2>&1 || exit 1"]
+      test:
+        - CMD-SHELL
+        - >-
+          driver=$$(find /home/zap/.ZAP/webdriver -type f -name geckodriver -print -quit 2>/dev/null) &&
+          test -n "$$driver" && test -x "$$driver" && test -w /home/zap/.mozilla &&
+          wget -q --header="X-ZAP-API-Key: $$ZAP_API_KEY" -O - http://localhost:8080/JSON/core/view/version/ >/dev/null 2>&1 || exit 1
       interval: 10s
       timeout: 5s
       retries: 24

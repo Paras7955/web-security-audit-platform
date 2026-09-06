@@ -197,6 +197,28 @@ class RiskDashboardTests(unittest.TestCase):
             after_archive["historical_findings_count"],
             baseline["historical_findings_count"] + 1,
         )
+        self.assertIn(scan_id, {scan["id"] for scan in after_archive["recent_scans"]})
+        self.assertNotIn(scan_id, {scan["id"] for scan in after_archive["current_posture_scans"]})
+
+    def test_current_posture_scans_show_only_latest_scan_per_active_subject_profile(self) -> None:
+        target_id = self.create_target(name="Current coverage target")
+        older_passive_id = self.create_scan(target_id, created_offset=1, completed_offset=2)
+        latest_passive_id = self.create_scan(target_id, created_offset=3, completed_offset=4)
+        active_id = self.create_scan(
+            target_id,
+            mode="active_demo",
+            scan_profile_id="active-demo",
+            created_offset=5,
+            completed_offset=6,
+        )
+
+        response = self.client.get("/api/v1/dashboard/overview", headers=DEV_AUTH_HEADERS)
+
+        self.assertEqual(response.status_code, 200)
+        posture_scan_ids = {scan["id"] for scan in response.json()["current_posture_scans"]}
+        self.assertIn(latest_passive_id, posture_scan_ids)
+        self.assertIn(active_id, posture_scan_ids)
+        self.assertNotIn(older_passive_id, posture_scan_ids)
 
     def test_duplicate_dedupe_keys_use_deterministic_highest_risk_finding(self) -> None:
         scan = self.make_scan_object()

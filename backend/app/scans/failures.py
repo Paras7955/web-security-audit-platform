@@ -18,7 +18,7 @@ SAFE_FAILURE_MESSAGES: dict[str, str] = {
 
 
 def safe_scan_failure(error_code: str | None, status: str) -> ScanFailureRead | None:
-    if not error_code and status not in {"failed", "completed_with_warnings"}:
+    if not error_code and status != "failed":
         return None
     code = error_code or "scan_failed"
     return ScanFailureRead(code=code, message=SAFE_FAILURE_MESSAGES.get(code, "The scan could not be completed safely."))

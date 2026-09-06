@@ -272,6 +272,7 @@ export type DashboardOverview = {
   severity_counts: Record<string, number>;
   latest_risk_score: RiskScore | null;
   recent_scans: DashboardScanSummary[];
+  current_posture_scans: DashboardScanSummary[];
   posture_basis: string;
   current_posture_score: RiskScore | null;
   historical_findings_count: number;

@@ -90,6 +90,12 @@ def dashboard_overview(
             targets_by_id(targets),
             repository_assets_by_id(repository_assets),
         ),
+        current_posture_scans=scan_summaries(
+            db,
+            posture_scans,
+            targets_by_id(targets),
+            repository_assets_by_id(repository_assets),
+        ),
         current_posture_score=posture_score_to_read(posture_findings, posture_scans),
         historical_findings_count=len(historical_findings),
         historical_severity_counts=historical_severity_counts(historical_findings),

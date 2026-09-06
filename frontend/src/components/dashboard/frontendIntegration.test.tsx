@@ -359,7 +359,7 @@ function protectedApiResponse(url: string, method = "GET") {
   if (url.includes("/scans")) return jsonResponse(page([scanFixture("auth-scan", "2026-01-01T00:00:00Z")]));
   if (url.includes("/dashboard/overview")) return jsonResponse({
     targets_count: 1, repository_assets_count: 0, scans_count: 0, completed_scans_count: 0, findings_count: 0,
-    severity_counts: {}, latest_risk_score: null, recent_scans: [], posture_basis: "latest completed scan per subject and profile",
+    severity_counts: {}, latest_risk_score: null, recent_scans: [], current_posture_scans: [], posture_basis: "latest completed scan per subject and profile",
     current_posture_score: null, historical_findings_count: 0, historical_severity_counts: {},
   });
   if (url.includes("/tags/assignments")) return jsonResponse(page());
@@ -468,7 +468,7 @@ function scanFixture(id: string, createdAt: string) {
 function overviewFixture(scans: ReturnType<typeof scanFixture>[]) {
   return {
     targets_count: 1, repository_assets_count: 0, scans_count: scans.length, completed_scans_count: scans.length,
-    findings_count: 1, severity_counts: { high: 1 }, latest_risk_score: null, recent_scans: [],
+    findings_count: 1, severity_counts: { high: 1 }, latest_risk_score: null, recent_scans: [], current_posture_scans: [],
     posture_basis: "latest completed scan per subject and profile", current_posture_score: null,
     historical_findings_count: 1, historical_severity_counts: { high: 1 },
   };

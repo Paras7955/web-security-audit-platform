@@ -273,10 +273,12 @@ function profileIcon(profileId: string): "target" | "operations" | "activity" | 
 
 export function ScanHistory({
   scans,
+  subjects,
   selectedScanId,
   onSelectScan
 }: {
   scans: Scan[];
+  subjects: AuditSubject[];
   selectedScanId: string;
   onSelectScan: (scanId: string) => void;
 }) {
@@ -292,11 +294,12 @@ export function ScanHistory({
         scan.id,
         scan.status,
         scan.current_step,
-        formatScanProfileLabel(scan.scan_profile_id)
+        formatScanProfileLabel(scan.scan_profile_id),
+        scanSubjectName(scan, subjects)
       ].some((value) => value?.toLowerCase().includes(normalizedQuery));
       return matchesStatus && matchesProfile && matchesQuery;
     });
-  }, [profileFilter, query, scans, statusFilter]);
+  }, [profileFilter, query, scans, statusFilter, subjects]);
 
   return (
     <div className="panel historyPanel">
@@ -333,7 +336,7 @@ export function ScanHistory({
                 <span className={`statusDot status-${scan.status}`} />
                 <span>
                   <strong>{formatScanProfileLabel(scan.scan_profile_id)}</strong>
-                  <small>{scan.status.replaceAll("_", " ")} · {formatScanDate(scan.created_at)}</small>
+                  <small>{scanSubjectName(scan, subjects)} · {scan.status.replaceAll("_", " ")} · {formatScanDate(scan.created_at)}</small>
                 </span>
                 <em>{scan.progress_percent}%</em>
               </button>
@@ -345,6 +348,13 @@ export function ScanHistory({
       )}
     </div>
   );
+}
+
+function scanSubjectName(scan: Scan, subjects: AuditSubject[]): string {
+  return subjects.find((subject) =>
+    subject.subjectType === scan.subject_type &&
+    (subject.target?.id === scan.target_id || subject.repositoryAsset?.id === scan.repository_asset_id)
+  )?.name ?? "Archived subject";
 }
 
 function formatScanDate(value: string) {
