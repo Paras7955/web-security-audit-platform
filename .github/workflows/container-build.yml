@@ -114,10 +114,25 @@ jobs:
 
       - name: Compose readiness smoke test
         run: |
-          cleanup() {
-            SCOPEHARBOR_ENV_FILE="$SCOPEHARBOR_CI_ENV_FILE" docker compose --env-file "$SCOPEHARBOR_CI_ENV_FILE" down --volumes --remove-orphans
+          compose_ci() {
+            SCOPEHARBOR_ENV_FILE="$SCOPEHARBOR_CI_ENV_FILE" docker compose --env-file "$SCOPEHARBOR_CI_ENV_FILE" "$@"
           }
-          trap cleanup EXIT
+          finish() {
+            status=$?
+            trap - EXIT
+            if ((status != 0)); then
+              printf '%s\n' 'Compose readiness failed; collecting bounded service diagnostics.' >&2
+              compose_ci ps --all >&2 || true
+              zap_id="$(compose_ci ps --quiet zap 2>/dev/null || true)"
+              if [[ -n "$zap_id" ]]; then
+                docker inspect --format '{{json .State.Health}}' "$zap_id" >&2 || true
+                docker logs --tail 200 "$zap_id" >&2 || true
+              fi
+            fi
+            SCOPEHARBOR_ENV_FILE="$SCOPEHARBOR_CI_ENV_FILE" docker compose --env-file "$SCOPEHARBOR_CI_ENV_FILE" down --volumes --remove-orphans || true
+            exit "$status"
+          }
+          trap finish EXIT
           ./scripts/setup.sh --skip-osv-update --env-file .env.scopeharbor-ci
           curl --fail --silent --show-error http://127.0.0.1:8000/health
           curl --fail --silent --show-error http://127.0.0.1:8000/ready

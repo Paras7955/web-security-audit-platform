@@ -45,7 +45,7 @@ def safe_compose() -> dict[str, object]:
             "healthcheck": {
                 "test": [
                     "CMD-SHELL",
-                    "driver=$(find /home/zap/.ZAP/webdriver -name geckodriver -print -quit) && test -x $driver && $driver --version && test -w /home/zap/.mozilla",
+                    "driver=$(find /home/zap/.ZAP/webdriver -name geckodriver -perm -u+x -print -quit) && test -x $driver && $driver --version && test -w /home/zap/.mozilla",
                 ]
             },
         }
@@ -91,6 +91,14 @@ class ComposeHardeningTests(unittest.TestCase):
         ]
         with self.assertRaises(ComposeHardeningError):
             validate_compose(permission_only_readiness)
+
+        first_driver_readiness = deepcopy(safe_compose())
+        first_driver_readiness["services"]["zap"]["healthcheck"]["test"] = [  # type: ignore[index]
+            "CMD-SHELL",
+            "driver=$(find /home/zap/.ZAP/webdriver -name geckodriver -print -quit) && test -x $driver && $driver --version && test -w /home/zap/.mozilla",
+        ]
+        with self.assertRaises(ComposeHardeningError):
+            validate_compose(first_driver_readiness)
 
 
 if __name__ == "__main__":

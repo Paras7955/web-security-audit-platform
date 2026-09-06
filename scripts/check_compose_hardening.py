@@ -86,6 +86,7 @@ def validate_compose(payload: Mapping[str, object]) -> None:
         health_probe = " ".join(str(part) for part in health_test) if isinstance(health_test, list) else ""
         if (
             "geckodriver" not in health_probe
+            or "-perm -u+x" not in health_probe
             or "test -x" not in health_probe
             or "--version" not in health_probe
             or "test -w /home/zap/.mozilla" not in health_probe

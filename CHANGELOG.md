@@ -7,6 +7,10 @@ versioning for the public source contract.
 
 ### Fixed
 
+- ZAP readiness now selects an executable WebDriver before probing it, avoiding
+  false unhealthy status when a multi-architecture image lists a bundled driver
+  for another architecture first; failed CI readiness runs also retain bounded
+  service and ZAP health diagnostics before cleanup.
 - Browser-backed ZAP work now starts through the image's Xvfb wrapper with
   writable ephemeral browser state and an executable ephemeral WebDriver;
   readiness also executes the driver probe and rejects a broken runtime instead
