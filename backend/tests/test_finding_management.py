@@ -21,6 +21,7 @@ from app.models import (
     Target,
     Workspace,
 )
+from app.risk import SCORING_MODEL_VERSION
 from app.security.auth import ensure_user_workspace_identity
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
@@ -100,7 +101,7 @@ class FindingManagementTests(unittest.TestCase):
                     workspace_id=DEV_WORKSPACE_ID,
                     target_id=self.target_id,
                     scan_id=self.scan_id,
-                    scoring_model_version="risk-v1",
+                    scoring_model_version=SCORING_MODEL_VERSION,
                     score=24,
                     label="Moderate",
                     input_summary={"severity_counts": {"low": 1}},
@@ -209,6 +210,13 @@ class FindingManagementTests(unittest.TestCase):
             self.assertIsNotNone(db.get(Finding, later_finding_id))
 
     def test_suppression_revocation_preserves_history_and_stops_application(self) -> None:
+        initialized = self.client.patch(
+            f"/api/v1/findings/{self.finding_id}/lifecycle",
+            headers=DEV_AUTH_HEADERS,
+            json={"lifecycle_status": "open"},
+        )
+        self.assertEqual(initialized.status_code, 200)
+
         created = self.client.post(
             "/api/v1/suppressions",
             headers=DEV_AUTH_HEADERS,

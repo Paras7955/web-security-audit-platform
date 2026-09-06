@@ -327,7 +327,7 @@ class ReportsTests(unittest.TestCase):
             response = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("passive, Active Demo, and Repo scans", response.json()["detail"])
+        self.assertIn("Passive Web, Active Demo, and Repository scans", response.json()["detail"])
 
     def test_reports_reject_inconsistent_scan_profile(self) -> None:
         with SessionLocal() as db:
@@ -342,7 +342,7 @@ class ReportsTests(unittest.TestCase):
             response = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("passive, Active Demo, and Repo scans", response.json()["detail"])
+        self.assertIn("Passive Web, Active Demo, and Repository scans", response.json()["detail"])
 
     def test_reports_support_repo_scan_without_ai_provider_payload(self) -> None:
         with SessionLocal() as db:

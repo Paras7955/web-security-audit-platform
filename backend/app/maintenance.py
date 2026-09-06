@@ -197,7 +197,7 @@ def backfill_legacy_risk_scores(db: Session, *, apply: bool) -> MaintenanceResul
         apply,
         len(missing),
         len(missing) if apply else 0,
-        "Missing risk-v1 rows are generated only with --apply; GET requests remain read-only.",
+        f"Missing {SCORING_MODEL_VERSION} rows are generated only with --apply; GET requests remain read-only.",
     )
 
 

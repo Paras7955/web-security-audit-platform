@@ -95,7 +95,9 @@ def build_report_data(
         raise ReportGenerationError("Reports can only be generated for completed scans.")
     profile = scan_profile_for_values(scan.scan_profile_id, scan.mode)
     if profile is None or not profile.reports_enabled:
-        raise ReportGenerationError("Reports can only be generated for passive, Active Demo, and Repo scans.")
+        raise ReportGenerationError(
+            "Reports can only be generated for Passive Web, Active Demo, and Repository scans."
+        )
 
     target = (
         db.scalar(
@@ -351,7 +353,9 @@ def validate_report_scan_eligibility(scan: Scan) -> None:
     if scan.status not in TERMINAL_REPORT_STATUSES:
         raise ReportGenerationError("Reports can only be generated for completed scans.")
     if not scan_reports_enabled(scan):
-        raise ReportGenerationError("Reports can only be generated for passive, Active Demo, and Repo scans.")
+        raise ReportGenerationError(
+            "Reports can only be generated for Passive Web, Active Demo, and Repository scans."
+        )
 
 
 def validate_report_artifact_read_eligibility(scan: Scan) -> None:

@@ -45,6 +45,7 @@ from app.models import (
     Target,
 )
 from app.ops.audit import record_audit_event
+from app.risk import SCORING_MODEL_VERSION
 from app.security.auth import AuthenticatedPrincipal
 from app.security.sanitization import sanitize_text
 
@@ -275,6 +276,7 @@ def create_suppression_rule(
         expires_at=payload.expires_at,
     )
     db.add(rule)
+    db.flush()
 
     findings = list(
         db.scalars(
@@ -710,7 +712,7 @@ def query_findings(
         risk_filters = [
             RiskScore.workspace_id == principal.workspace_id,
             RiskScore.scan_id == Scan.id,
-            RiskScore.scoring_model_version == "risk-v1",
+            RiskScore.scoring_model_version == SCORING_MODEL_VERSION,
         ]
         if risk_min is not None:
             risk_filters.append(RiskScore.score >= risk_min)

@@ -408,6 +408,10 @@ class RiskScoreRead(BaseModel):
             "severity_counts",
             "confidence_counts",
             "weighted_total",
+            "aggregation",
+            "primary_weight",
+            "supporting_weight",
+            "score_ceiling",
             "scan_profile_id",
         }
         return {str(key): item for key, item in value.items() if key in allowed}

@@ -230,7 +230,7 @@ class RepositoryAssetApiTests(unittest.TestCase):
         self.assertEqual(dashboard.status_code, 200)
         self.assertEqual(dashboard.json()["repository_asset_id"], created["id"])
         self.assertEqual(dashboard.json()["posture_basis"], "latest completed scan per subject and profile")
-        self.assertEqual(dashboard.json()["current_posture_score"]["scoring_model_version"], "posture-v1")
+        self.assertEqual(dashboard.json()["current_posture_score"]["scoring_model_version"], "posture-v2")
         self.assertEqual(comparison.status_code, 200)
         self.assertEqual(comparison.json()["subject_type"], "repository_asset")
         self.assertEqual(comparison.json()["repository_asset_id"], created["id"])

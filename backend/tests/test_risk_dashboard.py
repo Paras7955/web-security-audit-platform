@@ -40,7 +40,7 @@ class RiskDashboardTests(unittest.TestCase):
                 db.execute(delete(PlatformUser).where(PlatformUser.id.in_(self.extra_user_ids)))
             db.commit()
 
-    def test_risk_v1_snapshot_is_deterministic(self) -> None:
+    def test_risk_v2_snapshot_is_deterministic(self) -> None:
         scan = self.make_scan_object()
         findings = [
             self.make_finding_object(scan.id, "critical-confirmed", severity="critical", confidence="confirmed"),
@@ -50,14 +50,45 @@ class RiskDashboardTests(unittest.TestCase):
 
         score = calculate_scan_risk_score(scan, findings)
 
-        self.assertEqual(score.scoring_model_version, "risk-v1")
+        self.assertEqual(score.scoring_model_version, "risk-v2")
         self.assertEqual(score.score, 100)
         self.assertEqual(score.label, "Critical")
         self.assertEqual(score.input_summary["severity_counts"], {"critical": 1, "high": 0, "medium": 1, "low": 0, "info": 1})
         self.assertEqual(score.input_summary["confidence_counts"], {"confirmed": 1, "high": 1, "medium": 0, "low": 1})
         self.assertEqual(score.input_summary["weighted_total"], 134.0)
+        self.assertEqual(score.input_summary["aggregation"], "primary-plus-supporting-v1")
+        self.assertEqual(score.input_summary["primary_weight"], 100.0)
+        self.assertEqual(score.input_summary["supporting_weight"], 34.0)
+        self.assertEqual(score.input_summary["score_ceiling"], 100)
         self.assertEqual(score.input_summary["scan_profile_id"], "passive-web")
         self.assertEqual(score.input_summary["lifecycle_adjustments"], [])
+
+    def test_risk_v2_bounds_accumulated_findings_to_highest_severity_band(self) -> None:
+        scan = self.make_scan_object()
+        medium_findings = [
+            self.make_finding_object(
+                scan.id,
+                f"medium-{index}",
+                severity="medium",
+                confidence="confirmed",
+            )
+            for index in range(20)
+        ]
+        low_findings = [
+            self.make_finding_object(
+                scan.id,
+                f"low-{index}",
+                severity="low",
+                confidence="confirmed",
+            )
+            for index in range(20)
+        ]
+
+        medium_score = calculate_scan_risk_score(scan, medium_findings)
+        low_score = calculate_scan_risk_score(scan, low_findings)
+
+        self.assertEqual((medium_score.score, medium_score.label), (49, "Moderate"))
+        self.assertEqual((low_score.score, low_score.label), (19, "Low"))
 
     def test_scan_risk_score_calculates_missing_legacy_score_without_get_write(self) -> None:
         target_id = self.create_target()
@@ -72,6 +103,7 @@ class RiskDashboardTests(unittest.TestCase):
         self.assertEqual(body["scoring_model_version"], SCORING_MODEL_VERSION)
         self.assertEqual(body["score"], 32)
         self.assertEqual(body["label"], "Moderate")
+        self.assertEqual(body["input_summary"]["aggregation"], "primary-plus-supporting-v1")
         with SessionLocal() as db:
             self.assertEqual(db.query(RiskScore).filter(RiskScore.scan_id == scan_id).count(), 0)
 
@@ -114,6 +146,42 @@ class RiskDashboardTests(unittest.TestCase):
 
         self.assertEqual(overview.status_code, 200)
         self.assertGreaterEqual(overview.json()["severity_counts"]["medium"], 2)
+
+    def test_current_posture_count_matches_deduplicated_severity_breakdown(self) -> None:
+        target_id = self.create_target(name="Deduplication target")
+        scan_id = self.create_scan(target_id)
+        self.create_finding(scan_id, "shared-key", severity="low", confidence="low")
+        self.create_finding(scan_id, "shared-key", severity="high", confidence="confirmed")
+
+        target_response = self.client.get(
+            f"/api/v1/targets/{target_id}/dashboard",
+            headers=DEV_AUTH_HEADERS,
+        )
+
+        self.assertEqual(target_response.status_code, 200)
+        body = target_response.json()
+        self.assertEqual(body["findings_count"], sum(body["severity_counts"].values()))
+        self.assertEqual(body["findings_count"], 1)
+        self.assertEqual(body["historical_findings_count"], 2)
+        self.assertEqual(body["severity_counts"]["high"], 1)
+
+    def test_archived_subject_stays_in_history_but_leaves_current_posture(self) -> None:
+        baseline = self.client.get("/api/v1/dashboard/overview", headers=DEV_AUTH_HEADERS).json()
+        target_id = self.create_target(name="Archived posture target")
+        scan_id = self.create_scan(target_id)
+        self.create_finding(scan_id, "archived-key", severity="low", confidence="high")
+
+        before_archive = self.client.get("/api/v1/dashboard/overview", headers=DEV_AUTH_HEADERS).json()
+        archived = self.client.delete(f"/api/v1/targets/{target_id}", headers=DEV_AUTH_HEADERS)
+        after_archive = self.client.get("/api/v1/dashboard/overview", headers=DEV_AUTH_HEADERS).json()
+
+        self.assertEqual(archived.status_code, 204)
+        self.assertEqual(before_archive["findings_count"], baseline["findings_count"] + 1)
+        self.assertEqual(after_archive["findings_count"], baseline["findings_count"])
+        self.assertEqual(
+            after_archive["historical_findings_count"],
+            baseline["historical_findings_count"] + 1,
+        )
 
     def test_duplicate_dedupe_keys_use_deterministic_highest_risk_finding(self) -> None:
         scan = self.make_scan_object()
