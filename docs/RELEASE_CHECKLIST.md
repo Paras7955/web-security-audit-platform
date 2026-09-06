@@ -98,7 +98,7 @@ planned or mocked result.
   theme/readiness, and OIDC-facing workflows.
 - [ ] API, worker, relay, and frontend images build.
 - [ ] Source-built scanner binaries use Go 1.26.6 or later; review the explicit
-  OSV-Scanner go-git and x/mod security pins before changing them.
+  OSV-Scanner go-git, gRPC-Go, and x/mod security pins before changing them.
 - [ ] `python3 scripts/check_compose_hardening.py` passes.
 - [ ] Compose migration/readiness smoke passes with non-root,
   capability-dropped, read-only services and expected networks/mounts.
