@@ -7,10 +7,10 @@ ScopeHarbor is a defensive, local-first AppSec audit platform at version
 user explicitly authorized the merge. Neither local `main` nor the Phase 28
 branch has been pushed.
 
-Phase 28's full product audit, bounded live demonstrations, accepted fixes,
-verification, and self-review fallback are complete on
-`phase-28-audit-validation` through `e916952`. This phase-boundary handoff
-follows those implementation commits.
+Phase 28's full product audit, bounded live demonstrations, follow-up Juice
+Shop walkthrough, accepted fixes, verification, and self-review fallback are
+complete on `phase-28-audit-validation` through `ba90d3f`. This handoff follows
+those implementation commits.
 
 Phase 27 commits:
 
@@ -33,6 +33,10 @@ Phase 28 commits before this handoff:
 - `a778fde` — `fix(build): pin patched gRPC-Go scanner dependency`
 - `147efa2` — `docs(risk): explain severity-bounded posture scoring`
 - `e916952` — `fix(risk): tolerate legacy severity values`
+- `857a446` — `docs(handoff): record phase 28 audit validation`
+- `4503e19` — `docs(handoff): finalize phase 28 verification record`
+- `3e35994` — `fix(audit): surface trustworthy browser scan evidence`
+- `ba90d3f` — `fix(compose): execute the webdriver readiness probe`
 
 The approval-gated tooling cleanup has **not** run. `.agents/`, `.opencode/`,
 `.codex/`, `.impeccable/`, `AGENTS.md`, and this file remain tracked. Do not
@@ -238,6 +242,37 @@ Default host endpoints are frontend `127.0.0.1:3001`, API
   OSV-Scanner source revision. The rebuilt worker passes both real offline
   scanner fixtures and reports no HIGH/CRITICAL vulnerability.
 
+### Follow-up Juice Shop validation
+
+- A second full browser walkthrough found that ZAP's Client Spider and
+  browser-backed active rules could not launch Firefox: the extracted
+  WebDriver lived on a non-executable tmpfs, while Firefox profile and cache
+  paths were read-only. ZAP still returned a terminal percentage, so ScopeHarbor
+  recorded false clean completion with zero browser-backed findings.
+- ZAP now starts through `zap-x.sh`, keeps its executable WebDriver and writable
+  browser state in bounded tmpfs mounts, and remains non-root, read-only,
+  capability-free, and confined to the existing scanner networks. Readiness
+  locates and actually executes the driver probe before reporting healthy.
+- The repaired Active Demo produced 14 normalized findings: ScopeHarbor Passive
+  4, ZAP Passive 5, and ZAP Active 5. The repaired Modern Web Crawl produced 82:
+  ScopeHarbor Passive 4, ZAP Passive 5, and Client Spider 73. All final receipts
+  completed without warnings.
+- A forced Client Spider timeout completed with an explicit warning receipt but
+  also displayed a contradictory generic hard-failure banner. Warning scans now
+  keep their warning status and safe receipt details without claiming failure.
+- Scan-history rows now identify their active or archived subject. The
+  current-posture table uses the exact active latest-evidence set rather than
+  unrelated recent or superseded scans.
+- The fresh active report retained all 14 normalized occurrences but repeated
+  equivalent prioritized remediation actions and had a CSS selector collision
+  that obscured severity counts. Reports now group those to 8 distinct action
+  patterns, retain all occurrences in Detailed Findings, and render readable
+  summary cards at desktop and mobile widths.
+- No ArtiCue source tree was found under the available local user directories.
+  The earlier second-site validation was the temporary exact-policy empty HTTP
+  fixture described above, not ArtiCue. No public target was substituted and
+  the committed allowlist was not expanded.
+
 ## Review decisions
 
 Review decision:
@@ -291,16 +326,23 @@ current-versus-historical semantics, report and guidance output, UI state,
 setup behavior, tests, maintainability, and simplification. No other
 actionable finding remains.
 
+The follow-up review runtime likewise could not certify the requested exact
+`gpt-5.6-sol`/medium identity, so the documented self-review fallback was used.
+It found that the new ZAP health check inspected the driver's executable bit
+without actually invoking it. `ba90d3f` makes readiness execute
+`geckodriver --version` and adds a hardening regression. No further actionable
+finding remained after that fix.
+
 ## Verification record
 
 - Backend: Ruff and Pyright pass; Alembic upgrades from zero through `0014`,
   migration-path tests, and drift detection pass.
-- Backend tests: 361 pass with 2 intentional real-scanner skips in the default
+- Backend tests: 366 pass with 2 intentional real-scanner skips in the default
   suite. Overall branch coverage is 86%; security slices are authentication
   98.94%, SSRF/redirects 95.07%, persistence redaction 100%, artifact paths
   100%, and repository runner 96.42%. The two real scanner tests also pass
   separately in the rebuilt networkless, read-only worker image.
-- Frontend: 14 Vitest/Testing Library tests, ESLint, and the Next.js 16.3.0
+- Frontend: 16 Vitest/Testing Library tests, ESLint, and the Next.js 16.3.0
   production build pass. The npm audit reports zero vulnerabilities.
 - Python runtime/development hash locks pass `pip-audit` with no known
   vulnerabilities.
@@ -312,18 +354,18 @@ actionable finding remains.
 - CycloneDX SBOMs validate with 142 API, 404 worker, 142 relay, and 43 frontend
   components.
 - The isolated live stack completed real Juice Shop Passive Web, Active Demo,
-  and Modern Web Crawl scans after the scanner fix. Each produced 9 findings:
-  ScopeHarbor Passive 4 and ZAP Passive 5; Active and Client Spider added zero;
-  all tool receipts completed without warnings. Comparison showed the four
-  former false positives as resolved.
+  and Modern Web Crawl scans. The follow-up runtime fix changed the final
+  Active Demo result from a false-clean 9 to 14 findings and Modern Web Crawl
+  from a false-clean 9 to 82; ZAP Active contributed 5 and Client Spider 73,
+  with clean final receipts.
 - A real confined repository scan produced 26 findings: Gitleaks 21 and offline
   OSV-Scanner 5, with clean receipts and redacted evidence. No repository code,
   hooks, builds, installs, or network resolution ran.
 - Fresh standalone Markdown and HTML reports and deterministic local guidance
-  were generated for the corrected passive scan. The HTML has exact
+  were generated for the repaired Active Demo scan. The HTML has exact
   `default-src 'none'` CSP, no scripts or external resources, responsive and
-  print styles, and clear overview, receipts, prioritization, and finding
-  details. Report generation made no OpenAI call.
+  print styles, legible summary counts, 8 grouped actions, and all 14 detailed
+  occurrences. Report generation made no OpenAI call.
 - Live governance checks covered lifecycle changes, tag create/assign/
   unassign/archive, auth-profile create/attach/deny-active/rotate/detach/revoke,
   suppression create/revoke, risk backfill preview/apply/idempotence, audit
@@ -337,8 +379,11 @@ actionable finding remains.
   links have valid local targets, and both Dockerfiles pass BuildKit checks.
 - The current-tree pinned Gitleaks result exactly matches the five reviewed
   Phase 27 test/config sentinel fingerprints; no new fingerprint appears. The
-  full committed history passes the pinned Gitleaks gate with no leak. Repeat
+  full 310-commit history passes the pinned Gitleaks gate with no leak. Repeat
   these checks after any separately approved tooling cleanup.
+- The dedicated `scopeharbor-phase28` containers were stopped after
+  verification; their named volumes were preserved. The normal
+  `security-project` environment was not started or modified.
 
 ## Next required actions
 
@@ -374,6 +419,9 @@ actionable finding remains.
   Docker's host gateway. Docker Desktop supplies the normal macOS/Windows path.
 - General local targets receive ScopeHarbor Passive only. All ZAP profiles are
   explicitly compatible disposable-demo features.
+- No ArtiCue checkout was available for this audit. Testing any future local
+  application requires its source/runtime plus an exact reviewed policy; do not
+  substitute an arbitrary public deployment.
 - OIDC support accepts an operator-supplied bearer token held in one browser
   tab; the UI does not implement provider redirects, refresh-token storage, or
   renewal.
