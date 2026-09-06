@@ -3,12 +3,14 @@
 ## Current state
 
 ScopeHarbor is a defensive, local-first AppSec audit platform at version
-`1.1.0`. Phases 1–26 are merged into `main`; Phase 26 merged through pull
-request #72 at `887452ddf26492c47c2c840e6a2c1464055c1730`.
+`1.1.0`. Phase 27 was fast-forwarded into local `main` at `60cbc3a` after the
+user explicitly authorized the merge. Neither local `main` nor the Phase 28
+branch has been pushed.
 
-Phase 27 implementation and review fixes are complete and verified on
-`phase-27-public-polish` through `c5ba826`. Phase-boundary documentation follows
-those implementation commits. The branch has not been pushed or merged.
+Phase 28's full product audit, bounded live demonstrations, accepted fixes,
+verification, and self-review fallback are complete on
+`phase-28-audit-validation` through `e916952`. This phase-boundary handoff
+follows those implementation commits.
 
 Phase 27 commits:
 
@@ -20,6 +22,17 @@ Phase 27 commits:
 - `b6be4b0` — `test(ai): align guidance eligibility contract`
 - `34bb9e7` — `fix(scanners): reuse relay-validated ZAP destinations`
 - `c5ba826` — `fix(release): address independent review findings`
+- `56d8f8b` — `docs(handoff): record phase 27 public polish`
+- `60cbc3a` — `docs(handoff): clarify phase boundary references`
+
+Phase 28 commits before this handoff:
+
+- `4eb098e` — `fix(scanners): require evidence-specific probe matches`
+- `5700138` — `fix(risk): align posture with active evidence`
+- `68cb7a9` — `fix(workspace): keep audit state subject-aware`
+- `a778fde` — `fix(build): pin patched gRPC-Go scanner dependency`
+- `147efa2` — `docs(risk): explain severity-bounded posture scoring`
+- `e916952` — `fix(risk): tolerate legacy severity values`
 
 The approval-gated tooling cleanup has **not** run. `.agents/`, `.opencode/`,
 `.codex/`, `.impeccable/`, `AGENTS.md`, and this file remain tracked. Do not
@@ -49,7 +62,8 @@ The release provides:
   Gitleaks, and operator-updated offline OSV data. Repository code and hooks are
   never executed.
 - Subject-aware findings, lifecycle state, suppressions, tags, current posture,
-  comparisons, and structured standalone Markdown/HTML reports.
+  comparisons, severity-bounded `risk-v2`/`posture-v2`, and structured
+  standalone Markdown/HTML reports.
 - Deterministic local Finding Guidance. Optional OpenAI enrichment remains an
   explicit operator-controlled interactive action for eligible redacted web
   findings; report generation is always local and never calls OpenAI.
@@ -159,6 +173,71 @@ Default host endpoints are frontend `127.0.0.1:3001`, API
 - The Gitleaks source build pins `golang.org/x/crypto v0.55.0`, clearing the
   CRITICAL `CVE-2026-56854` finding detected by the current Trivy database.
 
+## Phase 28 decisions
+
+### Live audit findings and scanner correctness
+
+- A full Juice Shop walkthrough exercised Passive Web, Active Demo, Modern Web
+  Crawl, and Repository profiles, plus findings, comparisons, reports, local
+  guidance, lifecycle state, suppressions, tags, auth-profile management,
+  dashboards, and audit logs.
+- The custom sensitive-file probes had treated Juice Shop's HTTP 200 SPA
+  fallback pages as exposed `.env`, `.git/config`, ZIP, and PHP files. Probes
+  now require content signatures appropriate to the requested file and reject
+  HTML fallbacks. Repeated Juice Shop runs contain 9 real normalized findings
+  instead of 13: 4 ScopeHarbor Passive and 5 ZAP Passive, with no warnings.
+- A second, temporary empty HTTP fixture was admitted through one exact local
+  policy, scanned through the relay, and then archived and removed. It produced
+  only the expected 4 missing-header findings and no exposed-file false
+  positives. The temporary policy was reverted, so scanner authority did not
+  expand.
+- Web policies can no longer advertise the Repository profile. Repository
+  scans remain separately authorized through confined repository assets.
+
+### Risk, governance, and current posture
+
+- Immutable scan scores now use `risk-v2`; dynamic workspace posture uses
+  `posture-v2`. The strongest severity/confidence weight is primary, 15% of
+  supporting weights reflects volume, and the result is capped to the highest
+  observed severity band. Low or medium hygiene findings can no longer be
+  presented as high or critical risk solely through accumulation.
+- The model retains raw weighted totals and explicit aggregation metadata for
+  auditability. Existing `risk-v1` rows remain immutable; current-model rows
+  are backfilled only by the explicit maintenance action.
+- Current workspace posture excludes archived targets and repository assets,
+  while historical totals and scan history remain intact. Current finding
+  totals and severity counts now share the same deterministic deduplication.
+- Suppression creation now flushes the new rule before applying it in sessions
+  with autoflush disabled. Live create/revoke validation proved findings leave
+  and re-enter current posture while history remains auditable.
+- The risk scorer treats an unknown legacy severity as informational instead of
+  raising; this was found during the required self-review fallback and fixed in
+  the separate review-fix commit.
+
+### Operator experience and setup
+
+- Completed audit state no longer leaks into a newly selected subject/profile
+  draft. Review unlocks only for the matching audit, future wizard phases stay
+  pending, and historical evidence is labelled explicitly.
+- Creating a repository subject selects the Repository profile. Review actions
+  are profile-aware, scan/tool states are humanized, terminal steps are
+  labelled accurately, and repository authorization copy describes regular-
+  file confinement rather than web redirects.
+- The mobile findings toolbar no longer clips its sort control. Browser checks
+  covered the workspace, audit workflow, Findings, Intelligence, reports, and
+  responsive 1024 px and 390 px layouts.
+- Public setup output now uses `localhost` for the browser-facing UI URL, so it
+  agrees with the configured CORS origin even when Docker reports a
+  `127.0.0.1` port binding.
+
+### Supply-chain correction
+
+- A freshly downloaded digest-pinned Trivy database identified
+  `CVE-2026-84304` in OSV-Scanner's transitive gRPC-Go 1.83.0 dependency. The
+  source build now pins patched gRPC-Go 1.83.1 without changing the reviewed
+  OSV-Scanner source revision. The rebuilt worker passes both real offline
+  scanner fixtures and reports no HIGH/CRITICAL vulnerability.
+
 ## Review decisions
 
 Review decision:
@@ -194,59 +273,85 @@ committed, the main implementation agent completed the documented separate
 self-review fallback over bugs, safety, regressions, missing tests,
 maintainability, and simplification. It found no remaining actionable issue.
 
+The Phase 28 review runtime likewise did not expose a way to certify the exact
+`gpt-5.6-sol`/medium reviewer pin, so the documented self-review fallback was
+used instead.
+
+Review decision:
+- Finding: severity-bounded aggregation assumed at least one recognized
+  severity and could raise for an unknown legacy/imported severity value.
+- Decision: accepted.
+- Rationale: weighting already treats unknown values as informational, and the
+  ceiling calculation must preserve that fail-safe behavior.
+- Follow-up: `e916952` adds an informational ceiling fallback and regression;
+  the focused risk/dashboard suite, Ruff, and Pyright pass.
+
+The Phase 28 self-review also covered scanner authority, evidence handling,
+current-versus-historical semantics, report and guidance output, UI state,
+setup behavior, tests, maintainability, and simplification. No other
+actionable finding remains.
+
 ## Verification record
 
 - Backend: Ruff and Pyright pass; Alembic upgrades from zero through `0014`,
   migration-path tests, and drift detection pass.
-- Backend tests: 353 passed with 2 environment-dependent skips. Overall branch
-  coverage is 86%; security slices are authentication 98.94%, SSRF/redirects
-  95.07%, persistence redaction 100%, artifact paths 100%, and repository
-  runner 96.42%.
-- Frontend: 13 Vitest/Testing Library tests, ESLint, and the Next.js 16.3.0
+- Backend tests: 361 pass with 2 intentional real-scanner skips in the default
+  suite. Overall branch coverage is 86%; security slices are authentication
+  98.94%, SSRF/redirects 95.07%, persistence redaction 100%, artifact paths
+  100%, and repository runner 96.42%. The two real scanner tests also pass
+  separately in the rebuilt networkless, read-only worker image.
+- Frontend: 14 Vitest/Testing Library tests, ESLint, and the Next.js 16.3.0
   production build pass. The npm audit reports zero vulnerabilities.
 - Python runtime/development hash locks pass `pip-audit` with no known
   vulnerabilities.
 - Bash setup syntax, isolated bootstrap, Compose rendering/hardening, image
-  builds, and readiness pass. PowerShell is parser-tested in CI; `pwsh` is not
-  installed on the local macOS host.
+  builds, health, readiness, and documented endpoint checks pass. PowerShell is
+  parser-tested in CI; `pwsh` is not installed on the local macOS host.
 - API, worker, relay, and frontend images build. Digest-pinned Trivy 0.70.0
   reports 0 HIGH/CRITICAL vulnerabilities and 0 secrets for each image.
 - CycloneDX SBOMs validate with 142 API, 404 worker, 142 relay, and 43 frontend
   components.
-- The explicit demo seed is idempotent at 2 subjects, 3 scans, 7 findings, and
-  4 reports. A rebuilt isolated stack completed a real Juice Shop passive audit
-  with 13 findings: ScopeHarbor Passive completed with 8 and ZAP Passive with
-  5, both without warnings.
-- A clean-clone Docker setup from the committed pre-review Phase 27 state
-  reached health/readiness and completed the same bounded passive workflow.
-  The review fixes subsequently passed the complete test gates and rebuilt live
-  stack check.
-- Pinned Gitleaks reported no leaks through the 298-commit review-fix state.
-  The tracked tree had no unexpected secret findings; its five test/config
-  sentinels are explicitly fingerprint-audited. The scan is repeated after
-  phase-boundary documentation and again after the approval-gated cleanup.
-- Documentation links resolve, no tracked generated/private artifacts were
-  found, no real local absolute paths or personal/production data are present,
-  and the largest history blob is below 0.5 MB.
-- Browser checks covered the seeded workspace and major flows in light/dark
-  desktop layouts. Exact 1024 px and 390 px viewport automation and direct blob
-  report/print inspection remain manual release checks because those controls
-  were unavailable in the local browser runtime; responsive CSS and automated
-  tests pass.
+- The isolated live stack completed real Juice Shop Passive Web, Active Demo,
+  and Modern Web Crawl scans after the scanner fix. Each produced 9 findings:
+  ScopeHarbor Passive 4 and ZAP Passive 5; Active and Client Spider added zero;
+  all tool receipts completed without warnings. Comparison showed the four
+  former false positives as resolved.
+- A real confined repository scan produced 26 findings: Gitleaks 21 and offline
+  OSV-Scanner 5, with clean receipts and redacted evidence. No repository code,
+  hooks, builds, installs, or network resolution ran.
+- Fresh standalone Markdown and HTML reports and deterministic local guidance
+  were generated for the corrected passive scan. The HTML has exact
+  `default-src 'none'` CSP, no scripts or external resources, responsive and
+  print styles, and clear overview, receipts, prioritization, and finding
+  details. Report generation made no OpenAI call.
+- Live governance checks covered lifecycle changes, tag create/assign/
+  unassign/archive, auth-profile create/attach/deny-active/rotate/detach/revoke,
+  suppression create/revoke, risk backfill preview/apply/idempotence, audit
+  logs, active-subject posture, and historical totals.
+- Browser automation covered desktop plus exact 1024 px and 390 px responsive
+  layouts. Direct report DOM inspection passed; native print-dialog output and
+  a single full-height screenshot of the long report remain manual visual
+  checks because the local browser controller timed out on those operations.
+- The tracked-file, Docker-context, documentation-link, current-tree secret,
+  and full-history pinned Gitleaks checks are repeated on the final handoff
+  commit and again after any separately approved tooling cleanup.
 
 ## Next required actions
 
-1. Pause and obtain explicit user approval before the tooling cleanup.
-2. After approval, remove `.agents/`, `.opencode/`, `.codex/`, `.impeccable/`,
+1. Pause at the tooling cleanup gate and obtain explicit user approval. The
+   requested audit and live demonstrations are complete, but approval has not
+   yet been given for removal.
+2. Only after approval, remove `.agents/`, `.opencode/`, `.codex/`, `.impeccable/`,
    `AGENTS.md`, and `HANDOFF.md` from the tracked public tree without rewriting
    history. Add them to `.gitignore` and `.dockerignore`; keep ignored local
    copies where practical. Commit cleanup separately, then repeat tracked-file,
    Docker-context, documentation, current-tree/history-secret, and final review
    checks.
-3. The user may then push `phase-27-public-polish`, open a pull request, and
-   require all backend, frontend, container, secret, CodeQL, and dependency
-   checks that are available while the repository remains private. Do not push
-   or merge from the agent unless explicitly requested.
+3. The user may then push the locally advanced `main` containing Phase 27,
+   push `phase-28-audit-validation`, open a Phase 28 pull request, and require
+   all backend, frontend, container, secret, CodeQL, and dependency checks that
+   are available while the repository remains private. Do not push or merge
+   Phase 28 from the agent unless explicitly requested.
 4. After merge and private-main verification, rename the repository to
    `scopeharbor`, set its description/topics/social preview, enable Issues and
    private vulnerability reporting, and perform the final secret/file review.
