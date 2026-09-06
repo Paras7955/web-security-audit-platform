@@ -267,7 +267,8 @@ Repeat only the reviewed command with `--apply`.
 - `scheduled-artifacts`: migration-recorded legacy artifact cleanup tasks.
 - `prune-operational`: old AI/cache/rate/heartbeat operational rows; heartbeat
   age uses `last_seen_at`.
-- `backfill-risk`: missing immutable `risk-v1` rows.
+- `backfill-risk`: missing immutable current-model (`risk-v2`) rows; historical
+  `risk-v1` rows remain unchanged.
 
 Maintenance never prunes audit logs, findings, reports, or scan history.
 

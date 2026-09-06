@@ -202,14 +202,20 @@ Lifecycle values are `open`, `confirmed`, `in_progress`, `resolved`,
 | GET | `/dashboard/overview` | Workspace current posture plus historical totals |
 | GET | `/targets/{id}/dashboard` | Web-target posture |
 | GET | `/repository-assets/{id}/dashboard` | Repository posture |
-| GET | `/scans/{id}/risk-score` | Immutable per-scan `risk-v1` |
+| GET | `/scans/{id}/risk-score` | Immutable per-scan `risk-v2` |
 | GET | `/scans/{id}/comparison?baseline_scan_id=...` | Same-subject/profile comparison |
 | GET | `/targets/{id}/latest-comparison` | Latest web comparison |
 | GET | `/repository-assets/{id}/latest-comparison` | Latest repository comparison |
 
 Dashboard `findings_count` and `severity_counts` represent the latest completed
-scan for each subject/profile after effective lifecycle and active-suppression
-rules. `current_posture_score` uses dynamic `posture-v1`.
+scan for each active subject/profile after effective lifecycle and
+active-suppression rules. Archived subjects remain in explicitly labelled
+history but do not affect current posture. `current_posture_score` uses dynamic
+`posture-v2`. Both current models
+start with the strongest severity/confidence weight, add 15% of supporting
+weights, and cap the result to the highest observed severity band. This keeps
+finding volume visible without allowing low or medium findings to be labelled
+high or critical risk.
 `historical_findings_count` and `historical_severity_counts` are separately
 labelled all-history totals.
 

@@ -33,8 +33,8 @@ not accepted.
   OSV-Scanner inspect bounded regular-file snapshots without cloning, fetching,
   installing, resolving, building, running hooks, or executing repository code.
 - **Evidence that supports decisions.** Findings have lifecycle state,
-  revocable suppressions, auditable tags, comparisons, `risk-v1` scan scores,
-  current `posture-v1`, sanitized Markdown/HTML reports, and bounded local
+  revocable suppressions, auditable tags, comparisons, severity-bounded
+  `risk-v2` scan scores, current `posture-v2`, sanitized Markdown/HTML reports, and bounded local
   finding guidance.
 - **Local-first operations.** PostgreSQL, the API, UI, worker, relay, ZAP, demo
   target, migrations, and advisory updater run through hardened Compose
