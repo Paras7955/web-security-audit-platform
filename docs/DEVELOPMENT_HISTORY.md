@@ -2,8 +2,8 @@
 
 This document preserves the roadmap context that previously dominated the
 README. It is historical, not the current operator or security contract. Use
-`README.md`, `SECURITY.md`, `HANDOFF.md`, and the current code for present
-behavior.
+`README.md`, `SECURITY.md`, `docs/THREAT_MODEL.md`, `CHANGELOG.md`, and the
+current code for present behavior.
 
 ## V1 phases
 
@@ -51,8 +51,8 @@ AJAX history remains readable. Repository adapter stubs were replaced by real
 Gitleaks and OSV-Scanner execution; migration removes deterministic stub results
 and marks affected scans for rerun.
 
-Current completion and verification status belongs in `HANDOFF.md`, not this
-historical summary.
+Current release requirements and verification gates belong in
+`docs/RELEASE_CHECKLIST.md` and CI, not this historical summary.
 
 ## Phase 21: operator workspace redesign
 

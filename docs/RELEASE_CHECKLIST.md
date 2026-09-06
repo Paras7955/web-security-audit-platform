@@ -5,7 +5,7 @@ planned or mocked result.
 
 ## Source and scope
 
-- [ ] Release branch worktree is clean and based on merged Phase 26 `main`.
+- [ ] Release branch worktree is clean and based on the current `main`.
 - [ ] UI product changes remain contract-only: they do not broaden scanner
   authority, retain bearer tokens, expose raw scanner data, or bypass backend
   workspace/policy enforcement.
@@ -13,13 +13,13 @@ planned or mocked result.
 - [ ] MIT license has `Copyright (c) 2026 Paras Atwal`.
 - [ ] Third-party notices match the direct dependency locks, pinned tools, base
   images, Compose services, and current asset provenance.
-- [ ] README, SECURITY, architecture, threat model, API, operator, upgrade,
-  development history, changelog, and handoff agree.
+- [ ] README, SECURITY, AGENTS, architecture, threat model, API, operator,
+  upgrade, development history, and changelog agree.
 - [ ] Public screenshots use only the explicit synthetic demo seed and show
   Workspace, Audits, Findings/Intelligence, and the formatted report accurately.
-- [ ] The final public tree contains none of `.agents/`, `.opencode/`,
-  `.codex/`, `.impeccable/`, `AGENTS.md`, or `HANDOFF.md` after the separate
-  approval-gated cleanup commit.
+- [ ] The final public tree contains a concise `AGENTS.md` and none of
+  `.agents/`, `.opencode/`, `.codex/`, `.impeccable/`, or `HANDOFF.md` after the
+  separate approval-gated cleanup commit.
 - [ ] Issue forms sanitize public reports, blank issues are disabled, security
   reports route to private disclosure, and the PR template promises no SLA.
 - [ ] Public/private-LAN scanning remains denied; only exact local policies are
@@ -115,7 +115,7 @@ planned or mocked result.
 
 ## Repository owner actions
 
-- [ ] Review and merge Phase 27, requiring all release checks to pass before
+- [ ] Review and merge Phase 28, requiring all release checks to pass before
   tagging.
 - [ ] Rename the still-private repository to `scopeharbor`, validate public
   links/assets, then complete the final file/history secret review before

@@ -17,3 +17,11 @@ node_modules
 coverage.xml
 htmlcov
 *.log
+
+# Development-only agent/editor context
+.agents
+.opencode
+.codex
+.impeccable
+AGENTS.md
+HANDOFF.md

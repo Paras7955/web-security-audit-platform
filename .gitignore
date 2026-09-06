@@ -16,3 +16,10 @@ coverage/
 artifacts/
 reports/
 *.pyc
+
+# Local agent/editor tooling and private handoff context
+.agents/
+.opencode/
+.codex/
+.impeccable/
+HANDOFF.md
