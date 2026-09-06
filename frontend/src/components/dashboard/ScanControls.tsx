@@ -25,6 +25,10 @@ export function formatScanProfileLabel(profileId: string): string {
   return profilesById.get(profileId)?.label ?? "Historical profile";
 }
 
+export function formatScanState(value: string | null | undefined): string {
+  return value?.replaceAll("_", " ") ?? "none";
+}
+
 export function canUseReports(scan: Scan): boolean {
   return Boolean(scanProfileForScan(scan)?.reports_enabled);
 }
@@ -192,7 +196,7 @@ export function ScanAuthorization({
         <h3>Permission does not replace policy</h3>
         <ul>
           <li><AppIcon name="check" size={15} /><span><strong>Exact subject</strong>{subject?.subjectType === "repository_asset" ? "Repository access remains confined below the operator root." : "Scanner traffic remains bound to the configured destination policy."}</span></li>
-          <li><AppIcon name="check" size={15} /><span><strong>Redirect checks</strong>Every redirect is revalidated; automatic redirects stay disabled.</span></li>
+          <li><AppIcon name="check" size={15} /><span><strong>{subject?.subjectType === "repository_asset" ? "Regular files only" : "Redirect checks"}</strong>{subject?.subjectType === "repository_asset" ? "ScopeHarbor never clones, builds, installs, runs hooks, or executes repository code." : "Every redirect is revalidated; automatic redirects stay disabled."}</span></li>
           <li><AppIcon name="check" size={15} /><span><strong>Sanitized output</strong>Queries, fragments, secrets, and raw bodies do not cross report or finding-guidance boundaries.</span></li>
         </ul>
         {profile.mode === "passive" ? (
@@ -373,7 +377,7 @@ export function ScanProgress({
           <p>Live status, bounded worker progress, and sanitized scanner receipts for this audit.</p>
           <small>{scan.id}</small>
         </div>
-        <span className={`statusPill status-${scan.status}`}>{scan.status}</span>
+        <span className={`statusPill status-${scan.status}`}>{formatScanState(scan.status)}</span>
       </div>
       <div className="scanActions">
         <button type="button" className="secondaryButton" onClick={onCancel} disabled={!canCancel || isCancelling}>
@@ -385,7 +389,7 @@ export function ScanProgress({
       </div>
       <dl className="scanMeta">
         <div>
-          <dt>Target</dt>
+          <dt>Subject</dt>
           <dd>{targetName}</dd>
         </div>
         <div>
@@ -393,8 +397,8 @@ export function ScanProgress({
           <dd>{formatScanProfileLabel(scan.scan_profile_id)}</dd>
         </div>
         <div>
-          <dt>Current Step</dt>
-          <dd>{scan.current_step ?? "none"}</dd>
+          <dt>{terminalStatuses.has(scan.status) ? "Final step" : "Current step"}</dt>
+          <dd>{formatScanState(scan.current_step)}</dd>
         </div>
         <div>
           <dt>Progress</dt>
@@ -427,7 +431,7 @@ function ToolRunList({ toolRuns }: { toolRuns: ScannerToolRun[] }) {
         <li key={toolRun.id}>
           <span className={`statusDot status-${toolRun.status}`} />
           <strong>{toolRun.tool_name}</strong>
-          <em>{toolRun.status}</em>
+          <em>{formatScanState(toolRun.status)}</em>
           <small>
             {toolRun.tool_version ?? "version unavailable"} · {toolRun.finding_count} finding(s)
             {toolRun.warning_code ? ` · ${toolRun.warning_code}` : ""}

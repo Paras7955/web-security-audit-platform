@@ -242,7 +242,7 @@ function ScoreInputs({ dashboard }: { dashboard: TargetDashboard | RepositoryDas
         <dd>{String(score.input_summary.finding_count ?? 0)}</dd>
       </div>
       <div>
-        <dt>Weighted total</dt>
+        <dt>Raw weighted sum</dt>
         <dd>{String(score.input_summary.weighted_total ?? 0)}</dd>
       </div>
       <div>

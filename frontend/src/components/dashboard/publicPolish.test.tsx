@@ -104,14 +104,15 @@ describe("Phase 27 public polish", () => {
   it("keeps Audit Review concise and hands canonical work to Findings and Intelligence", async () => {
     const onOpenFindings = vi.fn();
     const onOpenIntelligence = vi.fn();
-    render(
+    const onOpenScanHistory = vi.fn();
+    const { rerender } = render(
       <AuditReviewSummary
         scan={scanFixture()}
         findings={[findingFixture()]}
         subjectName="Demo storefront"
         onOpenFindings={onOpenFindings}
         onOpenIntelligence={onOpenIntelligence}
-        onOpenHistory={vi.fn()}
+        onOpenScanHistory={onOpenScanHistory}
       />
     );
 
@@ -122,10 +123,36 @@ describe("Phase 27 public polish", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open reports and guidance" }));
     expect(onOpenFindings).toHaveBeenCalledOnce();
     expect(onOpenIntelligence).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getByRole("button", { name: "Open scan history" }));
+    expect(onOpenScanHistory).toHaveBeenCalledOnce();
+
+    rerender(
+      <AuditReviewSummary
+        scan={scanFixture({ scan_profile_id: "repository", target_id: null, repository_asset_id: "repo-1", subject_type: "repository_asset", subject_id: "repo-1" })}
+        findings={[findingFixture()]}
+        subjectName="Repository"
+        onOpenFindings={onOpenFindings}
+        onOpenIntelligence={onOpenIntelligence}
+        onOpenScanHistory={onOpenScanHistory}
+      />
+    );
+    expect(screen.getByRole("button", { name: "Open reports" })).toBeTruthy();
+
+    rerender(
+      <AuditReviewSummary
+        scan={scanFixture({ scan_profile_id: "modern-web-crawl" })}
+        findings={[findingFixture()]}
+        subjectName="Demo storefront"
+        onOpenFindings={onOpenFindings}
+        onOpenIntelligence={onOpenIntelligence}
+        onOpenScanHistory={onOpenScanHistory}
+      />
+    );
+    expect(screen.getByRole("button", { name: "Open risk intelligence" })).toBeTruthy();
   });
 });
 
-function scanFixture(): Scan {
+function scanFixture(overrides: Partial<Scan> = {}): Scan {
   return {
     id: "scan-27",
     target_id: "target-1",
@@ -141,7 +168,8 @@ function scanFixture(): Scan {
     completed_at: "2026-09-01T12:01:00Z",
     cancellation_requested_at: null,
     failure: null,
-    created_at: "2026-09-01T12:00:00Z"
+    created_at: "2026-09-01T12:00:00Z",
+    ...overrides
   };
 }
 
@@ -162,7 +190,7 @@ function guidanceFixture(configuredProvider: "template" | "openai"): AiExplanati
     summary: "One normalized finding was recorded.",
     executive_summary: "Review the high-priority signal first.",
     risk_score_explanation: "The risk score reflects normalized severity and confidence.",
-    scoring_model_version: "risk-v1",
+    scoring_model_version: "risk-v2",
     input_fingerprint: "fixture",
     cache_hit: false,
     groups: [{ label: "high severity", count: 1, finding_ids: ["finding-1"] }],

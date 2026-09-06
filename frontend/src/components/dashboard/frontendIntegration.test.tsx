@@ -175,6 +175,34 @@ describe("Phase 25 protected workflow state", () => {
     expect(screen.getByText(/This target policy requires the ZAP web scanner/)).toBeTruthy();
   });
 
+  it("does not carry a completed audit into a newly configured profile", async () => {
+    const target = targetFixture({
+      available_scan_profile_ids: ["passive-web", "active-demo"],
+      zap_required_scan_profile_ids: ["active-demo"],
+    });
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
+    vi.stubGlobal("fetch", completedAuditApi(target));
+    render(<TargetSetup activeView="scanning" onActiveViewChange={vi.fn()} onPlatformStatusChange={vi.fn()} />);
+
+    await userEvent.click(await screen.findByRole("tab", { name: /Authorize/ }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "I confirm I am authorized to assess this saved web target." }));
+    await userEvent.click(screen.getByRole("button", { name: /Continue to launch review/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Launch Passive Web/ }));
+
+    expect(await screen.findByText("Audit completed. Normalized results are ready for review.")).toBeTruthy();
+    expect(screen.queryByText("Audit queued. Worker status will update in the Run phase.")).toBeNull();
+
+    await userEvent.click(screen.getByRole("tab", { name: /Profile/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Active Demo/ }));
+    const runTab = screen.getByRole("tab", { name: /Run/ });
+    expect(runTab.textContent).toContain("Pending");
+
+    await userEvent.click(runTab);
+    expect(screen.getByRole("button", { name: /Review current findings/ })).toHaveProperty("disabled", true);
+    expect(screen.getByText("Viewing a past audit")).toBeTruthy();
+  });
+
   it("keeps Audit Review totals independent from persistent triage filters", async () => {
     setSessionAuthToken("valid-session");
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
@@ -457,12 +485,12 @@ function targetDashboardFixture() {
 
 function comparisonFixture() {
   const score = {
-    id: "risk-1", target_id: "target-1", repository_asset_id: null, scan_id: "scan-1", scoring_model_version: "risk-v1",
+    id: "risk-1", target_id: "target-1", repository_asset_id: null, scan_id: "scan-1", scoring_model_version: "risk-v2",
     score: 20, label: "low", input_summary: {}, created_at: "2026-01-01T00:00:00Z",
   };
   return {
     target_id: "target-1", repository_asset_id: null, subject_type: "web_target", subject_id: "target-1",
-    baseline_scan_id: "scan-1", comparison_scan_id: "scan-2", scoring_model_version: "risk-v1",
+    baseline_scan_id: "scan-1", comparison_scan_id: "scan-2", scoring_model_version: "risk-v2",
     baseline_score: score, comparison_score: { ...score, id: "risk-2", scan_id: "scan-2" }, score_delta: 0,
     new_findings: [], resolved_findings: [], unchanged_findings: [], severity_changed_findings: [],
   };
@@ -484,5 +512,26 @@ function readinessApi(target: Target, zapStatus: "ok" | "degraded") {
       zap: { status: zapStatus, detail: zapStatus === "ok" ? "zap reachable from worker" : "zap unavailable to worker" },
     });
     return protectedApiResponse(url, init?.method ?? "GET");
+  });
+}
+
+function completedAuditApi(target: Target) {
+  let launched = false;
+  const completedScan = scanFixture("completed-audit", "2026-09-04T20:00:00Z");
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (url.endsWith("/scans") && method === "POST") {
+      launched = true;
+      return jsonResponse(completedScan, 201);
+    }
+    if (url.includes("/scans?") || url.endsWith("/scans")) {
+      return jsonResponse(page(launched ? [completedScan] : []));
+    }
+    if (url.includes("/scans/completed-audit/findings")) return jsonResponse(page([authenticationTransitionFinding()]));
+    if (url.includes("/scans/completed-audit/tool-runs")) return jsonResponse(page());
+    if (url.includes("/scans/completed-audit/reports")) return jsonResponse(page());
+    if (url.includes("/scans/completed-audit/ai-explanations")) return jsonResponse({ detail: "No explanation yet." }, 404);
+    return readinessApi(target, "ok")(input, init);
   });
 }

@@ -136,11 +136,12 @@ SCOPEHARBOR_ENV_FILE="$ENV_FILE" docker compose --project-name "$PROJECT_NAME" -
 FRONTEND_ADDRESS="$(SCOPEHARBOR_ENV_FILE="$ENV_FILE" docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" port frontend 3000)"
 BACKEND_ADDRESS="$(SCOPEHARBOR_ENV_FILE="$ENV_FILE" docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" port backend 8000)"
 DEMO_ADDRESS="$(SCOPEHARBOR_ENV_FILE="$ENV_FILE" docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" port juice-shop 3000)"
+FRONTEND_PORT="${FRONTEND_ADDRESS##*:}"
 
 cat <<EOF
 
 ScopeHarbor is ready.
-  UI:           http://$FRONTEND_ADDRESS
+  UI:           http://localhost:$FRONTEND_PORT
   API docs:     http://$BACKEND_ADDRESS/docs
   Readiness:    http://$BACKEND_ADDRESS/ready
   Demo target:  http://$DEMO_ADDRESS

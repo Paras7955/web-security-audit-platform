@@ -1,7 +1,7 @@
 import { AppIcon } from "@/components/AppIcon";
 import type { Finding, Scan } from "@/lib/securityAuditApi";
 
-import { formatScanProfileLabel } from "./ScanControls";
+import { canUseAi, canUseReports, formatScanProfileLabel } from "./ScanControls";
 
 const severityOrder = ["critical", "high", "medium", "low", "info"] as const;
 const severityRank: Record<string, number> = Object.fromEntries(severityOrder.map((severity, index) => [severity, index]));
@@ -12,19 +12,22 @@ export function AuditReviewSummary({
   subjectName,
   onOpenFindings,
   onOpenIntelligence,
-  onOpenHistory
+  onOpenScanHistory
 }: {
   scan: Scan;
   findings: Finding[];
   subjectName: string;
   onOpenFindings: () => void;
   onOpenIntelligence: () => void;
-  onOpenHistory: () => void;
+  onOpenScanHistory: () => void;
 }) {
   const counts = Object.fromEntries(severityOrder.map((severity) => [severity, findings.filter((finding) => finding.severity === severity).length]));
   const topFindings = [...findings]
     .sort((left, right) => (severityRank[left.severity] ?? severityOrder.length) - (severityRank[right.severity] ?? severityOrder.length))
     .slice(0, 3);
+  const intelligenceLabel = canUseReports(scan)
+    ? canUseAi(scan) ? "Open reports and guidance" : "Open reports"
+    : "Open risk intelligence";
 
   return (
     <section className="auditReviewSummary" aria-labelledby="audit-review-summary-title">
@@ -59,8 +62,8 @@ export function AuditReviewSummary({
 
       <div className="auditReviewHandoffs" aria-label="Review next actions">
         <button className="primaryButton" type="button" onClick={onOpenFindings}><AppIcon name="finding" size={16} />Triage findings</button>
-        <button className="secondaryButton" type="button" onClick={onOpenIntelligence}><AppIcon name="intelligence" size={16} />Open reports and guidance</button>
-        <button className="textButton" type="button" onClick={onOpenHistory}>Choose another audit</button>
+        <button className="secondaryButton" type="button" onClick={onOpenIntelligence}><AppIcon name="intelligence" size={16} />{intelligenceLabel}</button>
+        <button className="textButton" type="button" onClick={onOpenScanHistory}>Open scan history</button>
       </div>
     </section>
   );

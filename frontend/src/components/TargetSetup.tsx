@@ -171,9 +171,9 @@ export function TargetSetup({
   const [message, setMessage] = useState("Enter an allowlisted local/demo target.");
   const [repositoryMessage, setRepositoryMessage] = useState("Authorize a confined local repository path to save it as a scan subject.");
   const [authProfileMessage, setAuthProfileMessage] = useState("Create an optional target-app auth profile for passive scans.");
-  const [reportMessage, setReportMessage] = useState("Reports are available after a passive, Active Demo, or Repo scan completes.");
+  const [reportMessage, setReportMessage] = useState("Reports are available after a Passive Web, Active Demo, or Repository scan completes.");
   const [aiMessage, setAiMessage] = useState("Finding guidance is available after a passive or Active Demo scan completes.");
-  const [riskMessage, setRiskMessage] = useState("Risk scores are generated for completed scans using risk-v1.");
+  const [riskMessage, setRiskMessage] = useState("Risk scores are generated for completed scans using risk-v2.");
   const [opsMessage, setOpsMessage] = useState("Platform health has not been loaded.");
   const [auditLogMessage, setAuditLogMessage] = useState("Workspace activity has not been loaded.");
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
@@ -263,11 +263,17 @@ export function TargetSetup({
   );
   const canStartScan = authorizationReady && scanDependenciesReady && !isBusy;
   const reviewReady = Boolean(selectedScan && ["completed", "completed_with_warnings"].includes(selectedScan.status));
-  const currentAuditReviewReady = Boolean(currentAuditScan && ["completed", "completed_with_warnings"].includes(currentAuditScan.status));
   const selectedScanMatchesDraft = Boolean(
     selectedScan && selectedAuditSubject && selectedScan.subject_id === (selectedAuditSubject.target?.id ?? selectedAuditSubject.repositoryAsset?.id) && selectedScan.scan_profile_id === scanProfileId
   );
-  const viewingPastAudit = Boolean(selectedScan && selectedScan.id !== currentAuditScanId);
+  const currentAuditScanMatchesDraft = Boolean(
+    currentAuditScan && selectedAuditSubject && currentAuditScan.subject_id === (selectedAuditSubject.target?.id ?? selectedAuditSubject.repositoryAsset?.id) && currentAuditScan.scan_profile_id === scanProfileId
+  );
+  const currentDraftAuditScan = currentAuditScanMatchesDraft ? currentAuditScan : null;
+  const currentAuditReviewReady = Boolean(currentDraftAuditScan && ["completed", "completed_with_warnings"].includes(currentDraftAuditScan.status));
+  const viewingPastAudit = Boolean(
+    selectedScan && (!selectedScanMatchesDraft || selectedScan.id !== currentDraftAuditScan?.id)
+  );
   const hasCompletedScan = scanHistory.some((scan) => ["completed", "completed_with_warnings"].includes(scan.status));
   const hasComparableScansForSelectedSubject = useMemo(
     () => hasComparableScanCoverage(scanHistory, selectedAuditSubject?.subjectType ?? "", selectedAuditSubject?.target?.id ?? selectedAuditSubject?.repositoryAsset?.id ?? ""),
@@ -335,6 +341,29 @@ export function TargetSetup({
   }, [auditSubjects, selectedSubjectId]);
 
   useEffect(() => {
+    if (!selectedAuditSubject || selectedAuditSubject.availableScanProfileIds.includes(scanProfileId)) {
+      return;
+    }
+    setScanProfileId(selectedAuditSubject.availableScanProfileIds[0] ?? "passive-web");
+    setAcknowledgements([]);
+  }, [scanProfileId, selectedAuditSubject]);
+
+  useEffect(() => {
+    if (!currentAuditScan || !terminalStatuses.has(currentAuditScan.status)) {
+      return;
+    }
+    if (currentAuditScan.status === "completed") {
+      setActionFeedback({ tone: "success", text: "Audit completed. Normalized results are ready for review." });
+    } else if (currentAuditScan.status === "completed_with_warnings") {
+      setActionFeedback({ tone: "success", text: "Audit completed with warnings. Review scanner receipts and normalized results." });
+    } else if (currentAuditScan.status === "failed") {
+      setActionFeedback({ tone: "error", text: "Audit failed. Review the safe failure detail and scanner receipts in Run." });
+    } else {
+      setActionFeedback({ tone: "success", text: "Audit cancelled at a safe checkpoint." });
+    }
+  }, [currentAuditScan?.id, currentAuditScan?.status]);
+
+  useEffect(() => {
     baselineScanIdRef.current = baselineScanId;
   }, [baselineScanId]);
 
@@ -387,12 +416,12 @@ export function TargetSetup({
   }, [activeView, auditPhase, isBootstrapping]);
 
   useEffect(() => {
-    const activeAudit = currentAuditScan ?? selectedScan;
+    const activeAudit = currentDraftAuditScan ?? selectedScan;
     const status = activeView === "scanning" && (auditPhase === "run" || auditPhase === "review") && activeAudit
       ? activeAudit.status
       : platformHealth?.status === "ok" ? "ready" : "validating";
     onPlatformStatusChange(status);
-  }, [activeView, auditPhase, currentAuditScan, onPlatformStatusChange, platformHealth?.status, selectedScan]);
+  }, [activeView, auditPhase, currentDraftAuditScan, onPlatformStatusChange, platformHealth?.status, selectedScan]);
 
   useEffect(() => {
     setSuppressionReason("");
@@ -441,7 +470,7 @@ export function TargetSetup({
       void loadReports(selectedScanId, { onlyIfSelected: true });
     } else {
       setReports([]);
-      setReportMessage("Reports remain available for passive, Active Demo, and Repo scans.");
+      setReportMessage("Reports remain available for Passive Web, Active Demo, and Repository scans.");
     }
     if (selectedScan && canUseAi(selectedScan)) {
       void loadAiExplanation(selectedScanId, { onlyIfSelected: true });
@@ -605,9 +634,9 @@ export function TargetSetup({
     setSuppressionReason("");
     setMessage("Enter an allowlisted local/demo target.");
     setRepositoryMessage("Authorize a confined local repository path to save it as a scan subject.");
-    setReportMessage("Reports are available after a passive, Active Demo, or Repo scan completes.");
+    setReportMessage("Reports are available after a Passive Web, Active Demo, or Repository scan completes.");
     setAiMessage("Finding guidance is available after a passive or Active Demo scan completes.");
-    setRiskMessage("Risk scores are generated for completed scans using risk-v1.");
+    setRiskMessage("Risk scores are generated for completed scans using risk-v2.");
     setOpsMessage("Platform health has not been loaded.");
     setAuditLogMessage("Workspace activity has not been loaded.");
     setPlatformHealthCheckedAt("");
@@ -703,6 +732,8 @@ export function TargetSetup({
       const asset = await readJson<RepositoryAsset>(response, "Repository asset creation failed.");
       await loadRepositoryAssets(asset.id);
       setSelectedSubjectId(`repository_asset:${asset.id}`);
+      setScanProfileId("repository");
+      setAcknowledgements([]);
       setRepositoryPermissionConfirmed(false);
       setRepositoryMessage(`${asset.name} is saved as a confined repository subject.`);
     } catch (error) {
@@ -853,7 +884,7 @@ export function TargetSetup({
       setReports([]);
       setAiExplanation(null);
       setSelectedFindingId("");
-      setReportMessage("Reports are available after this passive, Active Demo, or Repo scan completes.");
+      setReportMessage("Reports are available after this Passive Web, Active Demo, or Repository scan completes.");
       setAiMessage("Finding guidance is available after this passive or Active Demo scan completes.");
       setActionFeedback({ tone: "success", text: "Audit queued. Worker status will update in the Run phase." });
       setAuditPhase("run");
@@ -982,7 +1013,7 @@ export function TargetSetup({
           await loadReports(scan.id, { onlyIfSelected: true });
         } else if (selectedScanIdRef.current === scan.id) {
           setReports([]);
-          setReportMessage("Reports remain available for passive, Active Demo, and Repo scans.");
+          setReportMessage("Reports remain available for Passive Web, Active Demo, and Repository scans.");
         }
         if (canUseAi(scan)) {
           await loadAiExplanation(scan.id, { onlyIfSelected: true });
@@ -1767,8 +1798,8 @@ export function TargetSetup({
             This evidence does not mark the audit you are configuring as complete.
           </p>
         </div>
-        {currentAuditScan ? (
-          <button type="button" className="secondaryButton" onClick={() => setSelectedScanId(currentAuditScan.id)}>
+        {currentDraftAuditScan ? (
+          <button type="button" className="secondaryButton" onClick={() => setSelectedScanId(currentDraftAuditScan.id)}>
             Return to current audit
           </button>
         ) : null}
@@ -1784,6 +1815,7 @@ export function TargetSetup({
     run: currentAuditReviewReady,
     review: currentAuditReviewReady
   };
+  const activeAuditPhaseIndex = auditPhases.findIndex((phase) => phase.id === auditPhase);
 
   if (isBootstrapping) {
     return (
@@ -1845,9 +1877,9 @@ export function TargetSetup({
               <nav ref={auditPhaseTabsRef} className="auditPhaseTabs" role="tablist" aria-label="Audit phases">
                 {auditPhases.map((phase, index) => {
                   const isActive = auditPhase === phase.id;
-                  const isComplete = phaseComplete[phase.id] && !isActive;
-                  const isRunInterrupted = phase.id === "run" && Boolean(currentAuditScan && ["failed", "cancelled"].includes(currentAuditScan.status));
-                  const phaseState = auditPhaseState(phase.id, isActive, isComplete, currentAuditScan);
+                  const isComplete = phaseComplete[phase.id] && !isActive && (index < activeAuditPhaseIndex || currentAuditReviewReady);
+                  const isRunInterrupted = phase.id === "run" && Boolean(currentDraftAuditScan && ["failed", "cancelled"].includes(currentDraftAuditScan.status));
+                  const phaseState = auditPhaseState(phase.id, isActive, isComplete, currentDraftAuditScan);
                   return (
                     <button
                       ref={isActive ? activeAuditPhaseRef : undefined}
@@ -2046,7 +2078,7 @@ export function TargetSetup({
                     {selectedScan ? <ScanProgress scan={selectedScan} targetName={selectedScanSubject?.name ?? "Historical subject"} toolRuns={toolRuns} isCancelling={isCancellingScan} onCancel={cancelSelectedScan} /> : <div className="emptyState richEmptyState"><AppIcon name="activity" size={24} /><strong>No scan selected</strong><span>Launch this audit or choose a historical scan to monitor it.</span></div>}
                     <ScanHistory scans={scanHistory} selectedScanId={selectedScanId} onSelectScan={setSelectedScanId} />
                   </div>
-                  <div className="phaseFooter"><span>{currentAuditReviewReady ? "The current audit's normalized results are ready for triage." : "Review unlocks after the current audit completes or completes with warnings."}</span><button className="primaryButton" type="button" onClick={() => { if (currentAuditScan) setSelectedScanId(currentAuditScan.id); setAuditPhase("review"); }} disabled={!currentAuditReviewReady}>Review current findings <AppIcon name="arrow" size={15} /></button></div>
+                  <div className="phaseFooter"><span>{currentAuditReviewReady ? "The current audit's normalized results are ready for triage." : "Review unlocks after the configured subject and profile complete or complete with warnings."}</span><button className="primaryButton" type="button" onClick={() => { if (currentDraftAuditScan) setSelectedScanId(currentDraftAuditScan.id); setAuditPhase("review"); }} disabled={!currentAuditReviewReady}>Review current findings <AppIcon name="arrow" size={15} /></button></div>
                 </div>
               ) : null}
 
@@ -2063,7 +2095,7 @@ export function TargetSetup({
                       subjectName={selectedScanSubject?.name ?? "Completed audit"}
                       onOpenFindings={() => onActiveViewChange("findings")}
                       onOpenIntelligence={() => onActiveViewChange("intelligence")}
-                      onOpenHistory={() => setAuditPhase("run")}
+                      onOpenScanHistory={() => setAuditPhase("run")}
                     />
                   ) : reviewReady && selectedScan ? (
                     <div className="emptyState richEmptyState" role="status"><AppIcon name="activity" size={24} /><strong>Loading complete audit summary</strong><span>ScopeHarbor is loading the unfiltered findings for this completed audit.</span></div>

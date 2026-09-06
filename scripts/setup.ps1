@@ -128,10 +128,11 @@ try {
         "compose", "--project-name", $ProjectName, "--env-file", $EnvFile,
         "port", "juice-shop", "3000"
     ) | Select-Object -Last 1).Trim()
+    $FrontendPort = ($FrontendAddress -split ":")[-1]
 
     Write-Host ""
     Write-Host "ScopeHarbor is ready."
-    Write-Host "  UI:           http://$FrontendAddress"
+    Write-Host "  UI:           http://localhost:$FrontendPort"
     Write-Host "  API docs:     http://$BackendAddress/docs"
     Write-Host "  Readiness:    http://$BackendAddress/ready"
     Write-Host "  Demo target:  http://$DemoAddress"
