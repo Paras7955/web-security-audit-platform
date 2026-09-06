@@ -379,7 +379,7 @@ finding remained after that fix.
   links have valid local targets, and both Dockerfiles pass BuildKit checks.
 - The current-tree pinned Gitleaks result exactly matches the five reviewed
   Phase 27 test/config sentinel fingerprints; no new fingerprint appears. The
-  full 310-commit history passes the pinned Gitleaks gate with no leak. Repeat
+  full committed history passes the pinned Gitleaks gate with no leak. Repeat
   these checks after any separately approved tooling cleanup.
 - The dedicated `scopeharbor-phase28` containers were stopped after
   verification; their named volumes were preserved. The normal
