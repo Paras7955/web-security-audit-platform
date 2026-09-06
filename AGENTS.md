@@ -31,7 +31,7 @@ access, persistence, or another trust boundary, read
 - Preserve workspace predicates on every lookup and recheck workspace ownership
   in asynchronous workers.
 - Target credentials may enter only guarded passive HTTP requests after policy
-  validation. They must never enter browser/repository scans, findings,
+  validation. They must never enter ZAP, browser, or repository scans, findings,
   reports, AI, artifacts, logs, statuses, or audit events.
 - Deterministic local guidance is the default and the only report source.
   Optional external AI remains explicit and receives only its documented safe
