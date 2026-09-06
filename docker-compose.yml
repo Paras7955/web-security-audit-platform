@@ -89,7 +89,8 @@ services:
         - CMD-SHELL
         - >-
           driver=$$(find /home/zap/.ZAP/webdriver -type f -name geckodriver -print -quit 2>/dev/null) &&
-          test -n "$$driver" && test -x "$$driver" && test -w /home/zap/.mozilla &&
+          test -n "$$driver" && test -x "$$driver" && "$$driver" --version >/dev/null 2>&1 &&
+          test -w /home/zap/.mozilla &&
           wget -q --header="X-ZAP-API-Key: $$ZAP_API_KEY" -O - http://localhost:8080/JSON/core/view/version/ >/dev/null 2>&1 || exit 1
       interval: 10s
       timeout: 5s

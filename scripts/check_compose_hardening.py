@@ -84,7 +84,12 @@ def validate_compose(payload: Mapping[str, object]) -> None:
         healthcheck = zap.get("healthcheck", {})
         health_test = healthcheck.get("test", []) if isinstance(healthcheck, Mapping) else []
         health_probe = " ".join(str(part) for part in health_test) if isinstance(health_test, list) else ""
-        if "geckodriver" not in health_probe or "test -x" not in health_probe or "test -w /home/zap/.mozilla" not in health_probe:
+        if (
+            "geckodriver" not in health_probe
+            or "test -x" not in health_probe
+            or "--version" not in health_probe
+            or "test -w /home/zap/.mozilla" not in health_probe
+        ):
             raise ComposeHardeningError("ZAP readiness must verify the executable driver and writable browser profile.")
 
     relay = services["relay"]

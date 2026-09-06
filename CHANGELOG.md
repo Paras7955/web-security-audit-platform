@@ -9,8 +9,9 @@ versioning for the public source contract.
 
 - Browser-backed ZAP work now starts through the image's Xvfb wrapper with
   writable ephemeral browser state and an executable ephemeral WebDriver;
-  readiness also rejects a non-executable driver instead of allowing Active
-  Demo or Client Spider scans to report false clean completions.
+  readiness also executes the driver probe and rejects a broken runtime instead
+  of allowing Active Demo or Client Spider scans to report false clean
+  completions.
 - Scan history now identifies each active or archived subject, and the
   workspace posture table lists only the latest active scan per
   subject/profile instead of mixing in unrelated recent history.

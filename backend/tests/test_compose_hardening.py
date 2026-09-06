@@ -45,7 +45,7 @@ def safe_compose() -> dict[str, object]:
             "healthcheck": {
                 "test": [
                     "CMD-SHELL",
-                    "driver=$(find /home/zap/.ZAP/webdriver -name geckodriver -print -quit) && test -x $driver && test -w /home/zap/.mozilla",
+                    "driver=$(find /home/zap/.ZAP/webdriver -name geckodriver -print -quit) && test -x $driver && $driver --version && test -w /home/zap/.mozilla",
                 ]
             },
         }
@@ -83,6 +83,14 @@ class ComposeHardeningTests(unittest.TestCase):
         shallow_readiness["services"]["zap"]["healthcheck"]["test"] = ["CMD-SHELL", "wget http://localhost:8080"]  # type: ignore[index]
         with self.assertRaises(ComposeHardeningError):
             validate_compose(shallow_readiness)
+
+        permission_only_readiness = deepcopy(safe_compose())
+        permission_only_readiness["services"]["zap"]["healthcheck"]["test"] = [  # type: ignore[index]
+            "CMD-SHELL",
+            "driver=$(find /home/zap/.ZAP/webdriver -name geckodriver -print -quit) && test -x $driver && test -w /home/zap/.mozilla",
+        ]
+        with self.assertRaises(ComposeHardeningError):
+            validate_compose(permission_only_readiness)
 
 
 if __name__ == "__main__":
