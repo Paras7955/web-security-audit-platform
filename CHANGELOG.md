@@ -7,6 +7,28 @@ versioning for the public source contract.
 
 ### Fixed
 
+- ZAP readiness now selects an executable WebDriver before probing it, avoiding
+  false unhealthy status when a multi-architecture image lists a bundled driver
+  for another architecture first; failed CI readiness runs also retain bounded
+  service and ZAP health diagnostics before cleanup.
+- Browser-backed ZAP work now starts through the image's Xvfb wrapper with
+  writable ephemeral browser state and an executable ephemeral WebDriver;
+  readiness also executes the driver probe and rejects a broken runtime instead
+  of allowing Active Demo or Client Spider scans to report false clean
+  completions.
+- Scan history now identifies each active or archived subject, and the
+  workspace posture table lists only the latest active scan per
+  subject/profile instead of mixing in unrelated recent history.
+- Completed-with-warnings audits no longer display a contradictory generic
+  hard-failure message; warning state remains explicit in status and scanner
+  receipts.
+- Standalone report prioritization now groups equivalent remediation actions
+  while retaining every normalized occurrence in the detailed evidence.
+- Standalone report severity badges no longer override the summary-card
+  palette and obscure the severity counts.
+- Risk scoring now uses the versioned, severity-bounded `risk-v2` and
+  `posture-v2` aggregation, preventing a collection of low/medium hygiene
+  findings from being presented as high or critical risk.
 - OSV-Scanner is pinned to the reviewed upstream cache-path correction and
   repository scans use its fail-loud offline mode, preventing a 2.5.0 cache
   regression from silently returning an empty vulnerability result.
@@ -14,8 +36,8 @@ versioning for the public source contract.
   `PYSEC-2026-3721` while retaining a Python 3.12 hash-locked environment.
 - The development lock pins `build` 1.5.0 instead of the yanked 1.5.1 release.
 - Source-built scanner tools now use digest-pinned Go 1.26.6; Gitleaks pins
-  x/crypto 0.55.0, while OSV-Scanner pins go-git 5.19.2 and x/mod 0.40.0,
-  clearing the current HIGH/CRITICAL Trivy findings.
+  x/crypto 0.55.0, while OSV-Scanner pins go-git 5.19.2, gRPC-Go 1.83.1,
+  and x/mod 0.40.0, clearing the current HIGH/CRITICAL Trivy findings.
 - Scanner readiness is now probed by the isolated worker and projected through
   its safe heartbeat instead of being probed from the API container, which has
   no scanner-control network access.
@@ -49,7 +71,7 @@ versioning for the public source contract.
 - Separate-session lease renewal, owner-fenced state writes, process-group
   termination, deadline/cancellation checkpoints, and guaranteed ZAP stop.
 - Suppression revocation, audited tag unassignment/archive, current-posture
-  dashboards, `posture-v1`, explicit external AI generation POST, bounded AI
+  dashboards, `posture-v2`, explicit external AI generation POST, bounded AI
   streaming, and race-safe report generation.
 - Schemas `0012_portfolio_readiness`, `0013_scan_subject_integrity`, and
   `0014_worker_scanner_readiness`,

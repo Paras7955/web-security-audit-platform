@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import re
 from urllib.parse import urljoin
 
 from app.core.contracts import Confidence, Severity
 from app.findings.schemas import NormalizedFindingInput
 from app.scanner.cookies import parse_set_cookie_security
 from app.scanner.crawler import CrawledPage
-from app.scanner.http_client import GuardedHttpClient, ScannerHttpError
+from app.scanner.http_client import GuardedHttpClient, ScannerHttpError, ScannerHttpResponse
 
 SECURITY_HEADERS = {
     "content-security-policy": ("Missing Content Security Policy", "CWE-693"),
@@ -26,6 +27,9 @@ ROUTE_HINTS = (
     "/login",
     "/admin",
 )
+ENV_ASSIGNMENT = re.compile(r"(?m)^\s*[A-Za-z_][A-Za-z0-9_.-]*\s*=\s*\S")
+GIT_CONFIG_SECTION = re.compile(r"(?mi)^\s*\[(?:core|remote\s+[^]]+|branch\s+[^]]+)\]\s*$")
+PHP_SOURCE = re.compile(r"<\?(?:php|=)", re.IGNORECASE)
 
 
 def run_passive_checks(pages: tuple[CrawledPage, ...], client: GuardedHttpClient, base_url: str) -> list[NormalizedFindingInput]:
@@ -130,14 +134,14 @@ def probe_exposed_files(client: GuardedHttpClient, base_url: str) -> list[Normal
             response = client.get(url)
         except ScannerHttpError:
             continue
-        if response.status_code == 200 and response.body.strip():
+        if response.status_code == 200 and exposed_file_content_matches(path, response):
             findings.append(
                 NormalizedFindingInput(
                     title="Potentially Exposed Sensitive File",
                     severity=Severity.MEDIUM,
                     confidence=Confidence.MEDIUM,
                     affected_url=response.url.normalized_url,
-                    evidence=f"Probe returned HTTP 200 for {path}.",
+                    evidence=f"Probe returned HTTP 200 with content matching the expected {path} file type.",
                     source_tool="custom-passive",
                     scanner_rule_id=f"probe:{path}",
                     cwe="CWE-200",
@@ -146,6 +150,27 @@ def probe_exposed_files(client: GuardedHttpClient, base_url: str) -> list[Normal
                 )
             )
     return findings
+
+
+def exposed_file_content_matches(path: str, response: ScannerHttpResponse) -> bool:
+    body = response.body.lstrip()
+    if not body:
+        return False
+    content_type = response.headers.get("content-type", "").lower()
+    content_disposition = response.headers.get("content-disposition", "").lower()
+    is_html = "text/html" in content_type
+    if path == "/.env":
+        return not is_html and ENV_ASSIGNMENT.search(body) is not None
+    if path == "/.git/config":
+        return not is_html and (
+            GIT_CONFIG_SECTION.search(body) is not None
+            or "repositoryformatversion" in body.lower()
+        )
+    if path == "/backup.zip":
+        return body.startswith("PK\x03\x04") or "zip" in content_type or ".zip" in content_disposition
+    if path == "/config.php":
+        return PHP_SOURCE.search(body) is not None
+    return False
 
 
 def probe_route_hints(client: GuardedHttpClient, base_url: str) -> list[NormalizedFindingInput]:

@@ -11,7 +11,6 @@ targets:
       passive-web: ["scopeharbor-passive", "zap-passive"]
       active-demo: ["scopeharbor-passive", "zap-passive", "zap-active"]
       modern-web-crawl: ["scopeharbor-passive", "zap-passive", "zap-client-spider"]
-      repository: ["repository"]
     disposable_demo: true
     tls:
       trust: system

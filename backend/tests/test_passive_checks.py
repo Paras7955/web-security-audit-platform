@@ -22,6 +22,37 @@ class FakeClient:
         )
 
 
+class SpaFallbackClient:
+    def get(self, raw_url: str) -> ScannerHttpResponse:
+        return ScannerHttpResponse(
+            url=normalize_target_url(raw_url),
+            status_code=200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            body="<!doctype html><html><body><script>\nAPP_ENV=production\n</script><div id='app'></div></body></html>",
+            redirect_chain=(),
+        )
+
+
+class SensitiveFileFixtureClient:
+    fixture_by_path = {
+        "/.env": ({"content-type": "text/plain"}, "APP_ENV=local\nDEBUG=false"),
+        "/.git/config": ({"content-type": "text/plain"}, "[core]\nrepositoryformatversion = 0"),
+        "/backup.zip": ({"content-type": "application/zip"}, "PK\x03\x04fixture"),
+        "/config.php": ({"content-type": "text/plain"}, "<?php $config = [];"),
+    }
+
+    def get(self, raw_url: str) -> ScannerHttpResponse:
+        url = normalize_target_url(raw_url)
+        headers, body = self.fixture_by_path[url.path]
+        return ScannerHttpResponse(
+            url=url,
+            status_code=200,
+            headers=headers,
+            body=body,
+            redirect_chain=(),
+        )
+
+
 def page(**overrides) -> CrawledPage:
     values = {
         "url": "http://juice-shop:3000/",
@@ -106,6 +137,19 @@ class PassiveChecksTests(unittest.TestCase):
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].scanner_rule_id, "probe:/.env")
+
+    def test_exposed_file_probe_ignores_single_page_app_fallbacks(self) -> None:
+        findings = probe_exposed_files(SpaFallbackClient(), "http://juice-shop:3000/")
+
+        self.assertEqual(findings, [])
+
+    def test_exposed_file_probe_accepts_file_type_signatures(self) -> None:
+        findings = probe_exposed_files(SensitiveFileFixtureClient(), "http://juice-shop:3000/")
+
+        self.assertEqual(
+            {finding.scanner_rule_id for finding in findings},
+            {"probe:/.env", "probe:/.git/config", "probe:/backup.zip", "probe:/config.php"},
+        )
 
     def test_route_hint_probe_emits_info_finding(self) -> None:
         findings = probe_route_hints(FakeClient(), "http://juice-shop:3000/")

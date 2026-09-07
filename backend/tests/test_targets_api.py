@@ -53,6 +53,7 @@ class TargetApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["allowlist_id"], "juice-shop")
         self.assertIn("passive-web", response.json()["available_scan_profile_ids"])
+        self.assertNotIn("repository", response.json()["available_scan_profile_ids"])
         self.assertIn("passive-web", response.json()["zap_required_scan_profile_ids"])
         self.assertIn("active-demo", response.json()["zap_required_scan_profile_ids"])
         self.assertNotIn("allowed_modes", response.json())

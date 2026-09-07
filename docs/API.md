@@ -202,14 +202,28 @@ Lifecycle values are `open`, `confirmed`, `in_progress`, `resolved`,
 | GET | `/dashboard/overview` | Workspace current posture plus historical totals |
 | GET | `/targets/{id}/dashboard` | Web-target posture |
 | GET | `/repository-assets/{id}/dashboard` | Repository posture |
-| GET | `/scans/{id}/risk-score` | Immutable per-scan `risk-v1` |
+| GET | `/scans/{id}/risk-score` | Immutable per-scan `risk-v2` |
 | GET | `/scans/{id}/comparison?baseline_scan_id=...` | Same-subject/profile comparison |
 | GET | `/targets/{id}/latest-comparison` | Latest web comparison |
 | GET | `/repository-assets/{id}/latest-comparison` | Latest repository comparison |
 
 Dashboard `findings_count` and `severity_counts` represent the latest completed
-scan for each subject/profile after effective lifecycle and active-suppression
-rules. `current_posture_score` uses dynamic `posture-v1`.
+scan for each active subject/profile after effective lifecycle and
+active-suppression rules. Archived subjects remain in explicitly labelled
+history but do not affect current posture. `current_posture_score` uses dynamic
+`posture-v2`, and `current_posture_scans` identifies the exact latest active
+scan per subject/profile used for that posture. `recent_scans` remains a
+separate historical activity list. Both current models
+start with the strongest severity/confidence weight, add 15% of supporting
+weights, and cap the result to the highest observed severity band. This keeps
+finding volume visible without allowing low or medium findings to be labelled
+high or critical risk.
+
+`failure` is populated for failed or cancelled scans with a sanitized public
+error code and message. A `completed_with_warnings` scan has no generic hard
+failure; its safe warning details remain in `status_message` and the scanner
+receipts.
+
 `historical_findings_count` and `historical_severity_counts` are separately
 labelled all-history totals.
 

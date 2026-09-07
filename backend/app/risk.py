@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 from app.core.contracts import ScanStatus
 from app.models import Finding, RiskScore, Scan
 
-SCORING_MODEL_VERSION = "risk-v1"
-POSTURE_MODEL_VERSION = "posture-v1"
+SCORING_MODEL_VERSION = "risk-v2"
+POSTURE_MODEL_VERSION = "posture-v2"
 COMPLETED_SCAN_STATUSES = {ScanStatus.COMPLETED.value, ScanStatus.COMPLETED_WITH_WARNINGS.value}
 
 SEVERITY_WEIGHTS = {
@@ -33,6 +33,14 @@ RISK_LABELS = (
     (20, "Moderate"),
     (0, "Low"),
 )
+SUPPORTING_FINDING_FACTOR = 0.15
+SEVERITY_SCORE_CEILINGS = {
+    "critical": 100,
+    "high": 74,
+    "medium": 49,
+    "low": 19,
+    "info": 19,
+}
 
 
 @dataclass(frozen=True)
@@ -47,6 +55,7 @@ def calculate_scan_risk_score(scan: Scan, findings: list[Finding]) -> Calculated
     severity_counts: Counter[str] = Counter()
     confidence_counts: Counter[str] = Counter()
     weighted_findings: list[dict[str, object]] = []
+    weighted_values: list[float] = []
     weighted_total = 0.0
 
     for finding in dedupe_findings(findings):
@@ -56,6 +65,7 @@ def calculate_scan_risk_score(scan: Scan, findings: list[Finding]) -> Calculated
         confidence_counts[confidence] += 1
         weighted_value = SEVERITY_WEIGHTS.get(severity, SEVERITY_WEIGHTS["info"]) * CONFIDENCE_MULTIPLIERS.get(confidence, CONFIDENCE_MULTIPLIERS["low"])
         weighted_total += weighted_value
+        weighted_values.append(weighted_value)
         weighted_findings.append(
             {
                 "dedupe_key": finding.dedupe_key,
@@ -65,12 +75,16 @@ def calculate_scan_risk_score(scan: Scan, findings: list[Finding]) -> Calculated
             }
         )
 
-    score = min(100, int(round(weighted_total)))
+    aggregation = aggregate_weighted_score(
+        weighted_values,
+        severity_counts,
+    )
     input_summary: dict[str, object] = {
         "finding_count": len(weighted_findings),
         "severity_counts": ordered_counts(severity_counts, SEVERITY_WEIGHTS.keys()),
         "confidence_counts": ordered_counts(confidence_counts, CONFIDENCE_MULTIPLIERS.keys()),
         "weighted_total": round(weighted_total, 2),
+        **aggregation.input_summary,
         "weighted_findings": weighted_findings,
         "scan_profile_id": scan.scan_profile_id,
         "mode": scan.mode,
@@ -79,8 +93,8 @@ def calculate_scan_risk_score(scan: Scan, findings: list[Finding]) -> Calculated
     }
     return CalculatedRiskScore(
         scoring_model_version=SCORING_MODEL_VERSION,
-        score=score,
-        label=risk_label(score),
+        score=aggregation.score,
+        label=risk_label(aggregation.score),
         input_summary=input_summary,
     )
 
@@ -193,17 +207,73 @@ def calculate_posture_risk_score(subject_findings: list[tuple[str, Finding]]) ->
         )
         for finding in effective_findings
     )
-    score = min(100, int(round(weighted_total)))
+    weighted_values = [
+        SEVERITY_WEIGHTS.get(normalize_bucket(finding.severity, "info"), SEVERITY_WEIGHTS["info"])
+        * CONFIDENCE_MULTIPLIERS.get(
+            normalize_bucket(finding.confidence, "low"),
+            CONFIDENCE_MULTIPLIERS["low"],
+        )
+        for finding in effective_findings
+    ]
+    aggregation = aggregate_weighted_score(weighted_values, severity_counts)
     return CalculatedRiskScore(
         scoring_model_version=POSTURE_MODEL_VERSION,
-        score=score,
-        label=risk_label(score),
+        score=aggregation.score,
+        label=risk_label(aggregation.score),
         input_summary={
             "finding_count": len(effective_findings),
             "severity_counts": ordered_counts(severity_counts, SEVERITY_WEIGHTS.keys()),
             "confidence_counts": ordered_counts(confidence_counts, CONFIDENCE_MULTIPLIERS.keys()),
             "weighted_total": round(weighted_total, 2),
+            **aggregation.input_summary,
             "scan_profile_id": "latest-per-subject-profile",
+        },
+    )
+
+
+@dataclass(frozen=True)
+class AggregatedRiskScore:
+    score: int
+    input_summary: dict[str, object]
+
+
+def aggregate_weighted_score(
+    weighted_values: list[float],
+    severity_counts: Counter[str],
+) -> AggregatedRiskScore:
+    if not weighted_values:
+        return AggregatedRiskScore(
+            score=0,
+            input_summary={
+                "aggregation": "primary-plus-supporting-v1",
+                "primary_weight": 0.0,
+                "supporting_weight": 0.0,
+                "score_ceiling": 19,
+            },
+        )
+
+    primary_weight = max(weighted_values)
+    supporting_weight = max(0.0, sum(weighted_values) - primary_weight)
+    highest_severity = next(
+        (
+            severity
+            for severity in SEVERITY_SCORE_CEILINGS
+            if severity_counts.get(severity, 0) > 0
+        ),
+        "info",
+    )
+    score_ceiling = SEVERITY_SCORE_CEILINGS[highest_severity]
+    score = min(
+        score_ceiling,
+        int(round(primary_weight + (supporting_weight * SUPPORTING_FINDING_FACTOR))),
+    )
+    return AggregatedRiskScore(
+        score=score,
+        input_summary={
+            "aggregation": "primary-plus-supporting-v1",
+            "primary_weight": round(primary_weight, 2),
+            "supporting_weight": round(supporting_weight, 2),
+            "score_ceiling": score_ceiling,
         },
     )
 

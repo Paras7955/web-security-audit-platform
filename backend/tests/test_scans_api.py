@@ -8,6 +8,7 @@ from app.api.deps import get_scan_allowlist
 from app.db.session import SessionLocal
 from app.main import app
 from app.models import AuthProfile, RepositoryAsset, Scan, Target
+from app.scans.failures import safe_scan_failure
 from app.security.allowlist import ScanAllowlist
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
@@ -59,6 +60,16 @@ class ScanApiTests(unittest.TestCase):
         body = response.json()
         self.created_target_ids.append(body["id"])
         return body
+
+    def test_completed_scan_warning_is_not_reported_as_a_hard_failure(self) -> None:
+        self.assertIsNone(safe_scan_failure(None, "completed_with_warnings"))
+
+    def test_failed_scan_without_a_specific_code_uses_the_safe_fallback(self) -> None:
+        failure = safe_scan_failure(None, "failed")
+
+        self.assertIsNotNone(failure)
+        self.assertEqual(failure.code, "scan_failed")
+        self.assertEqual(failure.message, "The scan could not be completed safely.")
 
     def test_create_passive_scan_queues_job(self) -> None:
         target = self.create_target()

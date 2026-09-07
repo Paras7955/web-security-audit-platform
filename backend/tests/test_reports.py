@@ -123,10 +123,51 @@ class ReportsTests(unittest.TestCase):
             self.assertIn("Audit completed at", html_content)
             self.assertIn("ZAP passive analysis: used for allowlisted URLs.", html_content)
             self.assertIn("generated locally with deterministic template logic", html_content)
+            self.assertIn(".severity.severity-critical { background: var(--critical); }", html_content)
+            self.assertNotIn("\n    .severity-critical { background: var(--critical); }", html_content)
             self.assertIn("&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;", html_content)
             self.assertNotIn("<script>alert('xss')</script>", html_content)
             self.assertNotIn("<script", html_content.lower())
             self.assertNotIn("http://", html_content.split("<style>", 1)[1].split("</style>", 1)[0])
+
+    def test_report_guidance_groups_equivalent_actions_but_keeps_each_occurrence(self) -> None:
+        duplicate_finding_id = str(uuid4())
+        with tempfile.TemporaryDirectory() as temp_dir, SessionLocal() as db:
+            db.add(
+                Finding(
+                    id=duplicate_finding_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    scan_id=self.scan_id,
+                    title="<script>alert('xss')</script>",
+                    severity="high",
+                    confidence="high",
+                    affected_url="http://juice-shop:3000/",
+                    evidence="A second independently retained occurrence.",
+                    source_tool="custom-passive",
+                    scanner_rule_id="header:content-security-policy",
+                    dedupe_key="custom-passive|http://juice-shop:3000/|missing content security policy|cwe-693",
+                    cwe="CWE-693",
+                    owasp_category="A05:2021",
+                    reproduction_steps="Visit the page and inspect response headers.",
+                    remediation="Set a Content-Security-Policy header.",
+                    redaction_applied=True,
+                )
+            )
+            db.commit()
+
+            artifacts = generate_report_artifacts(
+                db,
+                scan_id=self.scan_id,
+                workspace_id=DEV_WORKSPACE_ID,
+                artifact_root=temp_dir,
+            )
+            html = next(artifact for artifact in artifacts if artifact.report_type == "html")
+            html_content = read_report_artifact_file(html, artifact_root=temp_dir)
+
+        guidance_section, detailed_section = html_content.split("<h2>Detailed findings</h2>", 1)
+        self.assertEqual(guidance_section.count("Priority 43:"), 1)
+        self.assertEqual(detailed_section.count("alert(&#x27;xss&#x27;)"), 2)
+        self.assertIn("Equivalent guidance actions are grouped", guidance_section)
 
     def test_markdown_dynamic_values_cannot_inject_structure(self) -> None:
         rendered = markdown_inline("safe\n## injected *emphasis* <script>")
@@ -327,7 +368,7 @@ class ReportsTests(unittest.TestCase):
             response = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("passive, Active Demo, and Repo scans", response.json()["detail"])
+        self.assertIn("Passive Web, Active Demo, and Repository scans", response.json()["detail"])
 
     def test_reports_reject_inconsistent_scan_profile(self) -> None:
         with SessionLocal() as db:
@@ -342,7 +383,7 @@ class ReportsTests(unittest.TestCase):
             response = self.client.post(f"/api/v1/scans/{self.scan_id}/reports", headers=DEV_AUTH_HEADERS)
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("passive, Active Demo, and Repo scans", response.json()["detail"])
+        self.assertIn("Passive Web, Active Demo, and Repository scans", response.json()["detail"])
 
     def test_reports_support_repo_scan_without_ai_provider_payload(self) -> None:
         with SessionLocal() as db:

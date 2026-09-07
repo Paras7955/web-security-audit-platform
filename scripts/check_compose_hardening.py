@@ -69,6 +69,30 @@ def validate_compose(payload: Mapping[str, object]) -> None:
     if isinstance(worker, Mapping) and worker.get("extra_hosts"):
         raise ComposeHardeningError("The worker must not receive host-gateway resolution.")
 
+    zap = services["zap"]
+    if isinstance(zap, Mapping):
+        command = zap.get("command", [])
+        if not isinstance(command, list) or not command or command[0] != "zap-x.sh":
+            raise ComposeHardeningError("ZAP must start with its browser-capable Xvfb wrapper.")
+        tmpfs = {str(entry) for entry in zap.get("tmpfs", [])}
+        zap_home_mount = next((entry for entry in tmpfs if entry.startswith("/home/zap/.ZAP:")), "")
+        if "exec" not in zap_home_mount.split(","):
+            raise ComposeHardeningError("ZAP's ephemeral home must permit the bundled WebDriver to execute.")
+        for required_path in ("/home/zap/.cache:", "/home/zap/.mozilla:"):
+            if not any(entry.startswith(required_path) for entry in tmpfs):
+                raise ComposeHardeningError(f"ZAP is missing writable browser storage: {required_path[:-1]}.")
+        healthcheck = zap.get("healthcheck", {})
+        health_test = healthcheck.get("test", []) if isinstance(healthcheck, Mapping) else []
+        health_probe = " ".join(str(part) for part in health_test) if isinstance(health_test, list) else ""
+        if (
+            "geckodriver" not in health_probe
+            or "-perm -u+x" not in health_probe
+            or "test -x" not in health_probe
+            or "--version" not in health_probe
+            or "test -w /home/zap/.mozilla" not in health_probe
+        ):
+            raise ComposeHardeningError("ZAP readiness must verify the executable driver and writable browser profile.")
+
     relay = services["relay"]
     if isinstance(relay, Mapping):
         relay_environment = relay.get("environment", {})

@@ -124,8 +124,43 @@ class AiExplanationTests(unittest.TestCase):
         self.assertEqual(body["scan_id"], self.scan_id)
         self.assertEqual(body["explanations"][0]["finding_id"], self.finding_id)
         self.assertFalse(body["cache_hit"])
-        self.assertEqual(body["scoring_model_version"], "risk-v1")
-        self.assertIn("Risk is", body["executive_summary"])
+        self.assertEqual(body["scoring_model_version"], "risk-v2")
+        self.assertIn("plus 15% of the remaining weights", body["risk_score_explanation"])
+        self.assertIn("Risk score is", body["executive_summary"])
+
+    def test_executive_summary_distinguishes_raw_records_from_unique_risk_inputs(self) -> None:
+        duplicate_id = str(uuid4())
+        with SessionLocal() as db:
+            db.add(
+                Finding(
+                    id=duplicate_id,
+                    workspace_id=DEV_WORKSPACE_ID,
+                    scan_id=self.scan_id,
+                    title="Missing Content Security Policy",
+                    severity="medium",
+                    confidence="medium",
+                    affected_url="http://juice-shop:3000/",
+                    evidence="duplicate normalized evidence",
+                    source_tool="zap-passive",
+                    scanner_rule_id="10038",
+                    dedupe_key="custom-passive|http://juice-shop:3000/|missing content security policy|cwe-693",
+                    owasp_category="A05:2021",
+                    cwe="CWE-693",
+                    remediation="Set a Content-Security-Policy header.",
+                    redaction_applied=True,
+                )
+            )
+            db.commit()
+
+        response = self.client.get(
+            f"/api/v1/scans/{self.scan_id}/ai-explanations",
+            headers=DEV_AUTH_HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        summary = response.json()["executive_summary"]
+        self.assertIn("1 unique risk input(s)", summary)
+        self.assertIn("2 normalized finding record(s)", summary)
 
     def test_ai_get_never_calls_external_provider_or_persists_generation(self) -> None:
         with (

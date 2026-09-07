@@ -6,7 +6,9 @@ import { AppShell } from "@/components/AppShell";
 import { AuditReviewSummary } from "@/components/dashboard/AuditReviewSummary";
 import { FindingGuidancePanel } from "@/components/dashboard/FindingGuidancePanel";
 import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
-import type { AiExplanation, Finding, ReportArtifact, Scan } from "@/lib/securityAuditApi";
+import { RiskDashboardPanel } from "@/components/dashboard/RiskDashboardPanel";
+import { ScanHistory } from "@/components/dashboard/ScanControls";
+import type { AiExplanation, AuditSubject, DashboardOverview, DashboardScanSummary, Finding, ReportArtifact, Scan } from "@/lib/securityAuditApi";
 
 beforeEach(() => {
   document.documentElement.dataset.theme = "dark";
@@ -104,14 +106,15 @@ describe("Phase 27 public polish", () => {
   it("keeps Audit Review concise and hands canonical work to Findings and Intelligence", async () => {
     const onOpenFindings = vi.fn();
     const onOpenIntelligence = vi.fn();
-    render(
+    const onOpenScanHistory = vi.fn();
+    const { rerender } = render(
       <AuditReviewSummary
         scan={scanFixture()}
         findings={[findingFixture()]}
         subjectName="Demo storefront"
         onOpenFindings={onOpenFindings}
         onOpenIntelligence={onOpenIntelligence}
-        onOpenHistory={vi.fn()}
+        onOpenScanHistory={onOpenScanHistory}
       />
     );
 
@@ -122,10 +125,95 @@ describe("Phase 27 public polish", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open reports and guidance" }));
     expect(onOpenFindings).toHaveBeenCalledOnce();
     expect(onOpenIntelligence).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getByRole("button", { name: "Open scan history" }));
+    expect(onOpenScanHistory).toHaveBeenCalledOnce();
+
+    rerender(
+      <AuditReviewSummary
+        scan={scanFixture({ scan_profile_id: "repository", target_id: null, repository_asset_id: "repo-1", subject_type: "repository_asset", subject_id: "repo-1" })}
+        findings={[findingFixture()]}
+        subjectName="Repository"
+        onOpenFindings={onOpenFindings}
+        onOpenIntelligence={onOpenIntelligence}
+        onOpenScanHistory={onOpenScanHistory}
+      />
+    );
+    expect(screen.getByRole("button", { name: "Open reports" })).toBeTruthy();
+
+    rerender(
+      <AuditReviewSummary
+        scan={scanFixture({ scan_profile_id: "modern-web-crawl" })}
+        findings={[findingFixture()]}
+        subjectName="Demo storefront"
+        onOpenFindings={onOpenFindings}
+        onOpenIntelligence={onOpenIntelligence}
+        onOpenScanHistory={onOpenScanHistory}
+      />
+    );
+    expect(screen.getByRole("button", { name: "Open risk intelligence" })).toBeTruthy();
+  });
+
+  it("identifies active and archived subjects in scan history", () => {
+    render(
+      <ScanHistory
+        scans={[
+          scanFixture({ id: "active-scan" }),
+          scanFixture({ id: "archived-scan", target_id: "archived-target", subject_id: "archived-target" })
+        ]}
+        subjects={[auditSubjectFixture()]}
+        selectedScanId="active-scan"
+        onSelectScan={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Demo storefront · completed/)).toBeTruthy();
+    expect(screen.getByText(/Archived subject · completed/)).toBeTruthy();
+  });
+
+  it("explains current posture with only the scans used by that posture", () => {
+    const currentScan = dashboardScanFixture("current-scan", "Demo storefront");
+    const archivedScan = dashboardScanFixture("archived-scan", "Archived fixture");
+    const overview: DashboardOverview = {
+      targets_count: 1,
+      repository_assets_count: 0,
+      scans_count: 2,
+      completed_scans_count: 2,
+      findings_count: 1,
+      severity_counts: { low: 1 },
+      latest_risk_score: null,
+      recent_scans: [archivedScan],
+      current_posture_scans: [currentScan],
+      posture_basis: "latest completed scan per subject and profile",
+      current_posture_score: null,
+      historical_findings_count: 2,
+      historical_severity_counts: { low: 2 }
+    };
+
+    render(
+      <RiskDashboardPanel
+        overview={overview}
+        targetDashboard={null}
+        repositoryDashboard={null}
+        scans={[]}
+        selectedSubject={null}
+        baselineScanId=""
+        comparisonScanId=""
+        comparison={null}
+        message=""
+        isComparing={false}
+        isLoading={false}
+        onBaselineScanChange={vi.fn()}
+        onComparisonScanChange={vi.fn()}
+        onCompare={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Demo storefront")).toBeTruthy();
+    expect(screen.queryByText("Archived fixture")).toBeNull();
   });
 });
 
-function scanFixture(): Scan {
+function scanFixture(overrides: Partial<Scan> = {}): Scan {
   return {
     id: "scan-27",
     target_id: "target-1",
@@ -141,7 +229,52 @@ function scanFixture(): Scan {
     completed_at: "2026-09-01T12:01:00Z",
     cancellation_requested_at: null,
     failure: null,
-    created_at: "2026-09-01T12:00:00Z"
+    created_at: "2026-09-01T12:00:00Z",
+    ...overrides
+  };
+}
+
+function auditSubjectFixture(): AuditSubject {
+  return {
+    id: "web_target:target-1",
+    subjectType: "web_target",
+    name: "Demo storefront",
+    detail: "http://juice-shop:3000/",
+    availableScanProfileIds: ["passive-web"],
+    target: {
+      id: "target-1",
+      allowlist_id: "juice-shop",
+      name: "Demo storefront",
+      base_url: "http://juice-shop:3000/",
+      permission_confirmed: true,
+      has_repo_path: false,
+      auth_profile_id: null,
+      available_scan_profile_ids: ["passive-web"],
+      zap_required_scan_profile_ids: ["passive-web"],
+      connection_class: "compose_service",
+      scope_path: "/",
+      tls_trust: "system",
+      policy_status: "current",
+      policy_fingerprint: "fixture",
+      created_at: "2026-09-01T12:00:00Z"
+    },
+    repositoryAsset: null
+  };
+}
+
+function dashboardScanFixture(id: string, targetName: string): DashboardScanSummary {
+  return {
+    id,
+    target_id: "target-1",
+    repository_asset_id: null,
+    subject_type: "web_target",
+    subject_id: "target-1",
+    target_name: targetName,
+    scan_profile_id: "passive-web",
+    status: "completed",
+    created_at: "2026-09-01T12:00:00Z",
+    completed_at: "2026-09-01T12:01:00Z",
+    risk_score: null
   };
 }
 
@@ -162,7 +295,7 @@ function guidanceFixture(configuredProvider: "template" | "openai"): AiExplanati
     summary: "One normalized finding was recorded.",
     executive_summary: "Review the high-priority signal first.",
     risk_score_explanation: "The risk score reflects normalized severity and confidence.",
-    scoring_model_version: "risk-v1",
+    scoring_model_version: "risk-v2",
     input_fingerprint: "fixture",
     cache_hit: false,
     groups: [{ label: "high severity", count: 1, finding_ids: ["finding-1"] }],

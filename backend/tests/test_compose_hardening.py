@@ -32,6 +32,24 @@ def safe_compose() -> dict[str, object]:
             "networks": {network: None for network in service_networks},
             "read_only": name not in {"postgres", "juice-shop"},
         }
+    zap_service = services["zap"]
+    assert isinstance(zap_service, dict)
+    zap_service.update(
+        {
+            "command": ["zap-x.sh", "-daemon"],
+            "tmpfs": [
+                "/home/zap/.ZAP:size=256m,mode=0700,uid=1000,gid=1000,exec",
+                "/home/zap/.cache:size=64m,mode=0700,uid=1000,gid=1000",
+                "/home/zap/.mozilla:size=128m,mode=0700,uid=1000,gid=1000",
+            ],
+            "healthcheck": {
+                "test": [
+                    "CMD-SHELL",
+                    "driver=$(find /home/zap/.ZAP/webdriver -name geckodriver -perm -u+x -print -quit) && test -x $driver && $driver --version && test -w /home/zap/.mozilla",
+                ]
+            },
+        }
+    )
     return {"services": services, "networks": networks}
 
 
@@ -49,6 +67,38 @@ class ComposeHardeningTests(unittest.TestCase):
         relay_secret_exposure["services"]["relay"]["environment"] = {"DATABASE_URL": "secret"}  # type: ignore[index]
         with self.assertRaises(ComposeHardeningError):
             validate_compose(relay_secret_exposure)
+
+    def test_rejects_zap_without_browser_runtime_prerequisites(self) -> None:
+        no_xvfb = deepcopy(safe_compose())
+        no_xvfb["services"]["zap"]["command"] = ["zap.sh", "-daemon"]  # type: ignore[index]
+        with self.assertRaises(ComposeHardeningError):
+            validate_compose(no_xvfb)
+
+        no_executable_driver = deepcopy(safe_compose())
+        no_executable_driver["services"]["zap"]["tmpfs"][0] = "/home/zap/.ZAP:size=256m,mode=0700"  # type: ignore[index]
+        with self.assertRaises(ComposeHardeningError):
+            validate_compose(no_executable_driver)
+
+        shallow_readiness = deepcopy(safe_compose())
+        shallow_readiness["services"]["zap"]["healthcheck"]["test"] = ["CMD-SHELL", "wget http://localhost:8080"]  # type: ignore[index]
+        with self.assertRaises(ComposeHardeningError):
+            validate_compose(shallow_readiness)
+
+        permission_only_readiness = deepcopy(safe_compose())
+        permission_only_readiness["services"]["zap"]["healthcheck"]["test"] = [  # type: ignore[index]
+            "CMD-SHELL",
+            "driver=$(find /home/zap/.ZAP/webdriver -name geckodriver -print -quit) && test -x $driver && test -w /home/zap/.mozilla",
+        ]
+        with self.assertRaises(ComposeHardeningError):
+            validate_compose(permission_only_readiness)
+
+        first_driver_readiness = deepcopy(safe_compose())
+        first_driver_readiness["services"]["zap"]["healthcheck"]["test"] = [  # type: ignore[index]
+            "CMD-SHELL",
+            "driver=$(find /home/zap/.ZAP/webdriver -name geckodriver -print -quit) && test -x $driver && $driver --version && test -w /home/zap/.mozilla",
+        ]
+        with self.assertRaises(ComposeHardeningError):
+            validate_compose(first_driver_readiness)
 
 
 if __name__ == "__main__":

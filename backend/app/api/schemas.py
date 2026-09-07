@@ -408,6 +408,10 @@ class RiskScoreRead(BaseModel):
             "severity_counts",
             "confidence_counts",
             "weighted_total",
+            "aggregation",
+            "primary_weight",
+            "supporting_weight",
+            "score_ceiling",
             "scan_profile_id",
         }
         return {str(key): item for key, item in value.items() if key in allowed}
@@ -436,6 +440,7 @@ class DashboardOverviewRead(BaseModel):
     severity_counts: dict[str, int]
     latest_risk_score: RiskScoreRead | None
     recent_scans: list[DashboardScanSummaryRead]
+    current_posture_scans: list[DashboardScanSummaryRead] = Field(default_factory=list)
     posture_basis: str = "latest completed scan per subject and profile"
     current_posture_score: RiskScoreRead | None = None
     historical_findings_count: int = 0

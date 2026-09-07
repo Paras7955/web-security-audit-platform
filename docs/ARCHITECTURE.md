@@ -143,6 +143,10 @@ IPs that the relay already validated while fetching the same allowlisted
 origin, combines them with the policy's exact connection port, and keeps the
 resulting pinned origin inside ZAP's scoped context. Policy validation and the
 worker both reject all ZAP engines for non-disposable targets.
+The container uses ZAP's Xvfb wrapper for browser-backed rules and Client
+Spider. Writable browser profiles, caches, and the executable bundled
+WebDriver live only in bounded tmpfs mounts; the root filesystem remains
+read-only and the service remains non-root and capability-free.
 
 ### Repository scanners
 

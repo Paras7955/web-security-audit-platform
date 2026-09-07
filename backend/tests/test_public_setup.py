@@ -110,7 +110,7 @@ if [[ "$*" == *" port juice-shop 3000" ]]; then printf '127.0.0.1:3100\\n'; fi
                 self.assertGreaterEqual(len(runtime_calls), 5)
                 self.assertTrue(all(line.startswith(f"{env_name}|") for line in runtime_calls), runtime_calls)
                 self.assertTrue(all(f"--env-file {env_name}" in line for line in runtime_calls), runtime_calls)
-                self.assertIn("http://127.0.0.1:3101", result.stdout)
+                self.assertIn("http://localhost:3101", result.stdout)
                 self.assertIn("http://127.0.0.1:8100/docs", result.stdout)
                 self.assertIn("http://127.0.0.1:3100", result.stdout)
             finally:
@@ -136,6 +136,11 @@ if [[ "$*" == *" port juice-shop 3000" ]]; then printf '127.0.0.1:3100\\n'; fi
             self.assertIn("backend", script)
             self.assertIn("juice-shop", script)
             self.assertNotIn("UI:           http://localhost:3001", script)
+
+        self.assertIn('FRONTEND_PORT="${FRONTEND_ADDRESS##*:}"', bash)
+        self.assertIn("UI:           http://localhost:$FRONTEND_PORT", bash)
+        self.assertIn('$FrontendPort = ($FrontendAddress -split ":")[-1]', powershell)
+        self.assertIn("UI:           http://localhost:$FrontendPort", powershell)
 
     def test_setup_wrappers_validate_isolated_compose_project_names(self) -> None:
         bash = (ROOT / "scripts" / "setup.sh").read_text(encoding="utf-8")

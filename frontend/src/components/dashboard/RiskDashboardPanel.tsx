@@ -77,7 +77,7 @@ export function RiskDashboardPanel({
           </div>
           <SeverityBars counts={overview?.severity_counts ?? {}} />
           <p className="postureHistoryNote">Historical evidence: <strong>{overview?.historical_findings_count ?? 0}</strong> findings across all completed audits.</p>
-          <CompactScanTable scans={overview?.recent_scans ?? []} />
+          <CompactScanTable scans={overview?.current_posture_scans ?? []} />
         </div>
 
         <div className="panel">
@@ -242,7 +242,7 @@ function ScoreInputs({ dashboard }: { dashboard: TargetDashboard | RepositoryDas
         <dd>{String(score.input_summary.finding_count ?? 0)}</dd>
       </div>
       <div>
-        <dt>Weighted total</dt>
+        <dt>Raw weighted sum</dt>
         <dd>{String(score.input_summary.weighted_total ?? 0)}</dd>
       </div>
       <div>

@@ -147,6 +147,12 @@ and terminate descendants on abort. ZAP clients ignore inherited proxy
 environment, disable redirects, request explicit stop operations, and keep the
 advisory lock until external work is confirmed stopped.
 
+The ZAP container stays non-root, capability-free, network-confined, and
+read-only apart from bounded tmpfs mounts. Its ephemeral `.ZAP` mount permits
+execution solely so the bundled WebDriver can support Client Spider and
+browser-backed active rules; browser profiles and caches remain ephemeral, and
+startup readiness verifies the driver is executable.
+
 Active/browser work is not automatically replayed after interruption.
 
 ## Data minimization

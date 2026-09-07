@@ -37,7 +37,7 @@ export function ReportsPanel({
         <button className="primaryButton" type="button" onClick={onGenerate} disabled={!canGenerate}>
           {isGenerating ? "Generating…" : "Generate reports"}
         </button>
-        <p role="status" aria-live="polite">{scan && !canUseReports(scan) ? "Reports remain available for passive, Active Demo, and Repo scans." : message}</p>
+        <p role="status" aria-live="polite">{scan && !canUseReports(scan) ? "Reports remain available for Passive Web, Active Demo, and Repository scans." : message}</p>
       </div>
 
       {reports.length > 0 ? (

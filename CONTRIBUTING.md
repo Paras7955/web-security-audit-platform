@@ -13,10 +13,10 @@ details in a public issue.
 
 ## Maintainer development workflow
 
-Maintainers must follow [`AGENTS.md`](AGENTS.md), especially its phase branch,
-commit, review, safety, and user-action rules. Changes should be cohesive,
-verified first with targeted tests and then broader clean-database checks, and
-must preserve the deny-by-default scope.
+Maintainers must follow [`AGENTS.md`](AGENTS.md), especially its safety,
+verification, review, and Git rules. Changes should be cohesive, verified first
+with targeted tests and then broader clean-database checks, and must preserve
+the deny-by-default scope.
 
 Before proposing an internal change:
 

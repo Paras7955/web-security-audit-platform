@@ -51,16 +51,28 @@ def dashboard_overview(
     completed_scans = sort_completed_scans(
         [scan for scan in scans if scan.status in COMPLETED_SCAN_STATUSES]
     )
+    active_target_ids = {target.id for target in targets if target.archived_at is None}
+    active_repository_asset_ids = {
+        asset.id for asset in repository_assets if asset.archived_at is None
+    }
+    active_completed_scans = [
+        scan
+        for scan in completed_scans
+        if (
+            scan.target_id in active_target_ids
+            or scan.repository_asset_id in active_repository_asset_ids
+        )
+    ]
     historical_findings = findings_for_scans(db, principal.workspace_id, [scan.id for scan in scans])
-    posture_scans = latest_completed_scans_per_subject_profile(completed_scans)
+    posture_scans = latest_completed_scans_per_subject_profile(active_completed_scans)
     posture_findings = effective_posture_findings(db, posture_scans)
     latest_score = (
         read_scan_risk_score(
             db,
-            completed_scans[0],
-            findings_for_scan(historical_findings, completed_scans[0].id),
+            active_completed_scans[0],
+            findings_for_scan(historical_findings, active_completed_scans[0].id),
         )
-        if completed_scans
+        if active_completed_scans
         else None
     )
 
@@ -69,12 +81,18 @@ def dashboard_overview(
         repository_assets_count=sum(asset.archived_at is None for asset in repository_assets),
         scans_count=len(scans),
         completed_scans_count=len(completed_scans),
-        findings_count=len(posture_findings),
+        findings_count=posture_finding_count(posture_findings, posture_scans),
         severity_counts=posture_severity_counts(posture_findings, posture_scans),
         latest_risk_score=risk_score_to_read(latest_score),
         recent_scans=scan_summaries(
             db,
             scans[:8],
+            targets_by_id(targets),
+            repository_assets_by_id(repository_assets),
+        ),
+        current_posture_scans=scan_summaries(
+            db,
+            posture_scans,
             targets_by_id(targets),
             repository_assets_by_id(repository_assets),
         ),
@@ -114,7 +132,7 @@ def target_dashboard(
         base_url=target.base_url,
         scan_count=len(scans),
         completed_scan_count=len(completed_scans),
-        findings_count=len(posture_findings),
+        findings_count=posture_finding_count(posture_findings, posture_scans),
         severity_counts=severity_counts(posture_findings),
         latest_risk_score=risk_score_to_read(latest_score),
         recent_scans=scan_summaries(db, scans[:8], {target.id: target}, {}),
@@ -157,7 +175,7 @@ def repository_asset_dashboard(
         relative_path=asset.relative_path,
         scan_count=len(scans),
         completed_scan_count=len(completed_scans),
-        findings_count=len(posture_findings),
+        findings_count=posture_finding_count(posture_findings, posture_scans),
         severity_counts=severity_counts(posture_findings),
         latest_risk_score=risk_score_to_read(latest_score),
         recent_scans=scan_summaries(db, scans[:8], {}, {asset.id: asset}),
@@ -575,16 +593,27 @@ def finding_map(findings: list[Finding]) -> dict[str, Finding]:
 
 
 def posture_severity_counts(findings: list[Finding], scans: list[Scan]) -> dict[str, int]:
-    scans_by_id = {scan.id: scan for scan in scans}
-    subject_findings = [
-        (scan_subject(scans_by_id[finding.scan_id])[1], finding)
-        for finding in findings
-        if finding.scan_id in scans_by_id
-    ]
+    subject_findings = posture_findings_by_subject(findings, scans)
     counts = Counter(
         finding.severity for _, finding in dedupe_findings_by_subject(subject_findings)
     )
     return ordered_severity_counts(counts)
+
+
+def posture_finding_count(findings: list[Finding], scans: list[Scan]) -> int:
+    return len(dedupe_findings_by_subject(posture_findings_by_subject(findings, scans)))
+
+
+def posture_findings_by_subject(
+    findings: list[Finding],
+    scans: list[Scan],
+) -> list[tuple[str, Finding]]:
+    scans_by_id = {scan.id: scan for scan in scans}
+    return [
+        (scan_subject(scans_by_id[finding.scan_id])[1], finding)
+        for finding in findings
+        if finding.scan_id in scans_by_id
+    ]
 
 
 def severity_counts(findings: list[Finding]) -> dict[str, int]:

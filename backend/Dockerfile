@@ -20,6 +20,7 @@ ADD --checksum=sha256:a75ba0030bd8df5df8f67450c6487a8c73f33e93766dd3c037ce1b5c67
     /tmp/osv-scanner-source.tar.gz
 RUN tar --extract --gzip --file=/tmp/osv-scanner-source.tar.gz --strip-components=1 \
     && go mod edit -require=github.com/go-git/go-git/v5@v5.19.2 \
+    && go mod edit -require=google.golang.org/grpc@v1.83.1 \
     && go mod edit -require=golang.org/x/mod@v0.40.0 \
     && go mod edit -require=golang.org/x/text@v0.39.0 \
     && go mod tidy \

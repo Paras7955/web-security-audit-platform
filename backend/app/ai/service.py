@@ -31,6 +31,7 @@ CONFIDENCE_PRIORITY = {
 }
 EVIDENCE_PROVIDER_CAP = 1000
 OPENAI_RESPONSE_MAX_BYTES = 262_144
+AI_OUTPUT_CONTRACT_VERSION = "ai-output-v3"
 ELIGIBLE_SCAN_STATUSES = {
     ScanStatus.COMPLETED.value,
     ScanStatus.COMPLETED_WITH_WARNINGS.value,
@@ -621,7 +622,12 @@ def enrich_result(
         fallback_used=result.fallback_used,
         provider_error=result.provider_error,
         summary=result.summary,
-        executive_summary=build_executive_summary(findings, calculated.score, calculated.label),
+        executive_summary=build_executive_summary(
+            findings,
+            calculated.input_summary,
+            calculated.score,
+            calculated.label,
+        ),
         risk_score_explanation=build_risk_score_explanation(calculated.input_summary, calculated.score, calculated.label),
         scoring_model_version=calculated.scoring_model_version,
         input_fingerprint=input_fingerprint,
@@ -648,11 +654,26 @@ def replace_result_metadata(result: AiExplanationResult, *, input_fingerprint: s
     )
 
 
-def build_executive_summary(findings: list[Finding], score: int, label: str) -> str:
+def build_executive_summary(
+    findings: list[Finding],
+    input_summary: dict[str, object],
+    score: int,
+    label: str,
+) -> str:
     if not findings:
-        return f"Risk is {score}/100 ({label}) with no normalized findings recorded for this scan."
-    critical_high = sum(1 for finding in findings if finding.severity in {"critical", "high"})
-    return f"Risk is {score}/100 ({label}) across {len(findings)} normalized finding(s), including {critical_high} critical/high item(s)."
+        return f"Risk score is {score}/100 ({label} band); no normalized findings were recorded for this scan."
+    severity_counts = input_summary.get("severity_counts", {})
+    if not isinstance(severity_counts, dict):
+        severity_counts = {}
+    raw_unique_count = input_summary.get("finding_count")
+    unique_count = raw_unique_count if isinstance(raw_unique_count, int) else len(findings)
+    critical = int(severity_counts.get("critical", 0) or 0)
+    high = int(severity_counts.get("high", 0) or 0)
+    return (
+        f"Risk score is {score}/100 ({label} band) from {unique_count} unique risk input(s) "
+        f"after deterministic deduplication of {len(findings)} normalized finding record(s). "
+        f"Those inputs include {critical} critical and {high} high finding(s)."
+    )
 
 
 def build_risk_score_explanation(input_summary: dict[str, object], score: int, label: str) -> str:
@@ -662,9 +683,16 @@ def build_risk_score_explanation(input_summary: dict[str, object], score: int, l
     critical = int(severity_counts.get("critical", 0) or 0)
     high = int(severity_counts.get("high", 0) or 0)
     medium = int(severity_counts.get("medium", 0) or 0)
+    if input_summary.get("aggregation") == "primary-plus-supporting-v1":
+        method = (
+            "using the strongest severity/confidence weight plus 15% of the remaining weights, "
+            "capped to the highest observed severity band"
+        )
+    else:
+        method = "from severity and confidence weights"
     return (
-        f"The deterministic {SCORING_MODEL_VERSION} model produced {score}/100 ({label}) "
-        f"from severity and confidence weights: {critical} critical, {high} high, and {medium} medium finding(s)."
+        f"The deterministic {SCORING_MODEL_VERSION} model produced {score}/100 ({label}) {method}: "
+        f"{critical} critical, {high} high, and {medium} medium finding(s)."
     )
 
 
@@ -681,6 +709,7 @@ def build_ai_input_fingerprint(
     risk = calculate_scan_risk_score(scan, findings)
     payload = {
         "version": "ai-input-v1",
+        "output_contract_version": AI_OUTPUT_CONTRACT_VERSION,
         "scan": {
             "id": scan.id,
             "target_id": scan.target_id,
