@@ -27,7 +27,7 @@ RUN tar --extract --gzip --file=/tmp/osv-scanner-source.tar.gz --strip-component
     && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
         -o /out/osv-scanner ./cmd/osv-scanner/
 
-FROM python:3.12.13-slim-bookworm@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b AS base
+FROM python:3.14.8-slim-bookworm@sha256:c8137f4c460908c8763f281c8f22c431eb5c538514ba9553fc3a89c06b7cfb88 AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
